@@ -20,10 +20,11 @@ function cleanNick(v: string) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
   const rows = await prisma.bonoRecord.findMany({
-    where: { period },
+    where: { agencySlug, period },
     orderBy: [{ diamantes: "desc" }, { nombre: "asc" }],
   });
 
@@ -87,6 +88,7 @@ const importSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   let body: unknown;
   try {
@@ -110,6 +112,7 @@ export async function POST(req: NextRequest) {
     for (const row of parsed.data.rows) {
       await prisma.bonoRecord.create({
         data: {
+          agencySlug,
           period: parsed.data.period,
           nombre: cleanNick(row.nombre),
           diamantes: row.diamantes ?? 0,
@@ -133,8 +136,14 @@ export async function POST(req: NextRequest) {
   const nombre = cleanNick(data.nombre);
 
   if (data.id) {
+    const existing = await prisma.bonoRecord.findFirst({
+      where: { id: data.id, agencySlug },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
     const updated = await prisma.bonoRecord.update({
-      where: { id: data.id },
+      where: { id: existing.id },
       data: {
         nombre,
         diamantes: data.diamantes,
@@ -157,6 +166,7 @@ export async function POST(req: NextRequest) {
   // Upsert por periodo + nombre (liquidación)
   const existing = await prisma.bonoRecord.findFirst({
     where: {
+      agencySlug,
       period: data.period,
       nombre: { equals: nombre },
     },
@@ -182,6 +192,7 @@ export async function POST(req: NextRequest) {
 
   const created = await prisma.bonoRecord.create({
     data: {
+      agencySlug,
       period: data.period,
       nombre,
       diamantes: data.diamantes ?? 0,
@@ -209,6 +220,7 @@ const patchSchema = z.object({
 export async function PATCH(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   let body: unknown;
   try {
@@ -223,13 +235,20 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { id, ...rest } = parsed.data;
+  const existing = await prisma.bonoRecord.findFirst({
+    where: { id, agencySlug },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+
   const data: Record<string, unknown> = { ...rest };
   if (rest.nombre) data.nombre = cleanNick(rest.nombre);
   if (rest.pagado === true) data.pagadoAt = new Date();
   if (rest.pagado === false) data.pagadoAt = null;
 
   const updated = await prisma.bonoRecord.update({
-    where: { id },
+    where: { id: existing.id },
     data,
   });
   return NextResponse.json({ ok: true, row: updated });
@@ -238,13 +257,16 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const id = req.nextUrl.searchParams.get("id");
   const period = req.nextUrl.searchParams.get("period");
   const clearPeriod = req.nextUrl.searchParams.get("clearPeriod") === "1";
 
   if (clearPeriod && period && /^\d{4}-\d{2}$/.test(period)) {
-    const res = await prisma.bonoRecord.deleteMany({ where: { period } });
+    const res = await prisma.bonoRecord.deleteMany({
+      where: { agencySlug, period },
+    });
     return NextResponse.json({ ok: true, deleted: res.count });
   }
 
@@ -252,6 +274,12 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Falta id" }, { status: 400 });
   }
 
-  await prisma.bonoRecord.delete({ where: { id } });
+  const existing = await prisma.bonoRecord.findFirst({
+    where: { id, agencySlug },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  await prisma.bonoRecord.delete({ where: { id: existing.id } });
   return NextResponse.json({ ok: true });
 }

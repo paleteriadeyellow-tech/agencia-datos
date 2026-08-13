@@ -20,10 +20,11 @@ function cleanNick(v: string) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
   const rows = await prisma.kpiRecord.findMany({
-    where: { period },
+    where: { agencySlug, period },
     orderBy: [{ diamantes: "desc" }, { nombre: "asc" }],
   });
 
@@ -71,6 +72,7 @@ const importSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   let body: unknown;
   try {
@@ -95,7 +97,7 @@ export async function POST(req: NextRequest) {
     for (const row of parsed.data.rows) {
       const nombre = cleanNick(row.nombre);
       const existing = await prisma.kpiRecord.findFirst({
-        where: { period: parsed.data.period, nombre },
+        where: { agencySlug, period: parsed.data.period, nombre },
       });
       const data = {
         whatsapp: (row.whatsapp || "").replace(/\D/g, ""),
@@ -115,6 +117,7 @@ export async function POST(req: NextRequest) {
       } else {
         await prisma.kpiRecord.create({
           data: {
+            agencySlug,
             period: parsed.data.period,
             nombre,
             ...data,
@@ -141,15 +144,21 @@ export async function POST(req: NextRequest) {
   };
 
   if (parsed.data.id) {
+    const existing = await prisma.kpiRecord.findFirst({
+      where: { id: parsed.data.id, agencySlug },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
     const row = await prisma.kpiRecord.update({
-      where: { id: parsed.data.id },
+      where: { id: existing.id },
       data: payload,
     });
     return NextResponse.json({ ok: true, row });
   }
 
   const row = await prisma.kpiRecord.create({
-    data: { period: parsed.data.period, ...payload },
+    data: { agencySlug, period: parsed.data.period, ...payload },
   });
   return NextResponse.json({ ok: true, row, created: true });
 }
@@ -157,13 +166,16 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const id = req.nextUrl.searchParams.get("id");
   const period = req.nextUrl.searchParams.get("period");
   const clearPeriod = req.nextUrl.searchParams.get("clearPeriod") === "1";
 
   if (clearPeriod && period && /^\d{4}-\d{2}$/.test(period)) {
-    const res = await prisma.kpiRecord.deleteMany({ where: { period } });
+    const res = await prisma.kpiRecord.deleteMany({
+      where: { agencySlug, period },
+    });
     return NextResponse.json({ ok: true, deleted: res.count });
   }
 
@@ -171,6 +183,12 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Falta id" }, { status: 400 });
   }
 
-  await prisma.kpiRecord.delete({ where: { id } });
+  const existing = await prisma.kpiRecord.findFirst({
+    where: { id, agencySlug },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  await prisma.kpiRecord.delete({ where: { id: existing.id } });
   return NextResponse.json({ ok: true });
 }

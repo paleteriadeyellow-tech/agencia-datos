@@ -1,4 +1,4 @@
-/** Rutas que un manager sí puede ver (el admin ve todo). */
+/** Rutas relativas (sin prefijo /a/[agency]) que un manager sí puede ver. */
 export const MANAGER_ALLOWED_PATHS = [
   "/dashboard",
   "/creadores",
@@ -17,6 +17,13 @@ export const ADMIN_ONLY_PATHS = [
   "/managers",
 ] as const;
 
+/** Quita `/a/{slug}` del pathname. */
+export function stripAgencyPrefix(pathname: string): string {
+  const m = pathname.match(/^\/a\/[^/]+(.*)$/);
+  if (!m) return pathname;
+  return m[1] || "/";
+}
+
 export function isAdmin(role?: string | null) {
   return role === "admin";
 }
@@ -25,15 +32,16 @@ export function isManager(role?: string | null) {
   return role === "manager";
 }
 
-/** ¿Puede el rol entrar a esta ruta de página? */
+/** ¿Puede el rol entrar a esta ruta relativa de página? */
 export function canAccessPath(role: string | null | undefined, pathname: string) {
+  const path = stripAgencyPrefix(pathname);
   if (isAdmin(role)) return true;
   return MANAGER_ALLOWED_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`)
+    (p) => path === p || path.startsWith(`${p}/`)
   );
 }
 
-/** Ítems de nav visibles según rol */
+/** Ítems de nav visibles según rol (hrefs relativos sin agencia). */
 export function filterNavByRole<T extends { href: string }>(
   items: T[],
   role: string | null | undefined

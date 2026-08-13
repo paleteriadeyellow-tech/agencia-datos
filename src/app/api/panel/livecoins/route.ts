@@ -10,9 +10,10 @@ const STATUSES = ["pendiente", "habilitada", "contactado", "no_quiere"] as const
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const creators = await prisma.creator.findMany({
-    where: { status: { not: "baja" } },
+    where: { agencySlug, status: { not: "baja" } },
     select: {
       id: true,
       name: true,
@@ -74,6 +75,7 @@ const patchSchema = z
 export async function PATCH(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   let body: unknown;
   try {
@@ -87,6 +89,14 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
   }
 
+  const existing = await prisma.creator.findFirst({
+    where: { id: parsed.data.id, agencySlug },
+    select: { id: true },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+
   const data: { livecoinsStatus?: string; livecoinsComment?: string | null } =
     {};
   if (parsed.data.livecoinsStatus !== undefined) {
@@ -98,7 +108,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const row = await prisma.creator.update({
-    where: { id: parsed.data.id },
+    where: { id: existing.id },
     data,
     select: {
       id: true,

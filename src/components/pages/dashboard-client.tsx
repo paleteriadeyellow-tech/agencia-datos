@@ -20,6 +20,7 @@ import { MESES_NOMBRE, periodKey } from "@/lib/bonos";
 import { PANEL, usePanelData } from "@/lib/swr";
 import { useQuickCreate } from "@/components/quick-create";
 import { PanelLoadError } from "@/components/panel-load-error";
+import { useAgency } from "@/lib/use-agency";
 
 type Dash = {
   month: string;
@@ -53,6 +54,7 @@ type Dash = {
 
 export default function DashboardClient() {
   const { openCreateCreator } = useQuickCreate();
+  const { path } = useAgency();
   const now = new Date();
   const [anio, setAnio] = useState(now.getFullYear());
   const [mes, setMes] = useState(now.getMonth() + 1);
@@ -83,10 +85,10 @@ export default function DashboardClient() {
           <Button type="button" onClick={openCreateCreator}>
             <Plus className="h-4 w-4" /> Nuevo creador
           </Button>
-          <LinkButton href="/metricas" variant="secondary">
+          <LinkButton href={path("/metricas")} variant="secondary">
             App livecoins
           </LinkButton>
-          <LinkButton href="/tareas" variant="secondary">
+          <LinkButton href={path("/tareas")} variant="secondary">
             Nueva tarea
           </LinkButton>
         </div>
@@ -165,7 +167,7 @@ export default function DashboardClient() {
                   Top performers del mes
                 </h2>
                 <Link
-                  href="/control-diamantes"
+                  href={path("/control-diamantes")}
                   className="text-sm text-accent hover:underline"
                 >
                   Ver control
@@ -209,7 +211,7 @@ export default function DashboardClient() {
                             />
                             {row.creatorId ? (
                               <Link
-                                href={`/creadores/${row.creatorId}`}
+                                href={path(`/creadores/${row.creatorId}`)}
                                 className="font-medium hover:text-accent"
                               >
                                 {row.name}
@@ -251,7 +253,7 @@ export default function DashboardClient() {
                     key={c.id}
                     className="rounded-xl border border-border-soft bg-bg px-3 py-2.5"
                   >
-                    <Link href={`/creadores/${c.id}`} className="block">
+                    <Link href={path(`/creadores/${c.id}`)} className="block">
                       <p className="text-sm font-medium">{c.name}</p>
                       <p className="text-xs text-warning">
                         Sin LIVE reciente (14+ días)

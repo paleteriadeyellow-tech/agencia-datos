@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const month = currentMonth();
   const { start, end } = monthRange(month);
@@ -16,28 +17,34 @@ export async function GET(req: NextRequest) {
   const prevMonth = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
   const prevRange = monthRange(prevMonth);
 
+  const agencyCreator = { agencySlug };
+
   const [creators, metrics, chartRows, agg, prevAgg] = await Promise.all([
     prisma.creator.findMany({
+      where: { agencySlug },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     prisma.metric.findMany({
-      where: { date: { gte: start, lte: end } },
+      where: { date: { gte: start, lte: end }, creator: agencyCreator },
       include: { creator: { select: { name: true } } },
       orderBy: { date: "desc" },
       take: 30,
     }),
     prisma.metric.findMany({
-      where: { date: { gte: start, lte: end } },
+      where: { date: { gte: start, lte: end }, creator: agencyCreator },
       select: { date: true, diamonds: true, hoursLive: true },
       orderBy: { date: "asc" },
     }),
     prisma.metric.aggregate({
-      where: { date: { gte: start, lte: end } },
+      where: { date: { gte: start, lte: end }, creator: agencyCreator },
       _sum: { diamonds: true, hoursLive: true, battles: true, peakViewers: true },
     }),
     prisma.metric.aggregate({
-      where: { date: { gte: prevRange.start, lte: prevRange.end } },
+      where: {
+        date: { gte: prevRange.start, lte: prevRange.end },
+        creator: agencyCreator,
+      },
       _sum: { diamonds: true, hoursLive: true },
     }),
   ]);

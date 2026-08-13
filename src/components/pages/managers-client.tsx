@@ -9,6 +9,7 @@ import { Button, Field, Panel, inputClass } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { createManager, deleteManager } from "@/lib/actions";
+import { useAgency } from "@/lib/use-agency";
 
 type ManagerRow = {
   id: string;
@@ -21,6 +22,7 @@ type ManagerRow = {
 
 export default function ManagersClient() {
   const { data: session } = useSession();
+  const { path } = useAgency();
   const { data, error, mutate } = usePanelData(PANEL.managers) as {
     data?: { managers: ManagerRow[] };
     error?: Error;
@@ -105,8 +107,8 @@ export default function ManagersClient() {
         </div>
         <p className="mb-4 text-sm text-text-muted">
           También pueden crearse solos en{" "}
-          <a href="/register" className="text-accent hover:underline">
-            /register
+          <a href={path("/register")} className="text-accent hover:underline">
+            {path("/register")}
           </a>
           ; al crear la cuenta aparecen aquí automáticamente.
         </p>

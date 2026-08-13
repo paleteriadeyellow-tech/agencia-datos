@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const { searchParams } = req.nextUrl;
   const q = searchParams.get("q") ?? undefined;
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
 
   const creators = await prisma.creator.findMany({
     where: {
+      agencySlug,
       AND: [
         q
           ? {

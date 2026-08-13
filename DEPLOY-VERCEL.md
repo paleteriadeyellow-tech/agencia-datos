@@ -44,7 +44,16 @@ git push
 
 1. Actualiza `NEXTAUTH_URL` con la URL real
 2. **Redeploy**
-3. Abre `/register` y crea el primer admin
+3. En local (con las URLs de Postgres en `.env`):
+
+```powershell
+npx prisma db push
+npx tsx prisma/assign-agency.ts
+```
+
+4. Abre la portada `/` → elige agencia → `/register` crea el primer admin **de esa agencia**
+
+**Multi-agencia:** Streamersfederation y El Árbol comparten la misma app; los datos no se mezclan (`agencySlug`).
 
 ## Local
 

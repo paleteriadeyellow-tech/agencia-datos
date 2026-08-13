@@ -17,6 +17,7 @@ import { PanelLoadError } from "@/components/panel-load-error";
 import { deleteCreator } from "@/lib/actions";
 import { whatsappUrl } from "@/lib/phone";
 import { isAdmin } from "@/lib/permissions";
+import { useAgency } from "@/lib/use-agency";
 
 type CreatorRow = {
   id: string;
@@ -68,6 +69,7 @@ function cell(row: Record<string, unknown>, ...keys: string[]) {
 
 export default function CreatorsClient() {
   const { data: session } = useSession();
+  const { path } = useAgency();
   const canEditCreators = isAdmin(session?.user?.role);
   const { openCreateCreator } = useQuickCreate();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -531,7 +533,7 @@ export default function CreatorsClient() {
                         size={28}
                       />
                       <Link
-                        href={`/creadores/${c.id}`}
+                        href={path(`/creadores/${c.id}`)}
                         className="truncate font-medium hover:text-accent"
                         title={c.name}
                       >

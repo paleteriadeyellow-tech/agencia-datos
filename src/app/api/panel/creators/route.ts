@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const sp = req.nextUrl.searchParams;
   const q = sp.get("q") ?? undefined;
@@ -21,6 +22,7 @@ export async function GET(req: NextRequest) {
   const [creators, niches, groups, managers, monthDiamonds] = await Promise.all([
     prisma.creator.findMany({
       where: {
+        agencySlug,
         AND: [
           q
             ? {
@@ -39,23 +41,28 @@ export async function GET(req: NextRequest) {
       include: { manager: { select: { name: true } } },
     }),
     prisma.creator.findMany({
+      where: { agencySlug },
       distinct: ["niche"],
       select: { niche: true },
       orderBy: { niche: "asc" },
     }),
     prisma.creator.findMany({
-      where: { groupName: { not: null } },
+      where: { agencySlug, groupName: { not: null } },
       distinct: ["groupName"],
       select: { groupName: true },
       orderBy: { groupName: "asc" },
     }),
     prisma.user.findMany({
+      where: { agencySlug },
       select: { id: true, name: true, role: true },
       orderBy: { name: "asc" },
     }),
     prisma.metric.groupBy({
       by: ["creatorId"],
-      where: { date: { gte: start, lte: end } },
+      where: {
+        date: { gte: start, lte: end },
+        creator: { agencySlug },
+      },
       _sum: { diamonds: true },
     }),
   ]);

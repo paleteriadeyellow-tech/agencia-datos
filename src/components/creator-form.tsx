@@ -6,6 +6,7 @@ import { useSoftRefresh } from "@/lib/use-soft-refresh";
 import { Button, Field, inputClass, Panel } from "@/components/ui";
 import { CREATOR_STATUSES, NICHES } from "@/lib/utils";
 import { normalizePhone } from "@/lib/phone";
+import { useAgency } from "@/lib/use-agency";
 
 type Manager = { id: string; name: string };
 type CreatorData = {
@@ -36,6 +37,7 @@ export function CreatorForm({
   onCancel?: () => void;
 }) {
   const { softPush, pending } = useSoftRefresh();
+  const { path } = useAgency();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState(initial?.phone ?? "");
@@ -68,7 +70,7 @@ export function CreatorForm({
       onDone(id);
       return;
     }
-    softPush(`/creadores/${id}`);
+    softPush(path(`/creadores/${id}`));
   }
 
   async function onDelete() {
@@ -86,7 +88,7 @@ export function CreatorForm({
       onDone();
       return;
     }
-    softPush("/creadores");
+    softPush(path("/creadores"));
   }
 
   function onPhoneBlur() {

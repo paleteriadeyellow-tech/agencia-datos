@@ -18,12 +18,14 @@ import {
   Radio,
   Menu,
   X,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { filterNavByRole } from "@/lib/permissions";
 import { useNavPending } from "@/components/app-providers";
+import { useAgency } from "@/lib/use-agency";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -45,6 +47,7 @@ export function Sidebar() {
   const router = useRouter();
   const { data: session } = useSession();
   const { pending, startNav } = useNavPending();
+  const { slug, shortName, path } = useAgency();
   const [open, setOpen] = useState(false);
 
   const role = session?.user?.role;
@@ -52,9 +55,9 @@ export function Sidebar() {
 
   useEffect(() => {
     ["/dashboard", "/creadores", "/metricas"].forEach((href) =>
-      router.prefetch(href)
+      router.prefetch(path(href))
     );
-  }, [router]);
+  }, [router, path]);
 
   const content = (
     <aside className="flex h-full w-64 flex-col border-r border-border-soft bg-bg-elevated">
@@ -62,31 +65,32 @@ export function Sidebar() {
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-white">
           <Radio className="h-5 w-5" />
         </div>
-        <div>
-          <p className="font-[family-name:var(--font-syne)] text-lg font-bold leading-none tracking-tight">
-            Backstage
+        <div className="min-w-0">
+          <p className="truncate font-[family-name:var(--font-syne)] text-lg font-bold leading-none tracking-tight">
+            {shortName}
           </p>
           <p className="mt-1 text-xs text-text-muted">
             {pending
               ? "Cargando…"
               : role === "admin"
-                ? "Admin"
+                ? "Admin · Backstage"
                 : role === "manager"
-                  ? "Manager"
-                  : "Agency Ops"}
+                  ? "Manager · Backstage"
+                  : "Backstage"}
           </p>
         </div>
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {visibleNav.map((item) => {
+          const href = path(item.href);
           const active =
-            pathname === item.href || pathname.startsWith(item.href + "/");
+            pathname === href || pathname.startsWith(href + "/");
           const Icon = item.icon;
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={href}
               prefetch
               onClick={(e) => {
                 if (active) {
@@ -116,8 +120,15 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-border-soft p-4 text-xs text-text-muted">
-        TikTok LIVE Creator Network ops
+      <div className="space-y-2 border-t border-border-soft p-4">
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-xs text-text-muted transition hover:text-accent"
+        >
+          <ArrowLeftRight className="h-3.5 w-3.5" />
+          Cambiar agencia
+        </Link>
+        <p className="text-[10px] text-text-muted/70">Agencia: {slug}</p>
       </div>
     </aside>
   );

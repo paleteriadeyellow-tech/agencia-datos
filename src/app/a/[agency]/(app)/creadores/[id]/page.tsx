@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
+import { isAgencySlug, agencyPath } from "@/lib/agencies";
 import { TopBar } from "@/components/top-bar";
 import { CreatorForm } from "@/components/creator-form";
 import { StatusBadge } from "@/components/status-badge";
@@ -13,13 +14,19 @@ import { formatDate, formatNumber } from "@/lib/utils";
 export default async function CreatorDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ agency: string; id: string }>;
 }) {
-  const { id } = await params;
+  const { agency, id } = await params;
+  if (!isAgencySlug(agency)) notFound();
+
   const session = await getServerSession(authOptions);
+  if (session?.user?.agencySlug && session.user.agencySlug !== agency) {
+    notFound();
+  }
+
   const canEdit = isAdmin(session?.user?.role);
-  const creator = await prisma.creator.findUnique({
-    where: { id },
+  const creator = await prisma.creator.findFirst({
+    where: { id, agencySlug: agency },
     include: {
       manager: true,
       metrics: { orderBy: { date: "desc" }, take: 10 },
@@ -32,6 +39,7 @@ export default async function CreatorDetailPage({
   if (!creator) notFound();
 
   const managers = await prisma.user.findMany({
+    where: { agencySlug: agency },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -89,7 +97,10 @@ export default async function CreatorDetailPage({
               </li>
             ))}
           </ul>
-          <Link href="/metricas" className="mt-3 inline-block text-sm text-accent">
+          <Link
+            href={agencyPath(agency, "/metricas")}
+            className="mt-3 inline-block text-sm text-accent"
+          >
             Registrar métrica →
           </Link>
         </Panel>

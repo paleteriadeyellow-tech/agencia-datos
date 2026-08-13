@@ -1,14 +1,16 @@
 "use client";
 
+import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Radio } from "lucide-react";
-import { registerManager } from "@/lib/actions";
 import { Button, Field, inputClass } from "@/components/ui";
+import { useAgency } from "@/lib/use-agency";
 
-export default function RegisterPage() {
+export default function LoginPage() {
   const router = useRouter();
+  const { slug, name, path } = useAgency();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -17,13 +19,19 @@ export default function RegisterPage() {
     setLoading(true);
     setError("");
     const form = new FormData(e.currentTarget);
-    const res = await registerManager(form);
+    const res = await signIn("credentials", {
+      email: String(form.get("email")),
+      password: String(form.get("password")),
+      agencySlug: slug,
+      redirect: false,
+    });
     setLoading(false);
-    if (res.error) {
-      setError(res.error);
+    if (res?.error) {
+      setError("Email o contraseña incorrectos.");
       return;
     }
-    router.push("/login");
+    router.push(path("/dashboard"));
+    router.refresh();
   }
 
   return (
@@ -35,16 +43,13 @@ export default function RegisterPage() {
           </div>
           <div>
             <h1 className="font-[family-name:var(--font-syne)] text-2xl font-bold">
-              Crear manager
+              {name}
             </h1>
-            <p className="text-sm text-text-muted">Registro de acceso a la agencia</p>
+            <p className="text-sm text-text-muted">Acceso managers · Backstage</p>
           </div>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
-          <Field label="Nombre">
-            <input name="name" required className={inputClass} placeholder="Tu nombre" />
-          </Field>
           <Field label="Email">
             <input
               name="email"
@@ -59,21 +64,24 @@ export default function RegisterPage() {
               name="password"
               type="password"
               required
-              minLength={6}
               className={inputClass}
-              placeholder="Mínimo 6 caracteres"
+              placeholder="••••••••"
             />
           </Field>
           {error && <p className="text-sm text-danger">{error}</p>}
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Creando…" : "Crear cuenta"}
+            {loading ? "Entrando…" : "Entrar al panel"}
           </Button>
         </form>
 
         <p className="mt-6 text-center text-sm text-text-muted">
-          ¿Ya tienes cuenta?{" "}
-          <Link href="/login" className="text-accent hover:underline">
-            Iniciar sesión
+          ¿Primera vez?{" "}
+          <Link href={path("/register")} className="text-accent hover:underline">
+            Crear cuenta
+          </Link>
+          {" · "}
+          <Link href="/" className="text-accent hover:underline">
+            Cambiar agencia
           </Link>
         </p>
       </div>

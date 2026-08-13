@@ -70,7 +70,8 @@ function cleanGroup(value?: string | null) {
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  if (auth.token?.role !== "admin") {
+  const { agencySlug, token } = auth;
+  if (token.role !== "admin") {
     return NextResponse.json(
       { error: "Solo un admin puede importar creadores." },
       { status: 403 }
@@ -121,6 +122,7 @@ export async function POST(req: NextRequest) {
     if (diamonds > 0) withDiamonds += 1;
 
     const data = {
+      agencySlug,
       name: displayName,
       phone,
       niche,
@@ -136,12 +138,12 @@ export async function POST(req: NextRequest) {
     const existing =
       (tiktok
         ? await prisma.creator.findFirst({
-            where: { tiktokUser: tiktok },
+            where: { agencySlug, tiktokUser: tiktok },
             select: { id: true },
           })
         : null) ||
       (await prisma.creator.findFirst({
-        where: { phone },
+        where: { agencySlug, phone },
         select: { id: true },
       }));
 
@@ -178,6 +180,7 @@ export async function POST(req: NextRequest) {
         where: {
           creatorId,
           date: { gte: start, lte: end },
+          creator: { agencySlug },
         },
         orderBy: { date: "desc" },
       });

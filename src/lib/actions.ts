@@ -6,11 +6,26 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { formatPhoneInputValue } from "@/lib/phone";
+import { isAgencySlug, type AgencySlug } from "@/lib/agencies";
+
+function revalidateAgency(agencySlug: string, ...paths: string[]) {
+  for (const p of paths) {
+    const clean = p.startsWith("/") ? p : `/${p}`;
+    revalidatePath(`/a/${agencySlug}${clean}`);
+  }
+}
 
 async function requireSession() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) throw new Error("No autenticado");
-  return session;
+  if (!session?.user?.id || !session.user.agencySlug) {
+    throw new Error("No autenticado");
+  }
+  if (!isAgencySlug(session.user.agencySlug)) {
+    throw new Error("Sesión sin agencia");
+  }
+  return session as typeof session & {
+    user: { id: string; role: string; agencySlug: AgencySlug };
+  };
 }
 
 async function requireAdmin() {
@@ -25,19 +40,26 @@ export async function registerManager(formData: FormData) {
   const name = String(formData.get("name") || "").trim();
   const email = String(formData.get("email") || "").trim().toLowerCase();
   const password = String(formData.get("password") || "");
+  const agencySlug = String(formData.get("agencySlug") || "").trim();
 
+  if (!isAgencySlug(agencySlug)) {
+    return { error: "Agencia no válida." };
+  }
   if (!name || !email || password.length < 6) {
     return { error: "Completa todos los campos (mín. 6 caracteres en la contraseña)." };
   }
 
-  const exists = await prisma.user.findUnique({ where: { email } });
-  if (exists) return { error: "Ese email ya está registrado." };
+  const exists = await prisma.user.findUnique({
+    where: { agencySlug_email: { agencySlug, email } },
+  });
+  if (exists) return { error: "Ese email ya está registrado en esta agencia." };
 
-  const count = await prisma.user.count();
+  const count = await prisma.user.count({ where: { agencySlug } });
   const passwordHash = await bcrypt.hash(password, 10);
 
   await prisma.user.create({
     data: {
+      agencySlug,
       name,
       email,
       passwordHash,
@@ -45,15 +67,14 @@ export async function registerManager(formData: FormData) {
     },
   });
 
-  revalidatePath("/managers");
-  revalidatePath("/creadores");
+  revalidateAgency(agencySlug, "/managers", "/creadores");
   return { ok: true };
 }
 
-/** Crear manager desde el panel (ya autenticado) */
 export async function createManager(formData: FormData) {
   const gate = await requireAdmin();
   if (gate.error) return { error: gate.error };
+  const agencySlug = gate.session!.user.agencySlug;
 
   const name = String(formData.get("name") || "").trim();
   const email = String(formData.get("email") || "").trim().toLowerCase();
@@ -64,12 +85,15 @@ export async function createManager(formData: FormData) {
     return { error: "Completa todos los campos (mín. 6 caracteres en la contraseña)." };
   }
 
-  const exists = await prisma.user.findUnique({ where: { email } });
-  if (exists) return { error: "Ese email ya está registrado." };
+  const exists = await prisma.user.findUnique({
+    where: { agencySlug_email: { agencySlug, email } },
+  });
+  if (exists) return { error: "Ese email ya está registrado en esta agencia." };
 
   const passwordHash = await bcrypt.hash(password, 10);
   await prisma.user.create({
     data: {
+      agencySlug,
       name,
       email,
       passwordHash,
@@ -77,8 +101,7 @@ export async function createManager(formData: FormData) {
     },
   });
 
-  revalidatePath("/managers");
-  revalidatePath("/creadores");
+  revalidateAgency(agencySlug, "/managers", "/creadores");
   return { ok: true };
 }
 
@@ -86,30 +109,35 @@ export async function deleteManager(id: string) {
   const gate = await requireAdmin();
   if (gate.error) return { error: gate.error };
   const session = gate.session!;
+  const agencySlug = session.user.agencySlug;
 
   if (session.user.id === id) {
     return { error: "No puedes eliminar tu propia cuenta." };
   }
 
-  const user = await prisma.user.findUnique({ where: { id } });
+  const user = await prisma.user.findFirst({
+    where: { id, agencySlug },
+  });
   if (!user) return { error: "Manager no encontrado." };
 
-  const assigned = await prisma.creator.count({ where: { managerId: id } });
+  const assigned = await prisma.creator.count({
+    where: { managerId: id, agencySlug },
+  });
   if (assigned > 0) {
     await prisma.creator.updateMany({
-      where: { managerId: id },
+      where: { managerId: id, agencySlug },
       data: { managerId: null },
     });
   }
 
   await prisma.user.delete({ where: { id } });
-  revalidatePath("/managers");
-  revalidatePath("/creadores");
+  revalidateAgency(agencySlug, "/managers", "/creadores");
   return { ok: true };
 }
 
 export async function createCreator(formData: FormData) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
   const name = String(formData.get("name") || "").trim();
   const phoneRaw = String(formData.get("phone") || "").trim();
   const niche = String(formData.get("niche") || "").trim();
@@ -125,10 +153,18 @@ export async function createCreator(formData: FormData) {
     return { error: "Nombre, teléfono, nicho y fecha de incorporación son obligatorios.", ok: undefined, id: undefined };
   }
 
+  if (managerId) {
+    const mgr = await prisma.user.findFirst({
+      where: { id: managerId, agencySlug },
+    });
+    if (!mgr) return { error: "Manager no válido para esta agencia.", ok: undefined, id: undefined };
+  }
+
   const phone = formatPhoneInputValue(phoneRaw, country) || phoneRaw;
 
   const creator = await prisma.creator.create({
     data: {
+      agencySlug,
       name,
       phone,
       niche,
@@ -142,18 +178,29 @@ export async function createCreator(formData: FormData) {
     },
   });
 
-  revalidatePath("/creadores");
-  revalidatePath("/dashboard");
+  revalidateAgency(agencySlug, "/creadores", "/dashboard");
   return { ok: true as const, id: creator.id, error: undefined as string | undefined };
 }
 
 export async function updateCreator(id: string, formData: FormData) {
   const gate = await requireAdmin();
   if (gate.error) return { error: gate.error, ok: undefined, id: undefined };
+  const agencySlug = gate.session!.user.agencySlug;
+
+  const existing = await prisma.creator.findFirst({ where: { id, agencySlug } });
+  if (!existing) return { error: "Creador no encontrado.", ok: undefined, id: undefined };
 
   const phoneRaw = String(formData.get("phone") || "").trim();
   const country = String(formData.get("country") || "MX").trim();
   const phone = formatPhoneInputValue(phoneRaw, country) || phoneRaw;
+  const managerId = String(formData.get("managerId") || "") || null;
+
+  if (managerId) {
+    const mgr = await prisma.user.findFirst({
+      where: { id: managerId, agencySlug },
+    });
+    if (!mgr) return { error: "Manager no válido.", ok: undefined, id: undefined };
+  }
 
   await prisma.creator.update({
     where: { id },
@@ -167,29 +214,35 @@ export async function updateCreator(id: string, formData: FormData) {
       status: String(formData.get("status") || "activo"),
       groupName: String(formData.get("groupName") || "").trim() || null,
       notes: String(formData.get("notes") || "").trim() || null,
-      managerId: String(formData.get("managerId") || "") || null,
+      managerId,
     },
   });
-  revalidatePath("/creadores");
-  revalidatePath(`/creadores/${id}`);
-  revalidatePath("/dashboard");
+  revalidateAgency(agencySlug, "/creadores", `/creadores/${id}`, "/dashboard");
   return { ok: true as const, id, error: undefined as string | undefined };
 }
 
 export async function deleteCreator(id: string) {
   const gate = await requireAdmin();
   if (gate.error) return { error: gate.error };
+  const agencySlug = gate.session!.user.agencySlug;
+  const existing = await prisma.creator.findFirst({ where: { id, agencySlug } });
+  if (!existing) return { error: "Creador no encontrado." };
   await prisma.creator.delete({ where: { id } });
-  revalidatePath("/creadores");
-  revalidatePath("/dashboard");
+  revalidateAgency(agencySlug, "/creadores", "/dashboard");
   return { ok: true };
 }
 
 export async function createMetric(formData: FormData) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
   const creatorId = String(formData.get("creatorId") || "");
   const date = String(formData.get("date") || "");
   if (!creatorId || !date) return { error: "Creador y fecha son obligatorios." };
+
+  const creator = await prisma.creator.findFirst({
+    where: { id: creatorId, agencySlug },
+  });
+  if (!creator) return { error: "Creador no válido." };
 
   await prisma.metric.create({
     data: {
@@ -203,16 +256,23 @@ export async function createMetric(formData: FormData) {
     },
   });
 
-  revalidatePath("/metricas");
-  revalidatePath("/dashboard");
-  revalidatePath(`/creadores/${creatorId}`);
+  revalidateAgency(agencySlug, "/metricas", "/dashboard", `/creadores/${creatorId}`);
   return { ok: true };
 }
 
 export async function createTask(formData: FormData) {
   const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
   const title = String(formData.get("title") || "").trim();
   if (!title) return { error: "El título es obligatorio." };
+
+  const creatorId = String(formData.get("creatorId") || "") || null;
+  if (creatorId) {
+    const c = await prisma.creator.findFirst({
+      where: { id: creatorId, agencySlug },
+    });
+    if (!c) return { error: "Creador no válido." };
+  }
 
   const due = String(formData.get("dueDate") || "");
   const periodRaw = String(formData.get("period") || "");
@@ -222,9 +282,10 @@ export async function createTask(formData: FormData) {
 
   await prisma.task.create({
     data: {
+      agencySlug,
       title,
       description: String(formData.get("description") || "").trim() || null,
-      creatorId: String(formData.get("creatorId") || "") || null,
+      creatorId,
       assigneeId: session.user.id,
       priority: String(formData.get("priority") || "media"),
       status: String(formData.get("status") || "pendiente"),
@@ -233,21 +294,23 @@ export async function createTask(formData: FormData) {
     },
   });
 
-  revalidatePath("/tareas");
-  revalidatePath("/dashboard");
+  revalidateAgency(agencySlug, "/tareas", "/dashboard");
   return { ok: true };
 }
 
 export async function updateTaskStatus(id: string, status: string) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
+  const task = await prisma.task.findFirst({ where: { id, agencySlug } });
+  if (!task) return { error: "Tarea no encontrada." };
   await prisma.task.update({ where: { id }, data: { status } });
-  revalidatePath("/tareas");
-  revalidatePath("/dashboard");
+  revalidateAgency(agencySlug, "/tareas", "/dashboard");
   return { ok: true };
 }
 
 export async function createCampaign(formData: FormData) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
   const name = String(formData.get("name") || "").trim();
   const startDate = String(formData.get("startDate") || "");
   const endDate = String(formData.get("endDate") || "");
@@ -257,6 +320,7 @@ export async function createCampaign(formData: FormData) {
 
   const campaign = await prisma.campaign.create({
     data: {
+      agencySlug,
       name,
       description: String(formData.get("description") || "").trim() || null,
       startDate: new Date(startDate),
@@ -269,20 +333,28 @@ export async function createCampaign(formData: FormData) {
 
   const creatorIds = formData.getAll("creatorIds").map(String).filter(Boolean);
   if (creatorIds.length) {
-    await prisma.campaignCreator.createMany({
-      data: creatorIds.map((creatorId) => ({
-        campaignId: campaign.id,
-        creatorId,
-      })),
+    const valid = await prisma.creator.findMany({
+      where: { agencySlug, id: { in: creatorIds } },
+      select: { id: true },
     });
+    const ids = valid.map((c) => c.id);
+    if (ids.length) {
+      await prisma.campaignCreator.createMany({
+        data: ids.map((creatorId) => ({
+          campaignId: campaign.id,
+          creatorId,
+        })),
+      });
+    }
   }
 
-  revalidatePath("/campanas");
+  revalidateAgency(agencySlug, "/campanas");
   return { ok: true };
 }
 
 export async function updateCampaign(formData: FormData) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
   const id = String(formData.get("id") || "").trim();
   const name = String(formData.get("name") || "").trim();
   const startDate = String(formData.get("startDate") || "");
@@ -290,6 +362,11 @@ export async function updateCampaign(formData: FormData) {
   if (!id || !name || !startDate || !endDate) {
     return { error: "ID, nombre y fechas son obligatorios." };
   }
+
+  const existing = await prisma.campaign.findFirst({
+    where: { id, agencySlug },
+  });
+  if (!existing) return { error: "Campaña no encontrada." };
 
   await prisma.campaign.update({
     where: { id },
@@ -307,23 +384,35 @@ export async function updateCampaign(formData: FormData) {
   const creatorIds = formData.getAll("creatorIds").map(String).filter(Boolean);
   await prisma.campaignCreator.deleteMany({ where: { campaignId: id } });
   if (creatorIds.length) {
-    await prisma.campaignCreator.createMany({
-      data: creatorIds.map((creatorId) => ({
-        campaignId: id,
-        creatorId,
-      })),
+    const valid = await prisma.creator.findMany({
+      where: { agencySlug, id: { in: creatorIds } },
+      select: { id: true },
     });
+    const ids = valid.map((c) => c.id);
+    if (ids.length) {
+      await prisma.campaignCreator.createMany({
+        data: ids.map((creatorId) => ({
+          campaignId: id,
+          creatorId,
+        })),
+      });
+    }
   }
 
-  revalidatePath("/campanas");
+  revalidateAgency(agencySlug, "/campanas");
   return { ok: true };
 }
 
 export async function deleteCampaign(id: string) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
   if (!id) return { error: "Falta id" };
+  const existing = await prisma.campaign.findFirst({
+    where: { id, agencySlug },
+  });
+  if (!existing) return { error: "Campaña no encontrada." };
   await prisma.campaign.delete({ where: { id } });
-  revalidatePath("/campanas");
+  revalidateAgency(agencySlug, "/campanas");
   return { ok: true };
 }
 
@@ -332,17 +421,23 @@ export async function updateCampaignProgress(
   diamonds: number,
   hours: number
 ) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
+  const row = await prisma.campaignCreator.findFirst({
+    where: { id: campaignCreatorId, campaign: { agencySlug } },
+  });
+  if (!row) return { error: "Registro no encontrado." };
   await prisma.campaignCreator.update({
     where: { id: campaignCreatorId },
     data: { progressDiamonds: diamonds, progressHours: hours },
   });
-  revalidatePath("/campanas");
+  revalidateAgency(agencySlug, "/campanas");
   return { ok: true };
 }
 
 export async function upsertSettlement(formData: FormData) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
   const creatorId = String(formData.get("creatorId") || "");
   const month = String(formData.get("month") || "");
   const diamonds = Number(formData.get("diamonds") || 0);
@@ -355,9 +450,15 @@ export async function upsertSettlement(formData: FormData) {
 
   if (!creatorId || !month) return { error: "Creador y mes son obligatorios." };
 
+  const creator = await prisma.creator.findFirst({
+    where: { id: creatorId, agencySlug },
+  });
+  if (!creator) return { error: "Creador no válido." };
+
   await prisma.settlement.upsert({
     where: { creatorId_month: { creatorId, month } },
     create: {
+      agencySlug,
       creatorId,
       month,
       diamonds,
@@ -383,35 +484,48 @@ export async function upsertSettlement(formData: FormData) {
     },
   });
 
-  revalidatePath("/finanzas");
+  revalidateAgency(agencySlug, "/finanzas");
   return { ok: true };
 }
 
 export async function deleteSettlement(id: string) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
+  const row = await prisma.settlement.findFirst({
+    where: { id, agencySlug },
+  });
+  if (!row) return { error: "Liquidación no encontrada." };
   await prisma.settlement.delete({ where: { id } });
-  revalidatePath("/finanzas");
+  revalidateAgency(agencySlug, "/finanzas");
   return { ok: true };
 }
 
 export async function clearAllSettlements() {
-  await requireSession();
-  const result = await prisma.settlement.deleteMany();
-  revalidatePath("/finanzas");
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
+  const result = await prisma.settlement.deleteMany({ where: { agencySlug } });
+  revalidateAgency(agencySlug, "/finanzas");
   return { ok: true, count: result.count };
 }
 
 export async function createContract(formData: FormData) {
-  await requireSession();
+  const session = await requireSession();
+  const agencySlug = session.user.agencySlug;
   const creatorId = String(formData.get("creatorId") || "");
   const title = String(formData.get("title") || "").trim();
   if (!creatorId || !title) return { error: "Creador y título son obligatorios." };
+
+  const creator = await prisma.creator.findFirst({
+    where: { id: creatorId, agencySlug },
+  });
+  if (!creator) return { error: "Creador no válido." };
 
   const startDate = String(formData.get("startDate") || "");
   const endDate = String(formData.get("endDate") || "");
 
   await prisma.contract.create({
     data: {
+      agencySlug,
       creatorId,
       title,
       status: String(formData.get("status") || "activo"),
@@ -422,6 +536,6 @@ export async function createContract(formData: FormData) {
     },
   });
 
-  revalidatePath("/contratos");
+  revalidateAgency(agencySlug, "/contratos");
   return { ok: true };
 }

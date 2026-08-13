@@ -18,6 +18,7 @@ async function main() {
 
   const admin = await prisma.user.create({
     data: {
+      agencySlug: "streamersfederation",
       name: "Admin Agencia",
       email: "admin@agencia.com",
       passwordHash,
@@ -27,6 +28,7 @@ async function main() {
 
   const manager = await prisma.user.create({
     data: {
+      agencySlug: "streamersfederation",
       name: "Sofía Manager",
       email: "sofia@agencia.com",
       passwordHash: await bcrypt.hash("manager123", 10),
@@ -67,6 +69,7 @@ async function main() {
     join.setDate(join.getDate() - (20 + i * 7));
     const creator = await prisma.creator.create({
       data: {
+        agencySlug: "streamersfederation",
         name,
         phone,
         niche: niches[i % niches.length],
@@ -119,6 +122,7 @@ async function main() {
   await prisma.task.createMany({
     data: [
       {
+        agencySlug: "streamersfederation",
         title: "Onboarding documentos",
         description: "Pedir INE y datos bancarios",
         creatorId: creators[0].id,
@@ -128,6 +132,7 @@ async function main() {
         dueDate: new Date(),
       },
       {
+        agencySlug: "streamersfederation",
         title: "Coaching de horarios",
         creatorId: creators[2].id,
         assigneeId: manager.id,
@@ -136,6 +141,7 @@ async function main() {
         dueDate: new Date(Date.now() + 86400000 * 2),
       },
       {
+        agencySlug: "streamersfederation",
         title: "Revisar PK strategy",
         creatorId: creators[4].id,
         assigneeId: admin.id,
@@ -144,6 +150,7 @@ async function main() {
         dueDate: new Date(Date.now() + 86400000),
       },
       {
+        agencySlug: "streamersfederation",
         title: "Actualizar roster Backstage",
         assigneeId: manager.id,
         priority: "baja",
@@ -154,6 +161,7 @@ async function main() {
 
   const campaign = await prisma.campaign.create({
     data: {
+      agencySlug: "streamersfederation",
       name: "Creator League Agosto",
       description: "Meta interna de diamantes y horas LIVE del mes",
       startDate: new Date(today.getFullYear(), today.getMonth(), 1),
@@ -180,6 +188,7 @@ async function main() {
   for (const creator of creators.slice(0, 4)) {
     await prisma.contract.create({
       data: {
+        agencySlug: "streamersfederation",
         creatorId: creator.id,
         title: `Contrato management ${today.getFullYear()}`,
         status: "activo",

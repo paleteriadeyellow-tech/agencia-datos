@@ -14,6 +14,7 @@ function parsePeriod(raw: string | null) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
   const { start, end } = monthRange(period);
@@ -29,16 +30,18 @@ export async function GET(req: NextRequest) {
     pendingTasks,
     activeWithLatest,
   ] = await Promise.all([
-    prisma.creator.count(),
-    prisma.creator.count({ where: { status: "activo" } }),
-    prisma.creator.count({ where: { joinDate: { gte: start, lte: end } } }),
+    prisma.creator.count({ where: { agencySlug } }),
+    prisma.creator.count({ where: { agencySlug, status: "activo" } }),
+    prisma.creator.count({
+      where: { agencySlug, joinDate: { gte: start, lte: end } },
+    }),
     prisma.diamondControl.aggregate({
-      where: { period },
+      where: { agencySlug, period },
       _sum: { diamonds: true, hours: true },
       _count: { _all: true },
     }),
     prisma.diamondControl.findMany({
-      where: { period },
+      where: { agencySlug, period },
       include: {
         creator: { select: { id: true, name: true, niche: true } },
       },
@@ -46,13 +49,16 @@ export async function GET(req: NextRequest) {
       take: 5,
     }),
     prisma.task.findMany({
-      where: { status: { in: ["pendiente", "en_progreso"] } },
+      where: {
+        agencySlug,
+        status: { in: ["pendiente", "en_progreso"] },
+      },
       include: { creator: { select: { name: true } } },
       orderBy: { dueDate: "asc" },
       take: 6,
     }),
     prisma.creator.findMany({
-      where: { status: "activo" },
+      where: { agencySlug, status: "activo" },
       select: {
         id: true,
         name: true,

@@ -22,14 +22,17 @@ function periodsBetween(start: Date, end: Date) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const [creators, campaigns, settlements, contracts, diamondRows] =
     await Promise.all([
     prisma.creator.findMany({
+      where: { agencySlug },
       select: { id: true, name: true, tiktokUser: true, diamonds: true },
       orderBy: { diamonds: "desc" },
     }),
     prisma.campaign.findMany({
+      where: { agencySlug },
       include: {
         creators: {
           include: {
@@ -40,15 +43,26 @@ export async function GET(req: NextRequest) {
       orderBy: { startDate: "desc" },
     }),
     prisma.settlement.findMany({
+      where: { agencySlug },
       include: { creator: { select: { id: true, name: true } } },
       orderBy: [{ month: "desc" }, { createdAt: "desc" }],
     }),
     prisma.contract.findMany({
+      where: { agencySlug },
       include: { creator: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.diamondControl.findMany({
-      select: { period: true, username: true, diamonds: true, hours: true, creatorId: true, id: true, creator: { select: { id: true, name: true, tiktokUser: true } } },
+      where: { agencySlug },
+      select: {
+        period: true,
+        username: true,
+        diamonds: true,
+        hours: true,
+        creatorId: true,
+        id: true,
+        creator: { select: { id: true, name: true, tiktokUser: true } },
+      },
     }),
   ]);
 

@@ -7,18 +7,20 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  if (auth.token?.role !== "admin") {
+  const { agencySlug, token } = auth;
+  if (token.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const managers = await prisma.user.findMany({
+    where: { agencySlug },
     select: {
       id: true,
       name: true,
       email: true,
       role: true,
       createdAt: true,
-      _count: { select: { creators: true } },
+      _count: { select: { creators: { where: { agencySlug } } } },
     },
     orderBy: { name: "asc" },
   });

@@ -14,22 +14,24 @@ function parsePeriod(raw: string | null) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
 
   // Backfill: tareas sin periodo → periodo solicitado
   await prisma.task.updateMany({
-    where: { period: "" },
+    where: { agencySlug, period: "" },
     data: { period },
   });
 
   const [creators, tasks] = await Promise.all([
     prisma.creator.findMany({
+      where: { agencySlug },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     prisma.task.findMany({
-      where: { period },
+      where: { agencySlug, period },
       include: { creator: { select: { name: true } } },
       orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     }),
@@ -59,6 +61,7 @@ const patchSchema = z.object({
 export async function PATCH(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   let body: unknown;
   try {
@@ -72,8 +75,15 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
   }
 
+  const existing = await prisma.task.findFirst({
+    where: { id: parsed.data.id, agencySlug },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+
   await prisma.task.update({
-    where: { id: parsed.data.id },
+    where: { id: existing.id },
     data: { status: parsed.data.status },
   });
 
@@ -93,6 +103,7 @@ const createSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug, token } = auth;
 
   let body: unknown;
   try {
@@ -106,12 +117,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
   }
 
+  let creatorId: string | null = parsed.data.creatorId || null;
+  if (creatorId) {
+    const creator = await prisma.creator.findFirst({
+      where: { id: creatorId, agencySlug },
+      select: { id: true },
+    });
+    if (!creator) {
+      return NextResponse.json({ error: "Creador no encontrado" }, { status: 404 });
+    }
+    creatorId = creator.id;
+  }
+
+  const assigneeId =
+    (typeof token.id === "string" && token.id) ||
+    (typeof token.sub === "string" && token.sub) ||
+    null;
+
   const task = await prisma.task.create({
     data: {
+      agencySlug,
       title: parsed.data.title.trim(),
       description: parsed.data.description?.trim() || null,
-      creatorId: parsed.data.creatorId || null,
-      assigneeId: (auth.token?.sub as string | undefined) || null,
+      creatorId,
+      assigneeId,
       priority: parsed.data.priority || "media",
       status: parsed.data.status || "pendiente",
       period: parsed.data.period,

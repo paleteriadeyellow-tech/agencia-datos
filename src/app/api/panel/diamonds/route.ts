@@ -27,10 +27,11 @@ function parseNum(v: unknown) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
   const rows = await prisma.diamondControl.findMany({
-    where: { period },
+    where: { agencySlug, period },
     include: {
       creator: { select: { id: true, name: true, tiktokUser: true } },
     },
@@ -71,6 +72,7 @@ const upsertSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   let body: unknown;
   try {
@@ -93,6 +95,7 @@ export async function POST(req: NextRequest) {
     let skipped = 0;
 
     const creators = await prisma.creator.findMany({
+      where: { agencySlug },
       select: { id: true, name: true, tiktokUser: true },
     });
     const byUser = new Map<string, string>();
@@ -124,8 +127,11 @@ export async function POST(req: NextRequest) {
       const creatorId = byUser.get(username);
 
       await prisma.diamondControl.upsert({
-        where: { period_username: { period, username } },
+        where: {
+          agencySlug_period_username: { agencySlug, period, username },
+        },
         create: {
+          agencySlug,
           period,
           username,
           diamonds,
@@ -164,6 +170,7 @@ export async function POST(req: NextRequest) {
   }
 
   const creators = await prisma.creator.findMany({
+    where: { agencySlug },
     select: { id: true, name: true, tiktokUser: true },
   });
   const creator = creators.find(
@@ -184,16 +191,27 @@ export async function POST(req: NextRequest) {
 
   let row;
   if (parsed.data.id) {
+    const existing = await prisma.diamondControl.findFirst({
+      where: { id: parsed.data.id, agencySlug },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
     row = await prisma.diamondControl.update({
-      where: { id: parsed.data.id },
+      where: { id: existing.id },
       data,
     });
   } else {
     row = await prisma.diamondControl.upsert({
       where: {
-        period_username: { period: parsed.data.period, username },
+        agencySlug_period_username: {
+          agencySlug,
+          period: parsed.data.period,
+          username,
+        },
       },
       create: {
+        agencySlug,
         period: parsed.data.period,
         username,
         diamonds: parsed.data.diamonds ?? 0,
@@ -219,11 +237,18 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  const { agencySlug } = auth;
 
   const id = req.nextUrl.searchParams.get("id");
   if (!id) {
     return NextResponse.json({ error: "Falta id" }, { status: 400 });
   }
-  await prisma.diamondControl.delete({ where: { id } });
+  const existing = await prisma.diamondControl.findFirst({
+    where: { id, agencySlug },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  await prisma.diamondControl.delete({ where: { id: existing.id } });
   return NextResponse.json({ ok: true });
 }
