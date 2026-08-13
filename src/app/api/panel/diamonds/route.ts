@@ -4,6 +4,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function parsePeriod(raw: string | null) {
   if (!raw || !/^\d{4}-\d{2}$/.test(raw)) {
@@ -91,72 +92,150 @@ export async function POST(req: NextRequest) {
       String((body as { period?: string }).period || "")
     );
     const rows = (body as { rows: Record<string, unknown>[] }).rows;
-    let upserted = 0;
-    let skipped = 0;
 
-    const creators = await prisma.creator.findMany({
-      where: { agencySlug },
-      select: { id: true, name: true, tiktokUser: true },
-    });
-    const byUser = new Map<string, string>();
-    for (const c of creators) {
-      if (c.tiktokUser) byUser.set(c.tiktokUser.toLowerCase(), c.id);
-      byUser.set(c.name.toLowerCase(), c.id);
-    }
-
-    for (const raw of rows) {
-      const username = cleanUser(
-        String(
-          raw.username ??
-            raw.usuario ??
-            raw.tiktok ??
-            raw.nombre ??
-            raw.name ??
-            ""
-        )
-      );
-      if (!username) {
-        skipped += 1;
-        continue;
+    try {
+      const creators = await prisma.creator.findMany({
+        where: { agencySlug },
+        select: { id: true, name: true, tiktokUser: true },
+      });
+      const byUser = new Map<string, string>();
+      for (const c of creators) {
+        if (c.tiktokUser) byUser.set(c.tiktokUser.toLowerCase(), c.id);
+        byUser.set(c.name.toLowerCase(), c.id);
       }
-      const diamonds = Math.round(
-        parseNum(raw.diamonds ?? raw.diamantes ?? raw.diamond)
-      );
-      const hours = parseNum(raw.hours ?? raw.horas);
-      const days = Math.max(0, Math.round(parseNum(raw.days ?? raw.dias)));
-      const creatorId = byUser.get(username);
 
-      await prisma.diamondControl.upsert({
-        where: {
-          agencySlug_period_username: { agencySlug, period, username },
-        },
-        create: {
-          agencySlug,
-          period,
+      const existing = await prisma.diamondControl.findMany({
+        where: { agencySlug, period },
+        select: { id: true, username: true },
+      });
+      const existingByUser = new Map(
+        existing.map((e) => [e.username.toLowerCase(), e.id])
+      );
+
+      type RowIn = {
+        username: string;
+        diamonds: number;
+        hours: number;
+        days: number;
+        creatorId: string | undefined;
+      };
+      const merged = new Map<string, RowIn>();
+      let skipped = 0;
+
+      for (const raw of rows) {
+        const username = cleanUser(
+          String(
+            raw.username ??
+              raw.usuario ??
+              raw.tiktok ??
+              raw.nombre ??
+              raw.name ??
+              ""
+          )
+        );
+        if (!username) {
+          skipped += 1;
+          continue;
+        }
+        const diamonds = Math.round(
+          parseNum(raw.diamonds ?? raw.diamantes ?? raw.diamond)
+        );
+        const hours = parseNum(raw.hours ?? raw.horas);
+        const days = Math.max(0, Math.round(parseNum(raw.days ?? raw.dias)));
+        merged.set(username, {
           username,
           diamonds,
           hours,
           days,
-          creatorId,
-        },
-        update: {
-          diamonds,
-          hours,
-          days,
-          creatorId: creatorId ?? undefined,
-        },
-      });
-
-      if (creatorId && diamonds > 0) {
-        await prisma.creator.update({
-          where: { id: creatorId },
-          data: { diamonds },
+          creatorId: byUser.get(username),
         });
       }
-      upserted += 1;
-    }
 
-    return NextResponse.json({ ok: true, upserted, skipped, period });
+      const toCreate: {
+        agencySlug: string;
+        period: string;
+        username: string;
+        diamonds: number;
+        hours: number;
+        days: number;
+        creatorId?: string;
+      }[] = [];
+      const toUpdate: (RowIn & { id: string })[] = [];
+
+      for (const row of merged.values()) {
+        const id = existingByUser.get(row.username);
+        if (id) toUpdate.push({ ...row, id });
+        else {
+          toCreate.push({
+            agencySlug,
+            period,
+            username: row.username,
+            diamonds: row.diamonds,
+            hours: row.hours,
+            days: row.days,
+            creatorId: row.creatorId,
+          });
+        }
+      }
+
+      for (let i = 0; i < toCreate.length; i += 100) {
+        await prisma.diamondControl.createMany({
+          data: toCreate.slice(i, i + 100),
+        });
+      }
+
+      for (let i = 0; i < toUpdate.length; i += 25) {
+        const chunk = toUpdate.slice(i, i + 25);
+        await prisma.$transaction(
+          chunk.map((u) =>
+            prisma.diamondControl.update({
+              where: { id: u.id },
+              data: {
+                diamonds: u.diamonds,
+                hours: u.hours,
+                days: u.days,
+                creatorId: u.creatorId ?? undefined,
+              },
+            })
+          )
+        );
+      }
+
+      const creatorUpdates = [...merged.values()].filter(
+        (r) => r.creatorId && r.diamonds > 0
+      );
+      for (let i = 0; i < creatorUpdates.length; i += 25) {
+        const chunk = creatorUpdates.slice(i, i + 25);
+        await prisma.$transaction(
+          chunk.map((u) =>
+            prisma.creator.update({
+              where: { id: u.creatorId! },
+              data: { diamonds: u.diamonds },
+            })
+          )
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        upserted: toCreate.length + toUpdate.length,
+        skipped,
+        period,
+      });
+    } catch (e) {
+      console.error("diamonds/import", e);
+      const msg = e instanceof Error ? e.message : "";
+      if (/P1001|Can't reach|timed out/i.test(msg)) {
+        return NextResponse.json(
+          { error: "No se pudo conectar a la base (pooler/URL)." },
+          { status: 503 }
+        );
+      }
+      return NextResponse.json(
+        { error: "Error al importar diamantes. Intenta de nuevo." },
+        { status: 500 }
+      );
+    }
   }
 
   const parsed = upsertSchema.safeParse(body);

@@ -243,25 +243,51 @@ export default function DiamondsControlClient() {
         return;
       }
 
-      const res = await fetch(PANEL.diamonds, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ period, rows: importRows }),
-      });
-      const json = await res.json();
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 55000);
+      let res: Response;
+      try {
+        res = await fetch(PANEL.diamonds, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ period, rows: importRows }),
+          signal: ctrl.signal,
+        });
+      } finally {
+        window.clearTimeout(timer);
+      }
+
+      let json: {
+        error?: string;
+        upserted?: number;
+        skipped?: number;
+      } = {};
+      try {
+        json = await res.json();
+      } catch {
+        setMsg("El servidor no respondió bien. Revisa deploy/base y reintenta.");
+        return;
+      }
       if (!res.ok) {
         setMsg(json.error || "Error al importar");
         return;
       }
       setMsg(
         `Importados/actualizados: ${json.upserted ?? 0}` +
+          (json.skipped ? ` · ${json.skipped} omitidos` : "") +
           ` · “${headers[iH]}” + “${headers[iD]}”` +
           preview
       );
       await reload(undefined, { revalidate: true });
       invalidatePanel(PANEL.creators, PANEL.dashboard, PANEL.ops);
-    } catch {
-      setMsg("No se pudo leer el archivo XLSX.");
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setMsg(
+          "La importación tardó demasiado y se cortó. Vuelve a importar el mismo archivo (completa lo que faltó)."
+        );
+      } else {
+        setMsg("No se pudo leer el archivo XLSX.");
+      }
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
