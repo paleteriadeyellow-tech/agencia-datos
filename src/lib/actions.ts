@@ -84,7 +84,18 @@ export async function registerManager(formData: FormData) {
     if (/Unique constraint|P2002/i.test(msg)) {
       return { error: "Ese email ya está registrado." };
     }
-    return { error: "No se pudo crear la cuenta. Intenta de nuevo." };
+    if (/P1000|Authentication failed|credentials/i.test(msg)) {
+      return {
+        error:
+          "Password de la base incorrecta. Actualiza DATABASE_URL y DIRECT_URL en Vercel.",
+      };
+    }
+    if (/P1001|Can't reach|timed out/i.test(msg)) {
+      return { error: "No se pudo conectar a la base de datos (red/URL)." };
+    }
+    // Mensaje corto útil para depurar en producción
+    const short = msg.replace(/\s+/g, " ").slice(0, 160);
+    return { error: `Error DB: ${short}` };
   }
 }
 
