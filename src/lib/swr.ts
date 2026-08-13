@@ -36,6 +36,8 @@ export const PANEL = {
   managers: "/api/panel/managers",
   diamonds: "/api/panel/diamonds",
   livecoins: "/api/panel/livecoins",
+  bonos: "/api/panel/bonos",
+  kpi: "/api/panel/kpi",
 } as const;
 
 function warm(url: string) {

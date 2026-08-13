@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, RotateCcw } from "lucide-react";
-import { get, push, ref, update } from "firebase/database";
 import { upsertSettlement } from "@/lib/actions";
 import { Button, Field, inputClass, Panel } from "@/components/ui";
 import {
@@ -10,7 +9,7 @@ import {
   type SuggestCreator,
 } from "@/components/creator-suggest";
 import { calcularBonoTotal } from "@/lib/bonos";
-import { BONOS_ROOT, firebaseDb } from "@/lib/firebase";
+import { PANEL } from "@/lib/swr";
 import { currentMonth, formatCurrency } from "@/lib/utils";
 
 type CreatorOpt = {
@@ -164,34 +163,25 @@ export function SettlementForm({
   }
 
   async function saveToBonosTable(nick: string) {
-    const mesPath = `${BONOS_ROOT}/meses/${month}`;
-    const snap = await get(ref(firebaseDb, mesPath));
-    const val = snap.val() as Record<string, { nombre?: string }> | null;
-    const payload = {
-      nombre: nick,
-      diamantes: diamonds,
-      horas: hours,
-      dias: days,
-      bono: Number(bono).toFixed(2),
-      gananciaAgencia: Number(agencyGain) || 0,
-    };
-
-    if (val && typeof val === "object") {
-      const nickKey = nick.toLowerCase();
-      const existingId = Object.keys(val).find((id) => {
-        const n = String(val[id]?.nombre ?? "")
-          .replace(/^@/, "")
-          .trim()
-          .toLowerCase();
-        return n === nickKey;
-      });
-      if (existingId) {
-        // No tocar `pagado` al actualizar (conserva estado de pago).
-        await update(ref(firebaseDb, `${mesPath}/${existingId}`), payload);
-        return;
-      }
+    const res = await fetch(PANEL.bonos, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        period: month,
+        nombre: nick,
+        diamantes: diamonds,
+        horas: hours,
+        dias: days,
+        bono: Number(bono) || 0,
+        gananciaAgencia: Number(agencyGain) || 0,
+      }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(
+        (json as { error?: string }).error || "No se pudo guardar en Bonos"
+      );
     }
-    await push(ref(firebaseDb, mesPath), { ...payload, pagado: false });
   }
 
   async function onAdd(e: React.FormEvent) {

@@ -128,7 +128,10 @@ export default function MensajesWaClient() {
           title="Mensajes WhatsApp"
           subtitle="Escribe y abre el chat con el mensaje listo"
         />
-        <PanelLoadError error={error} onRetry={() => mutate()} />
+        <PanelLoadError
+          message={error.message}
+          onRetry={() => mutate()}
+        />
       </div>
     );
   }

@@ -1,15 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  onValue,
-  push,
-  ref,
-  remove,
-  get,
-  update,
-} from "firebase/database";
-import { onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth";
+import { useMemo, useRef, useState } from "react";
 import { Send, Trash2, Eraser, Upload, Download, Pencil, X } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { Button, Field, Panel, inputClass } from "@/components/ui";
@@ -27,14 +18,8 @@ import {
   parseNumericCell,
 } from "@/lib/bonos";
 import { whatsappUrl, normalizePhone } from "@/lib/phone";
-import {
-  KPI_ROOT,
-  KPI_LEGACY_ROOT,
-  firebaseAuth,
-  firebaseDb,
-} from "@/lib/firebase";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
-import { PANEL } from "@/lib/swr";
+import { PANEL, usePanelData, invalidatePanel } from "@/lib/swr";
 
 type KpiRow = {
   id: string;
@@ -43,6 +28,17 @@ type KpiRow = {
   diamantes: number;
   horas: number;
   dias: number;
+};
+
+type KpiPayload = { rows: KpiRow[] };
+
+type DiamondsPayload = {
+  rows: {
+    username?: string;
+    diamonds?: number;
+    hours?: number;
+    days?: number;
+  }[];
 };
 
 function WhatsAppIcon({ className }: { className?: string }) {
@@ -70,9 +66,6 @@ export default function KpiEnvioClient() {
   const now = new Date();
   const [anio, setAnio] = useState(now.getFullYear());
   const [mes, setMes] = useState(now.getMonth() + 1);
-  const [rows, setRows] = useState<KpiRow[]>([]);
-  const [ready, setReady] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -88,16 +81,64 @@ export default function KpiEnvioClient() {
 
   const { creators: roster, suggestList: rosterSuggest } = useCreatorsRoster();
 
-  const [diamondMap, setDiamondMap] = useState<
-    Map<string, { diamantes: number; horas: number; dias: number }>
-  >(new Map());
-
   const years = useMemo(() => {
     const y0 = new Date().getFullYear();
     return Array.from({ length: 7 }, (_, i) => y0 - 4 + i);
   }, []);
 
   const period = periodKey(anio, mes);
+  const kpiUrl = `${PANEL.kpi}?period=${period}`;
+  const diamondsUrl = `${PANEL.diamonds}?period=${period}`;
+
+  const {
+    data,
+    error: loadError,
+    mutate,
+    isLoading,
+  } = usePanelData(kpiUrl) as {
+    data?: KpiPayload;
+    error?: Error;
+    mutate: () => Promise<unknown>;
+    isLoading: boolean;
+  };
+
+  const { data: diamondsData } = usePanelData(diamondsUrl) as {
+    data?: DiamondsPayload;
+  };
+
+  const rows: KpiRow[] = useMemo(() => {
+    const list = (data?.rows ?? []).map((r) => ({
+      id: r.id,
+      nombre: String(r.nombre ?? ""),
+      whatsapp: String(r.whatsapp ?? "").replace(/\D/g, ""),
+      diamantes: Number(r.diamantes ?? 0),
+      horas: Number(r.horas ?? 0),
+      dias: Number(r.dias ?? 0),
+    }));
+    return list.sort(
+      (a, b) => b.diamantes - a.diamantes || a.nombre.localeCompare(b.nombre)
+    );
+  }, [data]);
+
+  const diamondMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { diamantes: number; horas: number; dias: number }
+    >();
+    for (const r of diamondsData?.rows ?? []) {
+      const nick = String(r.username || "")
+        .replace(/^@/, "")
+        .trim()
+        .toLowerCase();
+      if (!nick) continue;
+      map.set(nick, {
+        diamantes: Number(r.diamonds ?? 0),
+        horas: Number(r.hours ?? 0),
+        dias: Number(r.days ?? 0),
+      });
+    }
+    return map;
+  }, [diamondsData]);
 
   const suggestList = useMemo(() => {
     return rosterSuggest
@@ -129,122 +170,8 @@ export default function KpiEnvioClient() {
     return map;
   }, [roster]);
 
-  // Firebase auth (igual que Bonos)
-  useEffect(() => {
-    let cancelled = false;
-    const unsub = onAuthStateChanged(firebaseAuth, async (user) => {
-      if (cancelled) return;
-      if (user) {
-        setReady(true);
-        return;
-      }
-      const email =
-        process.env.NEXT_PUBLIC_BONOS_EMAIL || "agencias@tiktok.com";
-      const pass = process.env.NEXT_PUBLIC_BONOS_PASSWORD || "";
-      if (pass) {
-        try {
-          await signInWithEmailAndPassword(firebaseAuth, email, pass);
-          return;
-        } catch {
-          /* rules pueden permitir anon */
-        }
-      }
-      setReady(true);
-    });
-    return () => {
-      cancelled = true;
-      unsub();
-    };
-  }, []);
-
-  // Limpiar datos viejos una vez + suscribir mes
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    let unsub: (() => void) | undefined;
-
-    (async () => {
-      setLoading(true);
-      setError("");
-      setRows([]);
-      try {
-        // Reiniciar legacy federation_stats_v1
-        const legacy = await get(ref(firebaseDb, KPI_LEGACY_ROOT));
-        if (legacy.exists()) {
-          await remove(ref(firebaseDb, KPI_LEGACY_ROOT));
-        }
-      } catch {
-        /* ignore */
-      }
-
-      if (cancelled) return;
-      const mesRef = ref(firebaseDb, `${KPI_ROOT}/meses/${period}`);
-      unsub = onValue(
-        mesRef,
-        (snap) => {
-          const val = snap.val();
-          const list: KpiRow[] = [];
-          if (val && typeof val === "object") {
-            for (const id of Object.keys(val)) {
-              const u = val[id] as Record<string, unknown>;
-              list.push({
-                id,
-                nombre: String(u.nombre ?? ""),
-                whatsapp: String(u.whatsapp ?? "").replace(/\D/g, ""),
-                diamantes: Number(u.diamantes ?? 0),
-                horas: Number(u.horas ?? 0),
-                dias: Number(u.dias ?? 0),
-              });
-            }
-          }
-          list.sort((a, b) => b.diamantes - a.diamantes || a.nombre.localeCompare(b.nombre));
-          setRows(list);
-          setLoading(false);
-        },
-        (err) => {
-          setError(err.message || "No se pudo cargar Firebase");
-          setLoading(false);
-        }
-      );
-    })();
-
-    return () => {
-      cancelled = true;
-      unsub?.();
-    };
-  }, [ready, period]);
-
-  // Diamantes del periodo (Control de diamantes) para autocompletar KPI
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${PANEL.diamonds}?period=${period}`);
-        if (!res.ok) return;
-        const json = await res.json();
-        if (cancelled) return;
-        const map = new Map<string, { diamantes: number; horas: number; dias: number }>();
-        for (const r of json.rows ?? []) {
-          const nick = String(r.username || "")
-            .replace(/^@/, "")
-            .trim()
-            .toLowerCase();
-          if (!nick) continue;
-          map.set(nick, {
-            diamantes: Number(r.diamonds ?? 0),
-            horas: Number(r.hours ?? 0),
-            dias: Number(r.days ?? 0),
-          });
-        }
-        setDiamondMap(map);
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [period]);
+  const loading = isLoading && !data;
+  const displayError = error || (loadError ? loadError.message : "");
 
   function pickCreator(c: SuggestCreator) {
     setNombre(c.nick);
@@ -278,37 +205,49 @@ export default function KpiEnvioClient() {
     formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  async function refresh() {
+    await mutate();
+    invalidatePanel(PANEL.kpi);
+  }
+
   async function onAdd(e: React.FormEvent) {
     e.preventDefault();
     const nick = nombre.replace(/^@/, "").trim();
     if (!nick) return;
     const wa =
-      normalizePhone(whatsapp)?.e164Digits ||
-      whatsapp.replace(/\D/g, "");
+      normalizePhone(whatsapp)?.e164Digits || whatsapp.replace(/\D/g, "");
     if (!wa) {
       setMsg("WhatsApp / teléfono inválido");
       return;
     }
     setBusy(true);
     setMsg("");
+    setError("");
     try {
       const payload = {
+        period,
         nombre: nick,
         whatsapp: wa,
         diamantes: Math.max(0, Math.round(diamantes)),
         horas: Math.max(0, Number(horas) || 0),
         dias: Math.max(0, Math.round(dias)),
+        ...(editingId ? { id: editingId } : {}),
       };
+      const res = await fetch(PANEL.kpi, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg(json.error || "Error al guardar");
+        return;
+      }
+      resetForm();
+      await refresh();
       if (editingId) {
-        await update(
-          ref(firebaseDb, `${KPI_ROOT}/meses/${period}/${editingId}`),
-          payload
-        );
-        resetForm();
         setMsg("Actualizado");
       } else {
-        await push(ref(firebaseDb, `${KPI_ROOT}/meses/${period}`), payload);
-        resetForm();
         const link = whatsappUrl(wa) || `https://wa.me/${wa}`;
         const text = encodeURIComponent(kpiWaMessage(payload));
         window.open(`${link}?text=${text}`, "_blank", "noopener,noreferrer");
@@ -324,7 +263,21 @@ export default function KpiEnvioClient() {
   async function onDelete(row: KpiRow) {
     if (!confirm(`¿Eliminar a ${row.nombre}?`)) return;
     if (editingId === row.id) resetForm();
-    await remove(ref(firebaseDb, `${KPI_ROOT}/meses/${period}/${row.id}`));
+    setBusy(true);
+    try {
+      const res = await fetch(
+        `${PANEL.kpi}?id=${encodeURIComponent(row.id)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setMsg(json.error || "No se pudo eliminar");
+        return;
+      }
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function clearMonth() {
@@ -336,8 +289,18 @@ export default function KpiEnvioClient() {
       return;
     }
     setBusy(true);
+    setMsg("");
     try {
-      await remove(ref(firebaseDb, `${KPI_ROOT}/meses/${period}`));
+      const res = await fetch(
+        `${PANEL.kpi}?clearPeriod=1&period=${encodeURIComponent(period)}`,
+        { method: "DELETE" }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg(json.error || "No se pudo vaciar");
+        return;
+      }
+      await refresh();
       setMsg("Periodo vaciado");
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "No se pudo vaciar");
@@ -371,15 +334,15 @@ export default function KpiEnvioClient() {
         );
       }
 
-      const existingByNick = new Map(
-        rows.map((r) => [r.nombre.replace(/^@/, "").trim().toLowerCase(), r.id])
-      );
-
-      let imported = 0;
-      let updated = 0;
+      const importRows: {
+        nombre: string;
+        whatsapp: string;
+        diamantes: number;
+        horas: number;
+        dias: number;
+      }[] = [];
       let skippedEmpty = 0;
       let missingWa = 0;
-      const mesPath = `${KPI_ROOT}/meses/${period}`;
 
       for (let r = 1; r < sheetRows.length; r++) {
         const row = sheetRows[r];
@@ -398,27 +361,32 @@ export default function KpiEnvioClient() {
         const wa = phoneByNick.get(nickKey) || "";
         if (!wa) missingWa++;
 
-        const payload = {
+        importRows.push({
           nombre: nick,
           whatsapp: wa,
           diamantes: d,
           horas: h,
           dias: daysN,
-        };
-
-        const existingId = existingByNick.get(nickKey);
-        if (existingId) {
-          await update(ref(firebaseDb, `${mesPath}/${existingId}`), payload);
-          updated++;
-        } else {
-          const newRef = await push(ref(firebaseDb, mesPath), payload);
-          if (newRef.key) existingByNick.set(nickKey, newRef.key);
-          imported++;
-        }
+        });
       }
 
+      if (!importRows.length) {
+        throw new Error("El Excel no tiene usuarios reconocibles.");
+      }
+
+      const res = await fetch(PANEL.kpi, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period, rows: importRows }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || "Error al importar");
+      }
+
+      await refresh();
       setMsg(
-        `Importación lista · nuevos: ${imported} · actualizados: ${updated} · vacíos: ${skippedEmpty}` +
+        `Importación lista · nuevos: ${json.imported ?? 0} · actualizados: ${json.updated ?? 0} · vacíos: ${skippedEmpty}` +
           (missingWa ? ` · sin WhatsApp: ${missingWa}` : "")
       );
     } catch (err) {
@@ -434,14 +402,14 @@ export default function KpiEnvioClient() {
     setMsg("");
     try {
       const XLSX = await import("xlsx");
-      const data = rows.map((r) => ({
+      const exportData = rows.map((r) => ({
         Usuario: r.nombre,
         WhatsApp: r.whatsapp,
         Diamantes: r.diamantes,
         Horas: r.horas,
         Dias: r.dias,
       }));
-      const sheet = XLSX.utils.json_to_sheet(data);
+      const sheet = XLSX.utils.json_to_sheet(exportData);
       const book = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(book, sheet, "KPI");
       XLSX.writeFile(
@@ -469,9 +437,9 @@ export default function KpiEnvioClient() {
         subtitle={`${MESES_NOMBRE[mes]} ${anio} · envía stats por WhatsApp`}
       />
 
-      {error && (
+      {displayError && (
         <Panel className="mb-4 border-danger/30">
-          <p className="text-sm text-danger">{error}</p>
+          <p className="text-sm text-danger">{displayError}</p>
         </Panel>
       )}
 
@@ -544,86 +512,86 @@ export default function KpiEnvioClient() {
       </div>
 
       <div ref={formTopRef}>
-      <Panel className="mb-5">
-        <h2 className="mb-4 font-[family-name:var(--font-syne)] text-lg font-semibold">
-          {editingId ? "Editar KPI" : "Agregar / enviar KPI"}
-        </h2>
-        <form
-          onSubmit={onAdd}
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.3fr_1.1fr_0.8fr_0.7fr_0.6fr_auto]"
-        >
-          <CreatorSuggestInput
-            className="relative z-30"
-            value={nombre}
-            onChange={setNombre}
-            onPick={pickCreator}
-            creators={suggestList}
-            required
-          />
-          <Field label="WhatsApp">
-            <input
-              value={whatsapp}
-              onChange={(e) => setWhatsapp(e.target.value)}
-              className={inputClass}
-              placeholder="52155… o 55…"
-              required
-              inputMode="tel"
-            />
-          </Field>
-          <Field label="Diamantes">
-            <input
-              type="number"
-              min={0}
-              value={diamantes}
-              onChange={(e) => setDiamantes(Number(e.target.value) || 0)}
-              className={inputClass}
+        <Panel className="mb-5">
+          <h2 className="mb-4 font-[family-name:var(--font-syne)] text-lg font-semibold">
+            {editingId ? "Editar KPI" : "Agregar / enviar KPI"}
+          </h2>
+          <form
+            onSubmit={onAdd}
+            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.3fr_1.1fr_0.8fr_0.7fr_0.6fr_auto]"
+          >
+            <CreatorSuggestInput
+              className="relative z-30"
+              value={nombre}
+              onChange={setNombre}
+              onPick={pickCreator}
+              creators={suggestList}
               required
             />
-          </Field>
-          <Field label="Horas">
-            <input
-              type="number"
-              min={0}
-              step={0.1}
-              value={horas}
-              onChange={(e) => setHoras(Number(e.target.value) || 0)}
-              className={inputClass}
-              required
-            />
-          </Field>
-          <Field label="Días">
-            <input
-              type="number"
-              min={0}
-              value={dias}
-              onChange={(e) => setDias(Number(e.target.value) || 0)}
-              className={inputClass}
-              required
-            />
-          </Field>
-          <div className="flex items-end gap-2">
-            <Button type="submit" disabled={busy} className="w-full">
-              <Send className="h-4 w-4" />
-              {busy ? "…" : editingId ? "Guardar" : "Agregar"}
-            </Button>
-            {editingId && (
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => {
-                  resetForm();
-                  setMsg("");
-                }}
-                title="Cancelar edición"
-              >
-                <X className="h-4 w-4" />
+            <Field label="WhatsApp">
+              <input
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(e.target.value)}
+                className={inputClass}
+                placeholder="52155… o 55…"
+                required
+                inputMode="tel"
+              />
+            </Field>
+            <Field label="Diamantes">
+              <input
+                type="number"
+                min={0}
+                value={diamantes}
+                onChange={(e) => setDiamantes(Number(e.target.value) || 0)}
+                className={inputClass}
+                required
+              />
+            </Field>
+            <Field label="Horas">
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                value={horas}
+                onChange={(e) => setHoras(Number(e.target.value) || 0)}
+                className={inputClass}
+                required
+              />
+            </Field>
+            <Field label="Días">
+              <input
+                type="number"
+                min={0}
+                value={dias}
+                onChange={(e) => setDias(Number(e.target.value) || 0)}
+                className={inputClass}
+                required
+              />
+            </Field>
+            <div className="flex items-end gap-2">
+              <Button type="submit" disabled={busy} className="w-full">
+                <Send className="h-4 w-4" />
+                {busy ? "…" : editingId ? "Guardar" : "Agregar"}
               </Button>
-            )}
-          </div>
-        </form>
-        {msg && <p className="mt-3 text-xs text-text-muted">{msg}</p>}
-      </Panel>
+              {editingId && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    resetForm();
+                    setMsg("");
+                  }}
+                  title="Cancelar edición"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </form>
+          {msg && <p className="mt-3 text-xs text-text-muted">{msg}</p>}
+        </Panel>
       </div>
 
       <Panel className="overflow-hidden p-0">

@@ -11,24 +11,27 @@ Panel web estilo **TikTok LIVE Backstage** para agencias: roster de creadores, m
 
 ## Inicio rápido (local)
 
+Necesitas **Postgres** (Supabase gratis). Ver guía completa: [DEPLOY-VERCEL.md](./DEPLOY-VERCEL.md)
+
 ```bash
 npm install
 cp .env.example .env
-# Ajusta NEXTAUTH_SECRET en .env
+# Pega DATABASE_URL y DIRECT_URL de Supabase
 npx prisma generate
+npx prisma db push
 npm run dev
 ```
 
-El archivo `prisma/dev.db` va **limpio** (solo tablas, sin creadores ni datos).  
-Tras clonar: copia `.env.example` → `.env`, corre `npx prisma generate` y `npm run dev`.  
-El **primer usuario** que registres en `/register` queda como **admin**.  
-(Opcional demo: `npm run db:seed`)
+El **primer usuario** en `/register` queda como **admin**.
 
-**No subas `.env`**. Bonos/KPI viven en **Firebase**, no en SQLite.
+**No subas `.env`**. Bonos/KPI viven en **Firebase**.
 
 Abre [http://localhost:3000](http://localhost:3000)
 
-También: `sofia@agencia.com` / `manager123`
+## Publicar en internet (Vercel)
+
+GitHub Pages solo muestra el README. Para la app real sigue **[DEPLOY-VERCEL.md](./DEPLOY-VERCEL.md)**.
+
 
 ## Módulos
 

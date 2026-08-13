@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { onValue, ref, update } from "firebase/database";
-import { onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth";
+import { useMemo, useState } from "react";
 import {
   Wallet,
   CircleDollarSign,
@@ -17,9 +15,8 @@ import { SettlementForm } from "@/components/settlement-form";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Panel, Field, inputClass } from "@/components/ui";
 import { formatCurrency, formatNumber, cn } from "@/lib/utils";
-import { PANEL, usePanelData } from "@/lib/swr";
+import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
-import { BONOS_ROOT, firebaseAuth, firebaseDb } from "@/lib/firebase";
 import { MESES_NOMBRE, periodKey } from "@/lib/bonos";
 
 type BonoRow = {
@@ -147,9 +144,6 @@ export default function FinanceClient() {
   const now = new Date();
   const [anio, setAnio] = useState(now.getFullYear());
   const [mes, setMes] = useState(now.getMonth() + 1);
-  const [fbReady, setFbReady] = useState(false);
-  const [bonos, setBonos] = useState<BonoRow[]>([]);
-  const [bonosLoading, setBonosLoading] = useState(true);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payError, setPayError] = useState("");
 
@@ -189,6 +183,16 @@ export default function FinanceClient() {
     mutate: () => void;
   };
 
+  const {
+    data: bonosData,
+    isLoading: bonosLoading,
+    mutate: mutateBonos,
+  } = usePanelData(`${PANEL.bonos}?period=${pk}`) as {
+    data?: { rows: BonoRow[] };
+    isLoading: boolean;
+    mutate: () => void;
+  };
+
   const { creators: rosterCreators } = useCreatorsRoster();
 
   const formCreators = useMemo(() => {
@@ -203,74 +207,19 @@ export default function FinanceClient() {
     return data?.creators ?? [];
   }, [rosterCreators, data?.creators]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const unsub = onAuthStateChanged(firebaseAuth, async (user) => {
-      if (cancelled) return;
-      if (user) {
-        setFbReady(true);
-        return;
-      }
-      const email =
-        process.env.NEXT_PUBLIC_BONOS_EMAIL || "agencias@tiktok.com";
-      const pass = process.env.NEXT_PUBLIC_BONOS_PASSWORD || "";
-      if (pass) {
-        try {
-          await signInWithEmailAndPassword(firebaseAuth, email, pass);
-          return;
-        } catch {
-          /* sigue sin auth */
-        }
-      }
-      setFbReady(true);
-    });
-    return () => {
-      cancelled = true;
-      unsub();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!fbReady) return;
-    setBonos([]);
-    setBonosLoading(true);
-    const mesRef = ref(firebaseDb, `${BONOS_ROOT}/meses/${pk}`);
-    const unsub = onValue(
-      mesRef,
-      (snap) => {
-        const val = snap.val();
-        if (!val) {
-          setBonos([]);
-          setBonosLoading(false);
-          return;
-        }
-        const list: BonoRow[] = Object.keys(val).map((id) => {
-          const row = val[id] as Record<string, unknown>;
-          return {
-            id,
-            nombre: String(row.nombre ?? ""),
-            diamantes: Number(row.diamantes ?? 0),
-            horas: Number(row.horas ?? 0),
-            dias: Number(row.dias ?? 0),
-            bono: parseFloat(String(row.bono ?? "0")) || 0,
-            gananciaAgencia:
-              Number(row.gananciaAgencia ?? row.agencyAmount ?? 0) || 0,
-            pagado: Boolean(row.pagado),
-          };
-        });
-        list.sort(
-          (a, b) => b.diamantes - a.diamantes || a.nombre.localeCompare(b.nombre)
-        );
-        setBonos(list);
-        setBonosLoading(false);
-      },
-      () => {
-        setBonos([]);
-        setBonosLoading(false);
-      }
-    );
-    return () => unsub();
-  }, [fbReady, pk]);
+  const bonos = useMemo(() => {
+    const rows = bonosData?.rows ?? [];
+    return rows.map((r) => ({
+      id: r.id,
+      nombre: String(r.nombre ?? ""),
+      diamantes: Number(r.diamantes ?? 0),
+      horas: Number(r.horas ?? 0),
+      dias: Number(r.dias ?? 0),
+      bono: Number(r.bono ?? 0) || 0,
+      gananciaAgencia: Number(r.gananciaAgencia ?? 0) || 0,
+      pagado: Boolean(r.pagado),
+    }));
+  }, [bonosData]);
 
   const periodSettlements = useMemo(() => {
     const all = data?.finance.settlements ?? [];
@@ -323,10 +272,19 @@ export default function FinanceClient() {
     setPayingId(row.id);
     setPayError("");
     try {
-      await update(ref(firebaseDb, `${BONOS_ROOT}/meses/${pk}/${row.id}`), {
-        pagado: true,
-        pagadoAt: Date.now(),
+      const res = await fetch(PANEL.bonos, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, pagado: true }),
       });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          (json as { error?: string }).error || "No se pudo marcar como pagado"
+        );
+      }
+      mutateBonos();
+      invalidatePanel(PANEL.bonos);
     } catch (err) {
       setPayError(
         err instanceof Error ? err.message : "No se pudo marcar como pagado"
@@ -342,10 +300,19 @@ export default function FinanceClient() {
     setPayingId(row.id);
     setPayError("");
     try {
-      await update(ref(firebaseDb, `${BONOS_ROOT}/meses/${pk}/${row.id}`), {
-        pagado: false,
-        pagadoAt: null,
+      const res = await fetch(PANEL.bonos, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, pagado: false }),
       });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          (json as { error?: string }).error || "No se pudo revertir el pago"
+        );
+      }
+      mutateBonos();
+      invalidatePanel(PANEL.bonos);
     } catch (err) {
       setPayError(
         err instanceof Error ? err.message : "No se pudo revertir el pago"
@@ -353,6 +320,12 @@ export default function FinanceClient() {
     } finally {
       setPayingId(null);
     }
+  }
+
+  function onSettlementSaved() {
+    mutate();
+    mutateBonos();
+    invalidatePanel(PANEL.bonos);
   }
 
   if (error) {
@@ -456,7 +429,7 @@ export default function FinanceClient() {
           creators={formCreators}
           defaultMonth={pk}
           existing={data.finance.settlements}
-          onSaved={() => mutate()}
+          onSaved={onSettlementSaved}
         />
       </div>
 

@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -166,4 +167,39 @@ model Contract {
   notes      String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+}
+
+// Bonos del mes (antes Firebase)
+model BonoRecord {
+  id              String    @id @default(cuid())
+  period          String // YYYY-MM
+  nombre          String
+  diamantes       Int       @default(0)
+  horas           Float     @default(0)
+  dias            Int       @default(0)
+  bono            Float     @default(0)
+  gananciaAgencia Float     @default(0)
+  pagado          Boolean   @default(false)
+  pagadoAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([period])
+  @@index([period, nombre])
+}
+
+// Envío de KPI del mes (antes Firebase)
+model KpiRecord {
+  id        String   @id @default(cuid())
+  period    String // YYYY-MM
+  nombre    String
+  whatsapp  String   @default("")
+  diamantes Int      @default(0)
+  horas     Float    @default(0)
+  dias      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([period])
+  @@index([period, nombre])
 }
