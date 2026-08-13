@@ -188,7 +188,7 @@ export default function CreatorsClient() {
             "streamer",
             "nombre completo"
           );
-          let telefono = cell(
+          const telefono = cell(
             r,
             "telefono",
             "teléfono",
@@ -196,7 +196,7 @@ export default function CreatorsClient() {
             "celular",
             "whatsapp"
           );
-          let nicho = cell(
+          const nicho = cell(
             r,
             "nicho",
             "niche",
