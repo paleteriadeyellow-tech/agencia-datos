@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         String    @default("manager") // admin | manager
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  creators     Creator[] @relation("ManagerCreators")
+  tasks        Task[]    @relation("TaskAssignee")
+}
+
+model Creator {
+  id           String    @id @default(cuid())
+  name         String
+  phone        String
+  niche        String
+  joinDate     DateTime
+  tiktokUser   String?
+  country      String?   @default("MX")
+  status       String    @default("activo") // activo | pausado | baja
+  groupName    String?
+  notes        String?
+  diamonds     Int       @default(0)
+  livecoinsStatus String @default("pendiente") // pendiente | habilitada | contactado | no_quiere
+  livecoinsComment String?
+  managerId    String?
+  manager      User?     @relation("ManagerCreators", fields: [managerId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  metrics      Metric[]
+  schedules    LiveSchedule[]
+  tasks        Task[]
+  campaigns    CampaignCreator[]
+  settlements  Settlement[]
+  contracts    Contract[]
+  diamondLogs  DiamondControl[]
+}
+
+model DiamondControl {
+  id         String   @id @default(cuid())
+  period     String   // YYYY-MM
+  username   String
+  diamonds   Int      @default(0)
+  hours      Float    @default(0)
+  days       Int      @default(0)
+  notes      String?
+  creatorId  String?
+  creator    Creator? @relation(fields: [creatorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([period, username])
+  @@index([period])
+}
+
+model Metric {
+  id           String   @id @default(cuid())
+  creatorId    String
+  creator      Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  date         DateTime
+  diamonds     Int      @default(0)
+  hoursLive    Float    @default(0)
+  peakViewers  Int      @default(0)
+  battles      Int      @default(0)
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  @@index([creatorId, date])
+}
+
+model LiveSchedule {
+  id          String   @id @default(cuid())
+  creatorId   String
+  creator     Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  startAt     DateTime
+  durationMin Int      @default(120)
+  notes       String?
+  status      String   @default("planeado") // planeado | cumplido | faltó | cancelado
+  createdAt   DateTime @default(now())
+
+  @@index([startAt])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  creatorId   String?
+  creator     Creator?  @relation(fields: [creatorId], references: [id], onDelete: SetNull)
+  assigneeId  String?
+  assignee    User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  priority    String    @default("media") // baja | media | alta
+  status      String    @default("pendiente") // pendiente | en_progreso | hecha
+  period      String    @default("") // YYYY-MM
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([period])
+}
+
+model Campaign {
+  id             String             @id @default(cuid())
+  name           String
+  description    String?
+  startDate      DateTime
+  endDate        DateTime
+  targetDiamonds Int                @default(0)
+  targetHours    Float              @default(0)
+  status         String             @default("activa") // activa | finalizada | borrador
+  createdAt      DateTime           @default(now())
+  creators       CampaignCreator[]
+}
+
+model CampaignCreator {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creatorId  String
+  creator    Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  progressDiamonds Int @default(0)
+  progressHours    Float @default(0)
+
+  @@unique([campaignId, creatorId])
+}
+
+model Settlement {
+  id              String   @id @default(cuid())
+  creatorId       String
+  creator         Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  month           String   // YYYY-MM
+  diamonds        Int      @default(0)
+  hours           Float    @default(0)
+  days            Int      @default(0)
+  estimatedPay    Float    @default(0) // bono USD
+  agencyPercent   Float    @default(0)
+  agencyAmount    Float    @default(0) // ganancia agencia por creador
+  creatorAmount   Float    @default(0) // alias bono (mismo que estimatedPay)
+  status          String   @default("pendiente") // pendiente | pagado
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([creatorId, month])
+}
+
+model Contract {
+  id         String    @id @default(cuid())
+  creatorId  String
+  creator    Creator   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  title      String
+  status     String    @default("activo") // borrador | activo | vencido | cancelado
+  startDate  DateTime?
+  endDate    DateTime?
+  fileUrl    String?
+  notes      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
