@@ -4,6 +4,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function parsePeriod(raw: string | null) {
   if (!raw || !/^\d{4}-\d{2}$/.test(raw)) {
@@ -108,23 +109,30 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Datos de import inválidos" }, { status: 400 });
     }
-    let created = 0;
-    for (const row of parsed.data.rows) {
-      await prisma.bonoRecord.create({
-        data: {
-          agencySlug,
-          period: parsed.data.period,
-          nombre: cleanNick(row.nombre),
-          diamantes: row.diamantes ?? 0,
-          horas: row.horas ?? 0,
-          dias: row.dias ?? 0,
-          bono: row.bono,
-          pagado: false,
-        },
-      });
-      created += 1;
+    try {
+      const data = parsed.data.rows.map((row) => ({
+        agencySlug,
+        period: parsed.data.period,
+        nombre: cleanNick(row.nombre),
+        diamantes: row.diamantes ?? 0,
+        horas: row.horas ?? 0,
+        dias: row.dias ?? 0,
+        bono: row.bono,
+        pagado: false,
+      }));
+      for (let i = 0; i < data.length; i += 100) {
+        await prisma.bonoRecord.createMany({
+          data: data.slice(i, i + 100),
+        });
+      }
+      return NextResponse.json({ ok: true, created: data.length });
+    } catch (e) {
+      console.error("bonos/import", e);
+      return NextResponse.json(
+        { error: "Error al importar bonos. Intenta de nuevo." },
+        { status: 500 }
+      );
     }
-    return NextResponse.json({ ok: true, created });
   }
 
   const parsed = upsertSchema.safeParse(body);

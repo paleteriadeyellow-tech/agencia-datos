@@ -16,6 +16,7 @@ import {
 } from "@/lib/bonos";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
+import { fetchJsonWithTimeout } from "@/lib/fetch-timeout";
 
 type BonoRow = {
   id: string;
@@ -219,13 +220,12 @@ export default function BonosClient() {
       }
 
       if (batch.length) {
-        const res = await fetch(PANEL.bonos, {
+        const { res, json } = await fetchJsonWithTimeout(PANEL.bonos, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ period: pk, rows: batch }),
         });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || "Error al importar");
+        if (!res.ok) throw new Error(String(json.error || "Error al importar"));
       }
 
       alert(

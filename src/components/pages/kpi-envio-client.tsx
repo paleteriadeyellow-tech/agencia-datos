@@ -20,6 +20,7 @@ import {
 import { whatsappUrl, normalizePhone } from "@/lib/phone";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
 import { PANEL, usePanelData, invalidatePanel } from "@/lib/swr";
+import { fetchJsonWithTimeout } from "@/lib/fetch-timeout";
 
 type KpiRow = {
   id: string;
@@ -374,19 +375,18 @@ export default function KpiEnvioClient() {
         throw new Error("El Excel no tiene usuarios reconocibles.");
       }
 
-      const res = await fetch(PANEL.kpi, {
+      const { res, json } = await fetchJsonWithTimeout(PANEL.kpi, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ period, rows: importRows }),
       });
-      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(json.error || "Error al importar");
+        throw new Error(String(json.error || "Error al importar"));
       }
 
       await refresh();
       setMsg(
-        `Importación lista · nuevos: ${json.imported ?? 0} · actualizados: ${json.updated ?? 0} · vacíos: ${skippedEmpty}` +
+        `Importación lista · nuevos: ${Number(json.imported ?? 0)} · actualizados: ${Number(json.updated ?? 0)} · vacíos: ${skippedEmpty}` +
           (missingWa ? ` · sin WhatsApp: ${missingWa}` : "")
       );
     } catch (err) {

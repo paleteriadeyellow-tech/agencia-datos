@@ -18,6 +18,7 @@ import { deleteCreator } from "@/lib/actions";
 import { whatsappUrl } from "@/lib/phone";
 import { isAdmin } from "@/lib/permissions";
 import { useAgency } from "@/lib/use-agency";
+import { fetchJsonWithTimeout } from "@/lib/fetch-timeout";
 
 type CreatorRow = {
   id: string;
@@ -273,55 +274,29 @@ export default function CreatorsClient() {
         return;
       }
 
-      const ctrl = new AbortController();
-      const timer = window.setTimeout(() => ctrl.abort(), 55000);
-      let res: Response;
-      try {
-        res = await fetch("/api/creators/import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rows }),
-          signal: ctrl.signal,
-        });
-      } finally {
-        window.clearTimeout(timer);
-      }
-
-      let json: {
-        error?: string;
-        created?: number;
-        updated?: number;
-        skipped?: number;
-        withDiamonds?: number;
-      } = {};
-      try {
-        json = (await res.json()) as typeof json;
-      } catch {
-        setMsg("El servidor no respondió bien. Revisa el deploy o la base.");
-        return;
-      }
+      const { res, json } = await fetchJsonWithTimeout("/api/creators/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      });
       if (!res.ok) {
-        setMsg(json.error || "Error al importar.");
+        setMsg(String(json.error || "Error al importar."));
         return;
       }
 
       refreshList();
       setMsg(
-        `Importados: ${json.created ?? 0} nuevos, ${json.updated ?? 0} actualizados` +
+        `Importados: ${Number(json.created ?? 0)} nuevos, ${Number(json.updated ?? 0)} actualizados` +
           (json.withDiamonds
-            ? ` · ${json.withDiamonds} con diamantes`
+            ? ` · ${Number(json.withDiamonds)} con diamantes`
             : "") +
-          (json.skipped ? ` · ${json.skipped} vacíos omitidos` : "") +
+          (json.skipped ? ` · ${Number(json.skipped)} vacíos omitidos` : "") +
           "."
       );
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") {
-        setMsg(
-          "La importación tardó demasiado. Revisa DATABASE_URL (pooler) en Vercel y vuelve a intentar."
-        );
-      } else {
-        setMsg("No se pudo leer el archivo XLSX.");
-      }
+      setMsg(
+        e instanceof Error ? e.message : "No se pudo leer el archivo XLSX."
+      );
     } finally {
       setBusy(null);
       if (fileRef.current) fileRef.current.value = "";

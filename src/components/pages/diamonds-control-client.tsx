@@ -17,6 +17,7 @@ import {
 } from "@/lib/bonos";
 import { PANEL, invalidatePanel } from "@/lib/swr";
 import useSWR from "swr";
+import { fetchJsonWithTimeout } from "@/lib/fetch-timeout";
 
 type Row = {
   id: string;
@@ -243,51 +244,27 @@ export default function DiamondsControlClient() {
         return;
       }
 
-      const ctrl = new AbortController();
-      const timer = window.setTimeout(() => ctrl.abort(), 55000);
-      let res: Response;
-      try {
-        res = await fetch(PANEL.diamonds, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ period, rows: importRows }),
-          signal: ctrl.signal,
-        });
-      } finally {
-        window.clearTimeout(timer);
-      }
-
-      let json: {
-        error?: string;
-        upserted?: number;
-        skipped?: number;
-      } = {};
-      try {
-        json = await res.json();
-      } catch {
-        setMsg("El servidor no respondió bien. Revisa deploy/base y reintenta.");
-        return;
-      }
+      const { res, json } = await fetchJsonWithTimeout(PANEL.diamonds, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period, rows: importRows }),
+      });
       if (!res.ok) {
-        setMsg(json.error || "Error al importar");
+        setMsg(String(json.error || "Error al importar"));
         return;
       }
       setMsg(
-        `Importados/actualizados: ${json.upserted ?? 0}` +
-          (json.skipped ? ` · ${json.skipped} omitidos` : "") +
+        `Importados/actualizados: ${Number(json.upserted ?? 0)}` +
+          (json.skipped ? ` · ${Number(json.skipped)} omitidos` : "") +
           ` · “${headers[iH]}” + “${headers[iD]}”` +
           preview
       );
       await reload(undefined, { revalidate: true });
       invalidatePanel(PANEL.creators, PANEL.dashboard, PANEL.ops);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") {
-        setMsg(
-          "La importación tardó demasiado y se cortó. Vuelve a importar el mismo archivo (completa lo que faltó)."
-        );
-      } else {
-        setMsg("No se pudo leer el archivo XLSX.");
-      }
+      setMsg(
+        e instanceof Error ? e.message : "No se pudo leer el archivo XLSX."
+      );
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";

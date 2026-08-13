@@ -4,6 +4,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function parsePeriod(raw: string | null) {
   if (!raw || !/^\d{4}-\d{2}$/.test(raw)) {
@@ -92,41 +93,114 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Datos de import inválidos" }, { status: 400 });
     }
 
-    let imported = 0;
-    let updated = 0;
-    for (const row of parsed.data.rows) {
-      const nombre = cleanNick(row.nombre);
-      const existing = await prisma.kpiRecord.findFirst({
-        where: { agencySlug, period: parsed.data.period, nombre },
+    try {
+      const period = parsed.data.period;
+      const existing = await prisma.kpiRecord.findMany({
+        where: { agencySlug, period },
+        select: { id: true, nombre: true, whatsapp: true },
       });
-      const data = {
-        whatsapp: (row.whatsapp || "").replace(/\D/g, ""),
-        diamantes: row.diamantes ?? 0,
-        horas: row.horas ?? 0,
-        dias: row.dias ?? 0,
-      };
-      if (existing) {
-        await prisma.kpiRecord.update({
-          where: { id: existing.id },
-          data: {
-            ...data,
-            whatsapp: data.whatsapp || existing.whatsapp,
-          },
+      const byName = new Map(
+        existing.map((e) => [e.nombre.toLowerCase(), e])
+      );
+
+      const merged = new Map<
+        string,
+        {
+          nombre: string;
+          whatsapp: string;
+          diamantes: number;
+          horas: number;
+          dias: number;
+        }
+      >();
+      for (const row of parsed.data.rows) {
+        const nombre = cleanNick(row.nombre);
+        if (!nombre) continue;
+        merged.set(nombre.toLowerCase(), {
+          nombre,
+          whatsapp: (row.whatsapp || "").replace(/\D/g, ""),
+          diamantes: row.diamantes ?? 0,
+          horas: row.horas ?? 0,
+          dias: row.dias ?? 0,
         });
-        updated += 1;
-      } else {
-        await prisma.kpiRecord.create({
-          data: {
-            agencySlug,
-            period: parsed.data.period,
-            nombre,
-            ...data,
-          },
-        });
-        imported += 1;
       }
+
+      const toCreate: {
+        agencySlug: string;
+        period: string;
+        nombre: string;
+        whatsapp: string;
+        diamantes: number;
+        horas: number;
+        dias: number;
+      }[] = [];
+      const toUpdate: {
+        id: string;
+        whatsapp: string;
+        diamantes: number;
+        horas: number;
+        dias: number;
+        prevWa: string;
+      }[] = [];
+
+      for (const row of merged.values()) {
+        const ex = byName.get(row.nombre.toLowerCase());
+        if (ex) {
+          toUpdate.push({
+            id: ex.id,
+            whatsapp: row.whatsapp,
+            diamantes: row.diamantes,
+            horas: row.horas,
+            dias: row.dias,
+            prevWa: ex.whatsapp,
+          });
+        } else {
+          toCreate.push({
+            agencySlug,
+            period,
+            nombre: row.nombre,
+            whatsapp: row.whatsapp,
+            diamantes: row.diamantes,
+            horas: row.horas,
+            dias: row.dias,
+          });
+        }
+      }
+
+      for (let i = 0; i < toCreate.length; i += 100) {
+        await prisma.kpiRecord.createMany({
+          data: toCreate.slice(i, i + 100),
+        });
+      }
+      for (let i = 0; i < toUpdate.length; i += 25) {
+        const chunk = toUpdate.slice(i, i + 25);
+        await prisma.$transaction(
+          chunk.map((u) =>
+            prisma.kpiRecord.update({
+              where: { id: u.id },
+              data: {
+                diamantes: u.diamantes,
+                horas: u.horas,
+                dias: u.dias,
+                whatsapp: u.whatsapp || u.prevWa,
+              },
+            })
+          )
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        imported: toCreate.length,
+        updated: toUpdate.length,
+      });
+    } catch (e) {
+      console.error("kpi/import", e);
+      return NextResponse.json(
+        { error: "Error al importar KPI. Intenta de nuevo." },
+        { status: 500 }
+      );
     }
-    return NextResponse.json({ ok: true, imported, updated });
   }
 
   const parsed = upsertSchema.safeParse(body);
