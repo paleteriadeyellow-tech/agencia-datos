@@ -1,5 +1,6 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
+import "@/lib/ensure-auth-url";
 import { canAccessPath } from "@/lib/permissions";
 
 export default withAuth(
