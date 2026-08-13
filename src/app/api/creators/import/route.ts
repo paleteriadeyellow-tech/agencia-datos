@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
-import { currentMonth, monthRange } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const rowSchema = z.object({
   nombre: z.string().trim().optional().nullable(),
@@ -44,10 +44,7 @@ function parseDiamonds(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.round(value));
   }
-  const s = String(value)
-    .trim()
-    .replace(/\s/g, "")
-    .replace(/,/g, "");
+  const s = String(value).trim().replace(/\s/g, "").replace(/,/g, "");
   const n = parseFloat(s);
   return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
 }
@@ -65,6 +62,16 @@ function cleanGroup(value?: string | null) {
     return null;
   }
   return g;
+}
+
+async function runInChunks<T>(
+  items: T[],
+  size: number,
+  fn: (chunk: T[]) => Promise<void>
+) {
+  for (let i = 0; i < items.length; i += size) {
+    await fn(items.slice(i, i + size));
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -93,133 +100,181 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const month = currentMonth();
-  const { start, end } = monthRange(month);
-
-  let created = 0;
-  let updated = 0;
-  let skipped = 0;
-  let withDiamonds = 0;
-
-  for (const row of parsed.data.rows) {
-    const tiktok = cleanUser(row.tiktok) || null;
-    const name =
-      (row.nombre || "").trim() ||
-      tiktok ||
-      cleanUser(row.telefono) ||
-      "";
-    if (!name && !tiktok) {
-      skipped += 1;
-      continue;
+  try {
+    const existing = await prisma.creator.findMany({
+      where: { agencySlug },
+      select: { id: true, tiktokUser: true, phone: true },
+    });
+    const byTiktok = new Map<string, string>();
+    const byPhone = new Map<string, string>();
+    for (const c of existing) {
+      if (c.tiktokUser) byTiktok.set(c.tiktokUser.toLowerCase(), c.id);
+      if (c.phone) byPhone.set(c.phone.toLowerCase(), c.id);
     }
 
-    const displayName = name || tiktok || "Sin nombre";
-    const phone =
-      (row.telefono || "").trim() ||
-      (tiktok ? `tiktok:${tiktok}` : `pendiente:${displayName.toLowerCase()}`);
-    const niche = (row.nicho || "").trim() || "Pendiente";
-    const diamonds = parseDiamonds(row.diamantes);
-    if (diamonds > 0) withDiamonds += 1;
-
-    const data = {
-      agencySlug,
-      name: displayName,
-      phone,
-      niche,
-      joinDate: parseJoinDate(row.fecha_incorporacion),
-      tiktokUser: tiktok || (displayName.includes(" ") ? null : displayName),
-      country: (row.pais || "").trim() || "MX",
-      status: normalizeStatus(row.estado),
-      groupName: cleanGroup(row.grupo),
-      notes: (row.notas || "").trim() || null,
-      diamonds,
+    type CreateRow = {
+      agencySlug: string;
+      name: string;
+      phone: string;
+      niche: string;
+      joinDate: Date;
+      tiktokUser: string | null;
+      country: string;
+      status: string;
+      groupName: string | null;
+      notes: string | null;
+      diamonds: number;
+    };
+    type UpdateRow = {
+      id: string;
+      name: string;
+      tiktokUser: string | null;
+      niche: string;
+      phone: string;
+      phoneProvided: boolean;
+      country: string;
+      status: string;
+      groupName: string | null;
+      notes: string | null;
+      joinDate: Date;
+      joinProvided: boolean;
+      diamonds: number;
     };
 
-    const existing =
-      (tiktok
-        ? await prisma.creator.findFirst({
-            where: { agencySlug, tiktokUser: tiktok },
-            select: { id: true },
-          })
-        : null) ||
-      (await prisma.creator.findFirst({
-        where: { agencySlug, phone },
-        select: { id: true },
-      }));
+    const toCreate: CreateRow[] = [];
+    const toUpdate: UpdateRow[] = [];
+    let skipped = 0;
+    let withDiamonds = 0;
+    const seenKeys = new Set<string>();
 
-    let creatorId: string;
+    for (const row of parsed.data.rows) {
+      const tiktok = cleanUser(row.tiktok) || null;
+      const name =
+        (row.nombre || "").trim() ||
+        tiktok ||
+        cleanUser(row.telefono) ||
+        "";
+      if (!name && !tiktok) {
+        skipped += 1;
+        continue;
+      }
 
-    if (existing) {
-      await prisma.creator.update({
-        where: { id: existing.id },
-        data: {
-          name: data.name,
-          tiktokUser: data.tiktokUser ?? undefined,
-          niche: niche === "Pendiente" ? undefined : niche,
-          phone: (row.telefono || "").trim() ? phone : undefined,
-          country: data.country,
-          status: data.status,
-          groupName: data.groupName,
-          notes: data.notes ?? undefined,
-          joinDate: row.fecha_incorporacion ? data.joinDate : undefined,
-          // Siempre actualizar diamantes si vienen en el Excel
-          diamonds: diamonds > 0 ? diamonds : undefined,
-        },
-      });
-      creatorId = existing.id;
-      updated += 1;
-    } else {
-      const createdRow = await prisma.creator.create({ data });
-      creatorId = createdRow.id;
-      created += 1;
-    }
+      const displayName = name || tiktok || "Sin nombre";
+      const phone =
+        (row.telefono || "").trim() ||
+        (tiktok ? `tiktok:${tiktok}` : `pendiente:${displayName.toLowerCase()}`);
+      const niche = (row.nicho || "").trim() || "Pendiente";
+      const diamonds = parseDiamonds(row.diamantes);
+      if (diamonds > 0) withDiamonds += 1;
 
-    // También deja registro en Data (métricas del mes) si hay diamantes
-    if (diamonds > 0) {
-      const existingMetric = await prisma.metric.findFirst({
-        where: {
-          creatorId,
-          date: { gte: start, lte: end },
-          creator: { agencySlug },
-        },
-        orderBy: { date: "desc" },
-      });
-      if (existingMetric) {
-        await prisma.metric.update({
-          where: { id: existingMetric.id },
-          data: { diamonds },
+      const dedupeKey = (tiktok || phone).toLowerCase();
+      if (seenKeys.has(dedupeKey)) {
+        skipped += 1;
+        continue;
+      }
+      seenKeys.add(dedupeKey);
+
+      const existingId =
+        (tiktok ? byTiktok.get(tiktok.toLowerCase()) : undefined) ||
+        byPhone.get(phone.toLowerCase());
+
+      if (existingId) {
+        toUpdate.push({
+          id: existingId,
+          name: displayName,
+          tiktokUser: tiktok || (displayName.includes(" ") ? null : displayName),
+          niche,
+          phone,
+          phoneProvided: Boolean((row.telefono || "").trim()),
+          country: (row.pais || "").trim() || "MX",
+          status: normalizeStatus(row.estado),
+          groupName: cleanGroup(row.grupo),
+          notes: (row.notas || "").trim() || null,
+          joinDate: parseJoinDate(row.fecha_incorporacion),
+          joinProvided: Boolean(row.fecha_incorporacion),
+          diamonds,
         });
       } else {
-        await prisma.metric.create({
-          data: {
-            creatorId,
-            date: start,
-            diamonds,
-            hoursLive: 0,
-            peakViewers: 0,
-            battles: 0,
-            notes: `Import XLSX ${month}`,
-          },
+        const tiktokUser =
+          tiktok || (displayName.includes(" ") ? null : displayName);
+        toCreate.push({
+          agencySlug,
+          name: displayName,
+          phone,
+          niche,
+          joinDate: parseJoinDate(row.fecha_incorporacion),
+          tiktokUser,
+          country: (row.pais || "").trim() || "MX",
+          status: normalizeStatus(row.estado),
+          groupName: cleanGroup(row.grupo),
+          notes: (row.notas || "").trim() || null,
+          diamonds,
         });
+        // evita duplicados en el mismo archivo
+        if (tiktokUser) byTiktok.set(tiktokUser.toLowerCase(), "pending");
+        byPhone.set(phone.toLowerCase(), "pending");
       }
     }
-  }
 
-  if (created === 0 && updated === 0) {
+    if (toCreate.length === 0 && toUpdate.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "No se pudo importar ninguna fila. Pon al menos un usuario o nombre por fila.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (toCreate.length) {
+      await runInChunks(toCreate, 100, async (chunk) => {
+        await prisma.creator.createMany({ data: chunk });
+      });
+    }
+
+    if (toUpdate.length) {
+      await runInChunks(toUpdate, 25, async (chunk) => {
+        await prisma.$transaction(
+          chunk.map((u) =>
+            prisma.creator.update({
+              where: { id: u.id },
+              data: {
+                name: u.name,
+                tiktokUser: u.tiktokUser ?? undefined,
+                niche: u.niche === "Pendiente" ? undefined : u.niche,
+                phone: u.phoneProvided ? u.phone : undefined,
+                country: u.country,
+                status: u.status,
+                groupName: u.groupName,
+                notes: u.notes ?? undefined,
+                joinDate: u.joinProvided ? u.joinDate : undefined,
+                diamonds: u.diamonds > 0 ? u.diamonds : undefined,
+              },
+            })
+          )
+        );
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      created: toCreate.length,
+      updated: toUpdate.length,
+      skipped,
+      withDiamonds,
+    });
+  } catch (e) {
+    console.error("creators/import", e);
+    const msg = e instanceof Error ? e.message : "Error";
+    if (/P1001|Can't reach|timed out/i.test(msg)) {
+      return NextResponse.json(
+        { error: "No se pudo conectar a la base. Revisa DATABASE_URL (pooler)." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
-      {
-        error:
-          "No se pudo importar ninguna fila. Pon al menos un usuario o nombre por fila.",
-      },
-      { status: 400 }
+      { error: "Error al importar. Intenta con menos filas o revisa el Excel." },
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({
-    ok: true,
-    created,
-    updated,
-    skipped,
-    withDiamonds,
-  });
 }

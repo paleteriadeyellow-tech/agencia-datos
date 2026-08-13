@@ -273,18 +273,33 @@ export default function CreatorsClient() {
         return;
       }
 
-      const res = await fetch("/api/creators/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
-      });
-      const json = (await res.json()) as {
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 55000);
+      let res: Response;
+      try {
+        res = await fetch("/api/creators/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows }),
+          signal: ctrl.signal,
+        });
+      } finally {
+        window.clearTimeout(timer);
+      }
+
+      let json: {
         error?: string;
         created?: number;
         updated?: number;
         skipped?: number;
         withDiamonds?: number;
-      };
+      } = {};
+      try {
+        json = (await res.json()) as typeof json;
+      } catch {
+        setMsg("El servidor no respondió bien. Revisa el deploy o la base.");
+        return;
+      }
       if (!res.ok) {
         setMsg(json.error || "Error al importar.");
         return;
@@ -297,10 +312,16 @@ export default function CreatorsClient() {
             ? ` · ${json.withDiamonds} con diamantes`
             : "") +
           (json.skipped ? ` · ${json.skipped} vacíos omitidos` : "") +
-          ". Ordenados de mayor a menor diamantes."
+          "."
       );
-    } catch {
-      setMsg("No se pudo leer el archivo XLSX.");
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setMsg(
+          "La importación tardó demasiado. Revisa DATABASE_URL (pooler) en Vercel y vuelve a intentar."
+        );
+      } else {
+        setMsg("No se pudo leer el archivo XLSX.");
+      }
     } finally {
       setBusy(null);
       if (fileRef.current) fileRef.current.value = "";
