@@ -37,38 +37,55 @@ async function requireAdmin() {
 }
 
 export async function registerManager(formData: FormData) {
-  const name = String(formData.get("name") || "").trim();
-  const email = String(formData.get("email") || "").trim().toLowerCase();
-  const password = String(formData.get("password") || "");
-  const agencySlug = String(formData.get("agencySlug") || "").trim();
+  try {
+    const name = String(formData.get("name") || "").trim();
+    const email = String(formData.get("email") || "").trim().toLowerCase();
+    const password = String(formData.get("password") || "");
+    const agencySlug = String(formData.get("agencySlug") || "").trim();
 
-  if (!isAgencySlug(agencySlug)) {
-    return { error: "Agencia no válida." };
+    if (!isAgencySlug(agencySlug)) {
+      return { error: "Agencia no válida." };
+    }
+    if (!name || !email || password.length < 6) {
+      return {
+        error: "Completa todos los campos (mín. 6 caracteres en la contraseña).",
+      };
+    }
+
+    const exists = await prisma.user.findFirst({
+      where: { agencySlug, email },
+    });
+    if (exists) return { error: "Ese email ya está registrado en esta agencia." };
+
+    const count = await prisma.user.count({ where: { agencySlug } });
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await prisma.user.create({
+      data: {
+        agencySlug,
+        name,
+        email,
+        passwordHash,
+        role: count === 0 ? "admin" : "manager",
+      },
+    });
+
+    revalidateAgency(agencySlug, "/managers", "/creadores");
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Error al crear cuenta";
+    console.error("registerManager", e);
+    if (/agencySlug|Unknown column|does not exist|P2022|P2010/i.test(msg)) {
+      return {
+        error:
+          "La base aún no tiene el esquema multi-agencia. Ejecuta: npx prisma db push",
+      };
+    }
+    if (/Unique constraint|P2002/i.test(msg)) {
+      return { error: "Ese email ya está registrado." };
+    }
+    return { error: "No se pudo crear la cuenta. Intenta de nuevo." };
   }
-  if (!name || !email || password.length < 6) {
-    return { error: "Completa todos los campos (mín. 6 caracteres en la contraseña)." };
-  }
-
-  const exists = await prisma.user.findUnique({
-    where: { agencySlug_email: { agencySlug, email } },
-  });
-  if (exists) return { error: "Ese email ya está registrado en esta agencia." };
-
-  const count = await prisma.user.count({ where: { agencySlug } });
-  const passwordHash = await bcrypt.hash(password, 10);
-
-  await prisma.user.create({
-    data: {
-      agencySlug,
-      name,
-      email,
-      passwordHash,
-      role: count === 0 ? "admin" : "manager",
-    },
-  });
-
-  revalidateAgency(agencySlug, "/managers", "/creadores");
-  return { ok: true };
 }
 
 export async function createManager(formData: FormData) {

@@ -18,15 +18,20 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const form = new FormData(e.currentTarget);
-    form.set("agencySlug", slug);
-    const res = await registerManager(form);
-    setLoading(false);
-    if (res.error) {
-      setError(res.error);
-      return;
+    try {
+      const form = new FormData(e.currentTarget);
+      form.set("agencySlug", slug);
+      const res = await registerManager(form);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      router.push(path("/login"));
+    } catch {
+      setError("Error de conexión. Revisa la base de datos o intenta de nuevo.");
+    } finally {
+      setLoading(false);
     }
-    router.push(path("/login"));
   }
 
   return (
