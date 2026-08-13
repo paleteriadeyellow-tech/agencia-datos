@@ -17,8 +17,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  if (rest === "/login" || rest === "/register" || rest.startsWith("/login/") || rest.startsWith("/register/")) {
+  if (rest === "/login" || rest.startsWith("/login/")) {
     return NextResponse.next();
+  }
+
+  if (rest === "/register" || rest.startsWith("/register/")) {
+    return NextResponse.redirect(new URL(`/a/${agency}/login`, req.url));
   }
 
   if (!rest || rest === "/") {

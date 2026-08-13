@@ -36,67 +36,11 @@ async function requireAdmin() {
   return { error: null as null, session };
 }
 
-export async function registerManager(formData: FormData) {
-  try {
-    const name = String(formData.get("name") || "").trim();
-    const email = String(formData.get("email") || "").trim().toLowerCase();
-    const password = String(formData.get("password") || "");
-    const agencySlug = String(formData.get("agencySlug") || "").trim();
-
-    if (!isAgencySlug(agencySlug)) {
-      return { error: "Agencia no válida." };
-    }
-    if (!name || !email || password.length < 6) {
-      return {
-        error: "Completa todos los campos (mín. 6 caracteres en la contraseña).",
-      };
-    }
-
-    const exists = await prisma.user.findFirst({
-      where: { agencySlug, email },
-    });
-    if (exists) return { error: "Ese email ya está registrado en esta agencia." };
-
-    const count = await prisma.user.count({ where: { agencySlug } });
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    await prisma.user.create({
-      data: {
-        agencySlug,
-        name,
-        email,
-        passwordHash,
-        role: count === 0 ? "admin" : "manager",
-      },
-    });
-
-    revalidateAgency(agencySlug, "/managers", "/creadores");
-    return { ok: true };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Error al crear cuenta";
-    console.error("registerManager", e);
-    if (/agencySlug|Unknown column|does not exist|P2022|P2010/i.test(msg)) {
-      return {
-        error:
-          "La base aún no tiene el esquema multi-agencia. Ejecuta: npx prisma db push",
-      };
-    }
-    if (/Unique constraint|P2002/i.test(msg)) {
-      return { error: "Ese email ya está registrado." };
-    }
-    if (/P1000|Authentication failed|credentials/i.test(msg)) {
-      return {
-        error:
-          "Password de la base incorrecta. Actualiza DATABASE_URL y DIRECT_URL en Vercel.",
-      };
-    }
-    if (/P1001|Can't reach|timed out/i.test(msg)) {
-      return { error: "No se pudo conectar a la base de datos (red/URL)." };
-    }
-    // Mensaje corto útil para depurar en producción
-    const short = msg.replace(/\s+/g, " ").slice(0, 160);
-    return { error: `Error DB: ${short}` };
-  }
+export async function registerManager(_formData: FormData) {
+  return {
+    error:
+      "El registro público está cerrado. Pide a un admin que te cree la cuenta en Managers.",
+  };
 }
 
 export async function createManager(formData: FormData) {

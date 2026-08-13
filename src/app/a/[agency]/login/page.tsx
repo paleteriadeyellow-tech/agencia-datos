@@ -75,11 +75,6 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-6 text-center text-sm text-text-muted">
-          ¿Primera vez?{" "}
-          <Link href={path("/register")} className="text-accent hover:underline">
-            Crear cuenta
-          </Link>
-          {" · "}
           <Link href="/" className="text-accent hover:underline">
             Cambiar agencia
           </Link>

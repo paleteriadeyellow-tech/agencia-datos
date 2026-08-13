@@ -106,11 +106,8 @@ export default function ManagersClient() {
           </h2>
         </div>
         <p className="mb-4 text-sm text-text-muted">
-          También pueden crearse solos en{" "}
-          <a href={path("/register")} className="text-accent hover:underline">
-            {path("/register")}
-          </a>
-          ; al crear la cuenta aparecen aquí automáticamente.
+          Solo un admin puede crear cuentas aquí. El registro público está
+          desactivado.
         </p>
         <form onSubmit={onCreate} className="grid gap-3 md:grid-cols-2">
           <Field label="Nombre">
