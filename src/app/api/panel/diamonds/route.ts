@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
+import {
+  assertCreatorAccess,
+  assertCreatorNickAccess,
+  creatorWhere,
+  diamondWhere,
+} from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +34,12 @@ function parseNum(v: unknown) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
+  const whereScope = await diamondWhere(scope, agencySlug);
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
   const rows = await prisma.diamondControl.findMany({
-    where: { agencySlug, period },
+    where: { period, ...whereScope },
     include: {
       creator: { select: { id: true, name: true, tiktokUser: true } },
     },
@@ -73,7 +80,7 @@ const upsertSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
 
   let body: unknown;
   try {
@@ -95,7 +102,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const creators = await prisma.creator.findMany({
-        where: { agencySlug },
+        where: creatorWhere(scope, agencySlug),
         select: { id: true, name: true, tiktokUser: true },
       });
       const byUser = new Map<string, string>();
@@ -134,6 +141,10 @@ export async function POST(req: NextRequest) {
           )
         );
         if (!username) {
+          skipped += 1;
+          continue;
+        }
+        if (!scope.admin && !byUser.get(username)) {
           skipped += 1;
           continue;
         }
@@ -248,8 +259,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Usuario obligatorio" }, { status: 400 });
   }
 
+  const nickErr = await assertCreatorNickAccess(scope, username, agencySlug);
+  if (nickErr) return nickErr;
+
   const creators = await prisma.creator.findMany({
-    where: { agencySlug },
+    where: creatorWhere(scope, agencySlug),
     select: { id: true, name: true, tiktokUser: true },
   });
   const creator = creators.find(
@@ -275,6 +289,21 @@ export async function POST(req: NextRequest) {
     });
     if (!existing) {
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
+    if (existing.creatorId) {
+      const accessErr = await assertCreatorAccess(
+        scope,
+        existing.creatorId,
+        agencySlug
+      );
+      if (accessErr) return accessErr;
+    } else {
+      const accessErr = await assertCreatorNickAccess(
+        scope,
+        existing.username,
+        agencySlug
+      );
+      if (accessErr) return accessErr;
     }
     row = await prisma.diamondControl.update({
       where: { id: existing.id },
@@ -316,7 +345,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
 
   const id = req.nextUrl.searchParams.get("id");
   if (!id) {
@@ -327,6 +356,21 @@ export async function DELETE(req: NextRequest) {
   });
   if (!existing) {
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  if (existing.creatorId) {
+    const accessErr = await assertCreatorAccess(
+      scope,
+      existing.creatorId,
+      agencySlug
+    );
+    if (accessErr) return accessErr;
+  } else {
+    const accessErr = await assertCreatorNickAccess(
+      scope,
+      existing.username,
+      agencySlug
+    );
+    if (accessErr) return accessErr;
   }
   await prisma.diamondControl.delete({ where: { id: existing.id } });
   return NextResponse.json({ ok: true });

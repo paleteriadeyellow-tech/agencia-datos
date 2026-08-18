@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { requireApiAuth } from "@/lib/api-auth";
+import { creatorWhere } from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
+  const scopeFilter = creatorWhere(scope, agencySlug);
 
   const { searchParams } = req.nextUrl;
   const q = searchParams.get("q") ?? undefined;
@@ -19,6 +21,7 @@ export async function GET(req: NextRequest) {
   const creators = await prisma.creator.findMany({
     where: {
       agencySlug,
+      ...scopeFilter,
       AND: [
         q
           ? {

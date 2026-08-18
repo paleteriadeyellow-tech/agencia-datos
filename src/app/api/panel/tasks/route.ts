@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
+import {
+  assertCreatorAccess,
+  creatorWhere,
+  taskWhere,
+} from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 import { currentMonth } from "@/lib/utils";
 
@@ -14,24 +19,26 @@ function parsePeriod(raw: string | null) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
+  const scopeFilter = creatorWhere(scope, agencySlug);
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
 
-  // Backfill: tareas sin periodo → periodo solicitado
-  await prisma.task.updateMany({
-    where: { agencySlug, period: "" },
-    data: { period },
-  });
+  if (scope.admin) {
+    await prisma.task.updateMany({
+      where: { agencySlug, period: "" },
+      data: { period },
+    });
+  }
 
   const [creators, tasks] = await Promise.all([
     prisma.creator.findMany({
-      where: { agencySlug },
+      where: scopeFilter,
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     prisma.task.findMany({
-      where: { agencySlug, period },
+      where: taskWhere(scope, agencySlug, { period }),
       include: { creator: { select: { name: true } } },
       orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     }),
@@ -61,7 +68,7 @@ const patchSchema = z.object({
 export async function PATCH(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
 
   let body: unknown;
   try {
@@ -80,6 +87,14 @@ export async function PATCH(req: NextRequest) {
   });
   if (!existing) {
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  if (existing.creatorId) {
+    const accessErr = await assertCreatorAccess(
+      scope,
+      existing.creatorId,
+      agencySlug
+    );
+    if (accessErr) return accessErr;
   }
 
   await prisma.task.update({
@@ -103,7 +118,7 @@ const createSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug, token } = auth;
+  const { agencySlug, token, scope } = auth;
 
   let body: unknown;
   try {
@@ -119,6 +134,8 @@ export async function POST(req: NextRequest) {
 
   let creatorId: string | null = parsed.data.creatorId || null;
   if (creatorId) {
+    const accessErr = await assertCreatorAccess(scope, creatorId, agencySlug);
+    if (accessErr) return accessErr;
     const creator = await prisma.creator.findFirst({
       where: { id: creatorId, agencySlug },
       select: { id: true },

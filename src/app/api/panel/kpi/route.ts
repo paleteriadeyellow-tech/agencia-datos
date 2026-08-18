@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
+import {
+  assertCreatorNickAccess,
+  cleanNick,
+  filterRowsByAssignedNicks,
+  getAssignedCreatorMatchKeys,
+} from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -14,14 +20,10 @@ function parsePeriod(raw: string | null) {
   return raw;
 }
 
-function cleanNick(v: string) {
-  return v.replace(/^@/, "").trim();
-}
-
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
   const rows = await prisma.kpiRecord.findMany({
@@ -29,9 +31,11 @@ export async function GET(req: NextRequest) {
     orderBy: [{ diamantes: "desc" }, { nombre: "asc" }],
   });
 
+  const filtered = await filterRowsByAssignedNicks(scope, rows, agencySlug);
+
   return NextResponse.json({
     period,
-    rows: rows.map((r) => ({
+    rows: filtered.map((r) => ({
       id: r.id,
       period: r.period,
       nombre: r.nombre,
@@ -73,7 +77,7 @@ const importSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
 
   let body: unknown;
   try {
@@ -113,9 +117,14 @@ export async function POST(req: NextRequest) {
           dias: number;
         }
       >();
+      const allowedNicks = scope.admin
+        ? null
+        : (await getAssignedCreatorMatchKeys(scope.userId, agencySlug)).names;
+
       for (const row of parsed.data.rows) {
         const nombre = cleanNick(row.nombre);
         if (!nombre) continue;
+        if (allowedNicks && !allowedNicks.has(nombre)) continue;
         merged.set(nombre.toLowerCase(), {
           nombre,
           whatsapp: (row.whatsapp || "").replace(/\D/g, ""),
@@ -209,6 +218,8 @@ export async function POST(req: NextRequest) {
   }
 
   const nombre = cleanNick(parsed.data.nombre);
+  const nickErr = await assertCreatorNickAccess(scope, nombre, agencySlug);
+  if (nickErr) return nickErr;
   const payload = {
     nombre,
     whatsapp: (parsed.data.whatsapp || "").replace(/\D/g, ""),
@@ -224,6 +235,12 @@ export async function POST(req: NextRequest) {
     if (!existing) {
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     }
+    const editErr = await assertCreatorNickAccess(
+      scope,
+      existing.nombre,
+      agencySlug
+    );
+    if (editErr) return editErr;
     const row = await prisma.kpiRecord.update({
       where: { id: existing.id },
       data: payload,
@@ -240,17 +257,29 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
 
   const id = req.nextUrl.searchParams.get("id");
   const period = req.nextUrl.searchParams.get("period");
   const clearPeriod = req.nextUrl.searchParams.get("clearPeriod") === "1";
 
   if (clearPeriod && period && /^\d{4}-\d{2}$/.test(period)) {
-    const res = await prisma.kpiRecord.deleteMany({
+    if (scope.admin) {
+      const res = await prisma.kpiRecord.deleteMany({
+        where: { agencySlug, period },
+      });
+      return NextResponse.json({ ok: true, deleted: res.count });
+    }
+    const rows = await prisma.kpiRecord.findMany({
       where: { agencySlug, period },
     });
-    return NextResponse.json({ ok: true, deleted: res.count });
+    const allowed = await filterRowsByAssignedNicks(scope, rows, agencySlug);
+    if (allowed.length) {
+      await prisma.kpiRecord.deleteMany({
+        where: { id: { in: allowed.map((r) => r.id) } },
+      });
+    }
+    return NextResponse.json({ ok: true, deleted: allowed.length });
   }
 
   if (!id) {
@@ -263,6 +292,12 @@ export async function DELETE(req: NextRequest) {
   if (!existing) {
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   }
+  const delErr = await assertCreatorNickAccess(
+    scope,
+    existing.nombre,
+    agencySlug
+  );
+  if (delErr) return delErr;
   await prisma.kpiRecord.delete({ where: { id: existing.id } });
   return NextResponse.json({ ok: true });
 }

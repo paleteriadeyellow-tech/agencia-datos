@@ -413,17 +413,16 @@ export default function CampaignsClient() {
     mutate: () => void;
   };
 
-  const formCreators = useMemo(() => {
-    if (rosterCreators.length) {
-      return rosterCreators.map((c) => ({
+  const formCreators = useMemo(
+    () =>
+      rosterCreators.map((c) => ({
         id: c.id,
         name: c.name,
         tiktokUser: c.tiktokUser,
         diamonds: c.diamonds ?? 0,
-      }));
-    }
-    return data?.creators ?? [];
-  }, [rosterCreators, data?.creators]);
+      })),
+    [rosterCreators]
+  );
 
   if (error) {
     return (

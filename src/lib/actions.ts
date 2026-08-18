@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { formatPhoneInputValue } from "@/lib/phone";
 import { isAgencySlug, type AgencySlug } from "@/lib/agencies";
+import { isAdmin } from "@/lib/permissions";
+import { filterCreatorIdsForScope, getScope } from "@/lib/creator-scope";
 
 function revalidateAgency(agencySlug: string, ...paths: string[]) {
   for (const p of paths) {
@@ -119,7 +121,10 @@ export async function createCreator(formData: FormData) {
   const status = String(formData.get("status") || "activo");
   const groupName = String(formData.get("groupName") || "").trim() || null;
   const notes = String(formData.get("notes") || "").trim() || null;
-  const managerId = String(formData.get("managerId") || "") || null;
+  let managerId = String(formData.get("managerId") || "") || null;
+  if (!isAdmin(session.user.role)) {
+    managerId = session.user.id;
+  }
 
   if (!name || !phoneRaw || !niche || !joinDate) {
     return { error: "Nombre, teléfono, nicho y fecha de incorporación son obligatorios.", ok: undefined, id: undefined };
@@ -215,6 +220,9 @@ export async function createMetric(formData: FormData) {
     where: { id: creatorId, agencySlug },
   });
   if (!creator) return { error: "Creador no válido." };
+  if (!isAdmin(session.user.role) && creator.managerId !== session.user.id) {
+    return { error: "No autorizado." };
+  }
 
   await prisma.metric.create({
     data: {
@@ -244,6 +252,9 @@ export async function createTask(formData: FormData) {
       where: { id: creatorId, agencySlug },
     });
     if (!c) return { error: "Creador no válido." };
+    if (!isAdmin(session.user.role) && c.managerId !== session.user.id) {
+      return { error: "No autorizado." };
+    }
   }
 
   const due = String(formData.get("dueDate") || "");
@@ -275,6 +286,12 @@ export async function updateTaskStatus(id: string, status: string) {
   const agencySlug = session.user.agencySlug;
   const task = await prisma.task.findFirst({ where: { id, agencySlug } });
   if (!task) return { error: "Tarea no encontrada." };
+  if (task.creatorId && !isAdmin(session.user.role)) {
+    const creator = await prisma.creator.findFirst({
+      where: { id: task.creatorId, agencySlug, managerId: session.user.id },
+    });
+    if (!creator) return { error: "No autorizado." };
+  }
   await prisma.task.update({ where: { id }, data: { status } });
   revalidateAgency(agencySlug, "/tareas", "/dashboard");
   return { ok: true };
@@ -305,11 +322,14 @@ export async function createCampaign(formData: FormData) {
 
   const creatorIds = formData.getAll("creatorIds").map(String).filter(Boolean);
   if (creatorIds.length) {
-    const valid = await prisma.creator.findMany({
-      where: { agencySlug, id: { in: creatorIds } },
-      select: { id: true },
+    const scope = getScope({
+      id: session.user.id,
+      role: session.user.role,
     });
-    const ids = valid.map((c) => c.id);
+    const ids = await filterCreatorIdsForScope(scope, creatorIds, agencySlug);
+    if (!scope.admin && ids.length !== creatorIds.length) {
+      return { error: "No puedes asignar creadores que no te pertenecen." };
+    }
     if (ids.length) {
       await prisma.campaignCreator.createMany({
         data: ids.map((creatorId) => ({
@@ -353,17 +373,48 @@ export async function updateCampaign(formData: FormData) {
     },
   });
 
-  const creatorIds = formData.getAll("creatorIds").map(String).filter(Boolean);
-  await prisma.campaignCreator.deleteMany({ where: { campaignId: id } });
-  if (creatorIds.length) {
-    const valid = await prisma.creator.findMany({
-      where: { agencySlug, id: { in: creatorIds } },
+  const rawCreatorIds = formData.getAll("creatorIds").map(String).filter(Boolean);
+  const scope = getScope({
+    id: session.user.id,
+    role: session.user.role,
+  });
+  const managerCreatorIds = await filterCreatorIdsForScope(
+    scope,
+    rawCreatorIds,
+    agencySlug
+  );
+  if (!scope.admin && rawCreatorIds.length !== managerCreatorIds.length) {
+    return { error: "No puedes asignar creadores que no te pertenecen." };
+  }
+
+  if (scope.admin) {
+    await prisma.campaignCreator.deleteMany({ where: { campaignId: id } });
+    if (managerCreatorIds.length) {
+      await prisma.campaignCreator.createMany({
+        data: managerCreatorIds.map((creatorId) => ({
+          campaignId: id,
+          creatorId,
+        })),
+      });
+    }
+  } else {
+    const existingLinks = await prisma.campaignCreator.findMany({
+      where: { campaignId: id },
+      select: { creatorId: true },
+    });
+    const owned = await prisma.creator.findMany({
+      where: { agencySlug, managerId: session.user.id },
       select: { id: true },
     });
-    const ids = valid.map((c) => c.id);
-    if (ids.length) {
+    const ownedSet = new Set(owned.map((c) => c.id));
+    const keepOthers = existingLinks
+      .map((e) => e.creatorId)
+      .filter((creatorId) => !ownedSet.has(creatorId));
+    const finalIds = [...new Set([...keepOthers, ...managerCreatorIds])];
+    await prisma.campaignCreator.deleteMany({ where: { campaignId: id } });
+    if (finalIds.length) {
       await prisma.campaignCreator.createMany({
-        data: ids.map((creatorId) => ({
+        data: finalIds.map((creatorId) => ({
           campaignId: id,
           creatorId,
         })),

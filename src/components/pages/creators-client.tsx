@@ -365,24 +365,26 @@ export default function CreatorsClient() {
             <option value="pausado">Pausado</option>
             <option value="baja">Baja</option>
           </select>
-          <select
-            className={field}
-            value={managerFilter}
-            onChange={(e) => setManagerFilter(e.target.value)}
-          >
-            <option value="">Todos los managers</option>
-            <option value="__none__">Sin manager</option>
-            {managers.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-                {m.role === "admin"
-                  ? " · Admin"
-                  : m.role === "manager"
-                    ? " · Manager"
-                    : ""}
-              </option>
-            ))}
-          </select>
+          {canEditCreators && (
+            <select
+              className={field}
+              value={managerFilter}
+              onChange={(e) => setManagerFilter(e.target.value)}
+            >
+              <option value="">Todos los managers</option>
+              <option value="__none__">Sin manager</option>
+              {managers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                  {m.role === "admin"
+                    ? " · Admin"
+                    : m.role === "manager"
+                      ? " · Manager"
+                      : ""}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -511,7 +513,9 @@ export default function CreatorsClient() {
                 <th className="px-2.5 py-2 font-medium">TikTok</th>
                 <th className="px-2.5 py-2 font-medium">Grupo</th>
                 <th className="px-2.5 py-2 font-medium">Estado</th>
-                <th className="px-2.5 py-2 font-medium">Manager</th>
+                {canEditCreators && (
+                  <th className="px-2.5 py-2 font-medium">Manager</th>
+                )}
                 <th className="px-2.5 py-2 text-right font-medium">Acciones</th>
               </tr>
             </thead>
@@ -561,12 +565,14 @@ export default function CreatorsClient() {
                   <td className="px-2.5 py-2">
                     <StatusBadge status={c.status} />
                   </td>
-                  <td
-                    className="truncate px-2.5 py-2 text-text-muted"
-                    title={c.managerName ?? undefined}
-                  >
-                    {c.managerName ?? "—"}
-                  </td>
+                  {canEditCreators && (
+                    <td
+                      className="truncate px-2.5 py-2 text-text-muted"
+                      title={c.managerName ?? undefined}
+                    >
+                      {c.managerName ?? "—"}
+                    </td>
+                  )}
                   <td className="px-2.5 py-2">
                     <div className="flex justify-end gap-1 whitespace-nowrap">
                       {whatsappUrl(c.phone, c.country) && (

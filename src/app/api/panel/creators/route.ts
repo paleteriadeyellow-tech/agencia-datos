@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
+import { creatorWhere } from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 import { currentMonth, monthRange } from "@/lib/utils";
 
@@ -8,7 +9,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
+  const scopeFilter = creatorWhere(scope, agencySlug);
 
   const sp = req.nextUrl.searchParams;
   const q = sp.get("q") ?? undefined;
@@ -22,7 +24,7 @@ export async function GET(req: NextRequest) {
   const [creators, niches, groups, managers, monthDiamonds] = await Promise.all([
     prisma.creator.findMany({
       where: {
-        agencySlug,
+        ...scopeFilter,
         AND: [
           q
             ? {
@@ -41,27 +43,29 @@ export async function GET(req: NextRequest) {
       include: { manager: { select: { name: true } } },
     }),
     prisma.creator.findMany({
-      where: { agencySlug },
+      where: scopeFilter,
       distinct: ["niche"],
       select: { niche: true },
       orderBy: { niche: "asc" },
     }),
     prisma.creator.findMany({
-      where: { agencySlug, groupName: { not: null } },
+      where: { ...scopeFilter, groupName: { not: null } },
       distinct: ["groupName"],
       select: { groupName: true },
       orderBy: { groupName: "asc" },
     }),
-    prisma.user.findMany({
-      where: { agencySlug },
-      select: { id: true, name: true, role: true },
-      orderBy: { name: "asc" },
-    }),
+    scope.admin
+      ? prisma.user.findMany({
+          where: { agencySlug },
+          select: { id: true, name: true, role: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
     prisma.metric.groupBy({
       by: ["creatorId"],
       where: {
         date: { gte: start, lte: end },
-        creator: { agencySlug },
+        creator: scopeFilter,
       },
       _sum: { diamonds: true },
     }),

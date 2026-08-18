@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
+import { assertCreatorAccess, creatorWhere } from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -10,10 +11,10 @@ const STATUSES = ["pendiente", "habilitada", "contactado", "no_quiere"] as const
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
 
   const creators = await prisma.creator.findMany({
-    where: { agencySlug, status: { not: "baja" } },
+    where: { status: { not: "baja" }, ...creatorWhere(scope, agencySlug) },
     select: {
       id: true,
       name: true,
@@ -75,7 +76,7 @@ const patchSchema = z
 export async function PATCH(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
 
   let body: unknown;
   try {
@@ -96,6 +97,8 @@ export async function PATCH(req: NextRequest) {
   if (!existing) {
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   }
+  const accessErr = await assertCreatorAccess(scope, existing.id, agencySlug);
+  if (accessErr) return accessErr;
 
   const data: { livecoinsStatus?: string; livecoinsComment?: string | null } =
     {};

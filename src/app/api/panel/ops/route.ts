@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
+import { creatorWhere } from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 import { currentMonth } from "@/lib/utils";
 
@@ -22,12 +23,13 @@ function periodsBetween(start: Date, end: Date) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
+  const scopeFilter = creatorWhere(scope, agencySlug);
 
   const [creators, campaigns, settlements, contracts, diamondRows] =
     await Promise.all([
     prisma.creator.findMany({
-      where: { agencySlug },
+      where: scopeFilter,
       select: { id: true, name: true, tiktokUser: true, diamonds: true },
       orderBy: { diamonds: "desc" },
     }),
@@ -43,12 +45,12 @@ export async function GET(req: NextRequest) {
       orderBy: { startDate: "desc" },
     }),
     prisma.settlement.findMany({
-      where: { agencySlug },
+      where: scope.admin ? { agencySlug } : { agencySlug, creator: scopeFilter },
       include: { creator: { select: { id: true, name: true } } },
       orderBy: [{ month: "desc" }, { createdAt: "desc" }],
     }),
     prisma.contract.findMany({
-      where: { agencySlug },
+      where: scope.admin ? { agencySlug } : { agencySlug, creator: scopeFilter },
       include: { creator: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     }),

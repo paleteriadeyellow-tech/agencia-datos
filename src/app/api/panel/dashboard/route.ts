@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
+import { creatorWhere } from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 import { currentMonth, monthRange } from "@/lib/utils";
 
@@ -14,7 +15,8 @@ function parsePeriod(raw: string | null) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug } = auth;
+  const { agencySlug, scope } = auth;
+  const scopeFilter = creatorWhere(scope, agencySlug);
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
   const { start, end } = monthRange(period);
@@ -30,18 +32,18 @@ export async function GET(req: NextRequest) {
     pendingTasks,
     activeWithLatest,
   ] = await Promise.all([
-    prisma.creator.count({ where: { agencySlug } }),
-    prisma.creator.count({ where: { agencySlug, status: "activo" } }),
+    prisma.creator.count({ where: scopeFilter }),
+    prisma.creator.count({ where: { ...scopeFilter, status: "activo" } }),
     prisma.creator.count({
-      where: { agencySlug, joinDate: { gte: start, lte: end } },
+      where: { ...scopeFilter, joinDate: { gte: start, lte: end } },
     }),
     prisma.diamondControl.aggregate({
-      where: { agencySlug, period },
+      where: { agencySlug, period, ...(scope.admin ? {} : { creator: scopeFilter }) },
       _sum: { diamonds: true, hours: true },
       _count: { _all: true },
     }),
     prisma.diamondControl.findMany({
-      where: { agencySlug, period },
+      where: { agencySlug, period, ...(scope.admin ? {} : { creator: scopeFilter }) },
       include: {
         creator: { select: { id: true, name: true, niche: true } },
       },
@@ -49,16 +51,19 @@ export async function GET(req: NextRequest) {
       take: 5,
     }),
     prisma.task.findMany({
-      where: {
-        agencySlug,
-        status: { in: ["pendiente", "en_progreso"] },
-      },
+      where: scope.admin
+        ? { agencySlug, status: { in: ["pendiente", "en_progreso"] } }
+        : {
+            agencySlug,
+            status: { in: ["pendiente", "en_progreso"] },
+            OR: [{ creatorId: null }, { creator: scopeFilter }],
+          },
       include: { creator: { select: { name: true } } },
       orderBy: { dueDate: "asc" },
       take: 6,
     }),
     prisma.creator.findMany({
-      where: { agencySlug, status: "activo" },
+      where: { ...scopeFilter, status: "activo" },
       select: {
         id: true,
         name: true,

@@ -279,7 +279,8 @@ export function CampaignForm({
             </ul>
           )}
           <p className="mt-1 text-xs text-text-muted">
-            Vacío = todos los de Control de diamantes del mes de la campaña.
+            Vacío = todos los de Control de diamantes del mes de la campaña. Solo
+            puedes añadir creadores de tu roster.
           </p>
         </div>
         {error && <p className="text-sm text-danger md:col-span-2">{error}</p>}

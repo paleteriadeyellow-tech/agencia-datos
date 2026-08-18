@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { isAgencySlug, agencyPath } from "@/lib/agencies";
+import { getScope } from "@/lib/creator-scope";
 import { TopBar } from "@/components/top-bar";
 import { CreatorForm } from "@/components/creator-form";
 import { StatusBadge } from "@/components/status-badge";
@@ -38,11 +39,20 @@ export default async function CreatorDetailPage({
 
   if (!creator) notFound();
 
-  const managers = await prisma.user.findMany({
-    where: { agencySlug: agency },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
+  if (session?.user?.id) {
+    const scope = getScope({ id: session.user.id, role: session.user.role });
+    if (!scope.admin && creator.managerId !== scope.userId) {
+      notFound();
+    }
+  }
+
+  const managers = canEdit
+    ? await prisma.user.findMany({
+        where: { agencySlug: agency },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      })
+    : [];
 
   const monthDiamonds = creator.metrics.reduce((a, m) => a + m.diamonds, 0);
 
