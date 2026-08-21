@@ -47,6 +47,8 @@ export async function GET(req: NextRequest) {
     importLogs,
     templates,
     agencyGoal,
+    managerUsers,
+    rosterAll,
   ] = await Promise.all([
     prisma.creator.findMany({
       where: scopeFilter,
@@ -128,6 +130,21 @@ export async function GET(req: NextRequest) {
       where: { agencySlug_period: { agencySlug, period } },
       select: { target: true },
     }),
+    prisma.user.findMany({
+      where: { agencySlug },
+      select: { id: true, name: true, role: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.creator.findMany({
+      where: { agencySlug },
+      select: {
+        id: true,
+        name: true,
+        tiktokUser: true,
+        status: true,
+        managerId: true,
+      },
+    }),
   ]);
 
   const creatorById = new Map(creators.map((c) => [c.id, c]));
@@ -193,24 +210,42 @@ export async function GET(req: NextRequest) {
     string,
     { id: string; name: string; diamonds: number; hours: number; active: number }
   >();
-  for (const c of creators) {
-    if (!c.manager) continue;
-    if (!managerMap.has(c.manager.id)) {
-      managerMap.set(c.manager.id, {
-        id: c.manager.id,
-        name: c.manager.name,
-        diamonds: 0,
-        hours: 0,
-        active: 0,
-      });
-    }
-    const row = managerMap.get(c.manager.id)!;
-    if (c.status === "activo") row.active += 1;
-    const stats = nowByCreator.get(c.id);
-    if (stats) {
-      row.diamonds += stats.diamonds;
-      row.hours += stats.hours;
-    }
+  const rosterById = new Map(rosterAll.map((c) => [c.id, c]));
+  const nickToManager = new Map<string, string>();
+  for (const c of rosterAll) {
+    if (!c.managerId) continue;
+    nickToManager.set(cleanNick(c.name), c.managerId);
+    if (c.tiktokUser) nickToManager.set(cleanNick(c.tiktokUser), c.managerId);
+  }
+  const managerIdsWithRoster = new Set(
+    rosterAll.map((c) => c.managerId).filter((id): id is string => Boolean(id))
+  );
+  for (const u of managerUsers) {
+    if (u.role !== "manager" && !managerIdsWithRoster.has(u.id)) continue;
+    managerMap.set(u.id, {
+      id: u.id,
+      name: u.name,
+      diamonds: 0,
+      hours: 0,
+      active: 0,
+    });
+  }
+  for (const c of rosterAll) {
+    if (!c.managerId) continue;
+    const row = managerMap.get(c.managerId);
+    if (row && c.status === "activo") row.active += 1;
+  }
+  for (const row of diamondNow) {
+    const fromCreator = row.creatorId
+      ? rosterById.get(row.creatorId)?.managerId
+      : null;
+    const managerId =
+      fromCreator ?? nickToManager.get(cleanNick(row.username)) ?? null;
+    if (!managerId) continue;
+    const entry = managerMap.get(managerId);
+    if (!entry) continue;
+    entry.diamonds += row.diamonds;
+    entry.hours += row.hours;
   }
 
   const nicheMap = new Map<string, number>();

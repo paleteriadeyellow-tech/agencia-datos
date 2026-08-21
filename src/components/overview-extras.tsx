@@ -172,8 +172,13 @@ export function OverviewExtras({
   }
 
   const podium = hub.podium.slice(0, 3);
-  const order = [1, 0, 2];
-  const heights = ["h-36", "h-44", "h-32"];
+  const maxPodium = Math.max(1, ...podium.map((p) => p.diamonds));
+  const podiumSlots = [
+    { place: 2 as const, person: podium[1] },
+    { place: 1 as const, person: podium[0] },
+    { place: 3 as const, person: podium[2] },
+  ].filter((s) => s.person);
+  const maxManager = Math.max(1, ...hub.managers.map((m) => m.diamonds));
 
   return (
     <div className="mt-6 space-y-6">
@@ -262,7 +267,7 @@ export function OverviewExtras({
         </Panel>
       </div>
 
-      {podium.length > 0 && (
+      {podiumSlots.length > 0 && (
         <Panel>
           <div className="mb-5 flex items-center gap-2">
             <Crown className="h-4 w-4 text-warning" />
@@ -271,10 +276,9 @@ export function OverviewExtras({
             </h2>
           </div>
           <div className="flex items-end justify-center gap-3 sm:gap-6">
-            {order.map((idx) => {
-              const person = podium[idx];
-              if (!person) return <div key={idx} className="w-24" />;
-              const place = idx + 1;
+            {podiumSlots.map(({ place, person }) => {
+              if (!person) return null;
+              const barH = 56 + Math.round((person.diamonds / maxPodium) * 140);
               return (
                 <Link
                   key={person.id}
@@ -286,7 +290,7 @@ export function OverviewExtras({
                     name={person.name}
                     size={place === 1 ? 64 : 48}
                   />
-                  <p className="mt-2 truncate text-center text-sm font-semibold">
+                  <p className="mt-2 w-full truncate text-center text-sm font-semibold">
                     {person.name}
                   </p>
                   <p className="text-xs tabular-nums text-text-muted">
@@ -294,16 +298,16 @@ export function OverviewExtras({
                   </p>
                   <div
                     className={cn(
-                      "mt-3 flex w-full items-end justify-center rounded-t-2xl text-lg font-bold",
-                      heights[idx],
+                      "mt-3 flex w-full items-end justify-center rounded-t-2xl text-lg font-bold transition-[height] duration-500",
                       place === 1
-                        ? "bg-gradient-to-t from-warning/30 to-warning/5 text-warning"
+                        ? "bg-gradient-to-t from-warning/40 to-warning/10 text-warning"
                         : place === 2
-                          ? "bg-gradient-to-t from-cyan/25 to-cyan/5 text-cyan"
-                          : "bg-gradient-to-t from-accent/25 to-accent/5 text-accent"
+                          ? "bg-gradient-to-t from-cyan/30 to-cyan/5 text-cyan"
+                          : "bg-gradient-to-t from-accent/30 to-accent/5 text-accent"
                     )}
+                    style={{ height: barH }}
                   >
-                    {place === 1 ? "1°" : place === 2 ? "2°" : "3°"}
+                    {place}°
                   </div>
                 </Link>
               );
@@ -378,7 +382,7 @@ export function OverviewExtras({
           </h2>
           <ul className="space-y-3">
             {hub.managers.length === 0 && (
-              <li className="text-sm text-text-muted">Sin managers con roster.</li>
+              <li className="text-sm text-text-muted">Aún no hay managers.</li>
             )}
             {hub.managers.map((m, i) => (
               <li key={m.id}>
@@ -392,10 +396,18 @@ export function OverviewExtras({
                       #{i + 1} {m.name}
                     </span>
                     <span className="tabular-nums text-text-muted">
-                      {formatNumber(m.diamonds)}
+                      {formatNumber(m.diamonds)} ◆
                     </span>
                   </div>
-                  <p className="mt-0.5 text-xs text-text-muted">
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg-hover">
+                    <div
+                      className="h-full rounded-full bg-accent"
+                      style={{
+                        width: `${Math.max(4, (m.diamonds / maxManager) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-xs text-text-muted">
                     {m.active} activos · {m.hours.toFixed(0)}h · ver su vista
                   </p>
                 </button>
