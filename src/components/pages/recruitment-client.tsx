@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Download, Plus, Trash2, Upload } from "lucide-react";
+import { ChevronDown, Download, Phone, Plus, Trash2, Upload } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, EmptyState, Field, Panel, inputClass } from "@/components/ui";
@@ -16,7 +16,6 @@ import {
   RECRUITMENT_GROUPS,
   SITUATION_OPTIONS,
   parseRecruitmentSheet,
-  situationTone,
   templateHeaders,
 } from "@/lib/recruitment";
 import { nickKey } from "@/lib/scope-view";
@@ -45,8 +44,32 @@ type Payload = {
   years: number[];
 };
 
-const cellClass =
-  "h-8 w-full min-w-0 rounded-md border border-white/10 bg-white/5 px-1.5 text-[11px] text-text outline-none placeholder:text-text-muted/50 hover:border-white/20 focus:border-accent/50";
+const IDENTITY_KEYS = new Set([
+  "recruiter",
+  "requestDate",
+  "creatorName",
+  "situation",
+  "phone",
+]);
+
+function situationBar(situation: string) {
+  const s = situation.toLowerCase();
+  if (s.includes("no apto")) return "border-l-danger";
+  if (s.includes("apto")) return "border-l-success";
+  if (s.includes("pendiente")) return "border-l-warning";
+  return "border-l-cyan/40";
+}
+
+function formatDay(iso: string | null) {
+  if (!iso) return "Sin fecha";
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+function filledCount(row: Lead) {
+  return RECRUITMENT_COLUMNS.filter((c) => cellValue(row, c.key).trim()).length;
+}
 
 function cellValue(row: Lead, key: string) {
   if (key === "recruiter") return row.recruiter;
@@ -89,6 +112,7 @@ export default function RecruitmentClient() {
   const fileRef = useRef<HTMLInputElement>(null);
   const timers = useRef<Record<string, number>>({});
   const pending = useRef<Record<string, Partial<Lead>>>({});
+  const [openId, setOpenId] = useState<string | null>(null);
   const [saveMap, setSaveMap] = useState<Record<string, string>>({});
 
   const url = `${PANEL.recruitment}?year=${year}&month=${month}`;
@@ -138,14 +162,6 @@ export default function RecruitmentClient() {
     return () => {
       Object.values(timers.current).forEach((t) => window.clearTimeout(t));
     };
-  }, []);
-
-  const groupSpans = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const col of RECRUITMENT_COLUMNS) {
-      counts.set(col.group, (counts.get(col.group) ?? 0) + 1);
-    }
-    return counts;
   }, []);
 
   const applyLocal = useCallback(
@@ -379,13 +395,13 @@ export default function RecruitmentClient() {
   }
 
   return (
-    <div>
+    <div className="space-y-6">
       <TopBar
         title="Reclutamiento y seguimiento"
-        subtitle="Mismas columnas del Excel · admin ve todo, cada manager solo lo suyo"
+        subtitle="Lista por creador · abre cada ficha para el seguimiento, sin scroll de lado"
       />
 
-      <div className="mb-4 flex flex-wrap items-end gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Field label="Año">
           <select
             className={inputClass}
@@ -400,7 +416,7 @@ export default function RecruitmentClient() {
             ))}
           </select>
         </Field>
-        <Field label="Mes / fecha">
+        <Field label="Mes">
           <select
             className={inputClass}
             value={month}
@@ -431,28 +447,25 @@ export default function RecruitmentClient() {
             </select>
           </Field>
         )}
-        <div className="min-w-[180px] flex-1">
+        <div className={admin && !viewAsId ? "lg:col-span-2" : "sm:col-span-2 lg:col-span-3"}>
           <Field label="Buscar">
             <input
               className={inputClass}
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Creador, reclutador, teléfono…"
+              placeholder="Creador, reclutador o teléfono…"
             />
           </Field>
         </div>
-        <p className="pb-2.5 text-xs text-text-muted">
-          {rows.length} filas
-        </p>
       </div>
 
-      <Panel className="mb-4">
+      <Panel>
         <form
           onSubmit={(e) => void addRow(e)}
-          className="flex flex-wrap items-end gap-2"
+          className="flex flex-col gap-4 lg:flex-row lg:items-end"
         >
-          <div className="min-w-[180px] flex-1">
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-text-muted">
+          <div className="min-w-0 flex-1">
+            <label className="mb-1.5 block text-[11px] uppercase tracking-wide text-text-muted">
               Nuevo creador
             </label>
             <input
@@ -462,36 +475,39 @@ export default function RecruitmentClient() {
               placeholder="Usuario TikTok o nombre"
             />
           </div>
-          <Button type="submit" disabled={busy}>
-            <Plus className="h-4 w-4" /> Agregar fila
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv,.tsv"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void importXlsx(file);
-            }}
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={busy}
-            onClick={() => fileRef.current?.click()}
-          >
-            <Upload className="h-4 w-4" />
-            {busy ? "Importando…" : "Importar Excel"}
-          </Button>
-          <Button type="button" variant="ghost" onClick={() => void downloadTemplate()}>
-            <Download className="h-4 w-4" /> Plantilla
-          </Button>
-          <Button type="button" variant="ghost" onClick={() => void exportXlsx()}>
-            <Download className="h-4 w-4" /> Exportar
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={busy}>
+              <Plus className="h-4 w-4" /> Agregar
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv,.tsv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void importXlsx(file);
+              }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" />
+              {busy ? "Importando…" : "Importar Excel"}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => void downloadTemplate()}>
+              <Download className="h-4 w-4" /> Plantilla
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => void exportXlsx()}>
+              <Download className="h-4 w-4" /> Exportar
+            </Button>
+          </div>
         </form>
-        {hint && <p className="mt-3 text-xs text-cyan">{hint}</p>}
+        <p className="mt-3 text-xs text-text-muted">{rows.length} registros</p>
+        {hint && <p className="mt-2 text-sm text-cyan">{hint}</p>}
       </Panel>
 
       {!payload ? (
@@ -501,122 +517,178 @@ export default function RecruitmentClient() {
       ) : rows.length === 0 ? (
         <EmptyState
           title="Sin registros"
-          description="Agrega una fila o importa el Excel de reclutamiento. Las columnas se acomodan solas."
+          description="Agrega una ficha o importa el Excel de reclutamiento."
         />
       ) : (
-        <Panel className="overflow-hidden p-0">
-          <div className="max-h-[calc(100vh-16rem)] overflow-auto">
-            <table className="w-max min-w-full border-collapse text-left text-xs">
-              <thead className="sticky top-0 z-20">
-                <tr>
-                  {RECRUITMENT_GROUPS.map((g) => {
-                    const span = groupSpans.get(g.id) ?? 0;
-                    if (!span) return null;
-                    return (
-                      <th
-                        key={g.id}
-                        colSpan={span}
-                        className={cn(
-                          "border-b border-border px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wide",
-                          g.className
-                        )}
-                      >
-                        {g.label}
-                      </th>
-                    );
-                  })}
-                  <th className="border-b border-border bg-bg-elevated" />
-                </tr>
-                <tr className="bg-bg-elevated">
-                  {RECRUITMENT_COLUMNS.map((col) => (
-                    <th
-                      key={col.key}
-                        className={cn(
-                          "border-b border-border-soft px-1.5 py-2 font-medium uppercase tracking-wide text-text-muted",
-                          col.width,
-                          col.key === "recruiter" &&
-                            "sticky left-0 z-10 bg-bg-elevated",
-                          col.key === "creatorName" &&
-                            "sticky left-[8.5rem] z-10 bg-bg-elevated"
-                        )}
+        <div className="space-y-3">
+          {rows.map((row, idx) => {
+            const open = openId === row.id;
+            const prev = rows[idx - 1];
+            const showRecruiter =
+              !prev || nickKey(prev.recruiter) !== nickKey(row.recruiter);
+            const done = filledCount(row);
+            const situationOpts = SITUATION_OPTIONS.includes(row.situation)
+              ? SITUATION_OPTIONS
+              : row.situation
+                ? [row.situation, ...SITUATION_OPTIONS]
+                : SITUATION_OPTIONS;
+            return (
+              <div key={row.id}>
+                {showRecruiter && (
+                  <p className="mb-2 mt-4 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan first:mt-0">
+                    {row.recruiter || "Sin reclutador"}
+                  </p>
+                )}
+                <div
+                  className={cn(
+                    "rounded-2xl border border-border-soft border-l-4 bg-bg-panel p-4 shadow-sm sm:p-5",
+                    situationBar(row.situation),
+                    open && "border-border"
+                  )}
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                    <button
+                      type="button"
+                      onClick={() => setOpenId(open ? null : row.id)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
-                      {col.label}
-                    </th>
-                  ))}
-                  <th className="sticky right-0 z-10 w-10 bg-bg-elevated" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={cn(
-                      "border-b border-border-soft/70 hover:bg-bg-hover/20",
-                      situationTone(row.situation)
-                    )}
-                  >
-                    {RECRUITMENT_COLUMNS.map((col) => {
-                      const value = cellValue(row, col.key);
-                      return (
-                        <td
-                          key={col.key}
-                          className={cn(
-                            "px-1 py-1",
-                            col.width,
-                            col.key === "recruiter" &&
-                              "sticky left-0 z-[1] bg-bg-elevated",
-                            col.key === "creatorName" &&
-                              "sticky left-[8.5rem] z-[1] bg-bg-elevated"
-                          )}
-                        >
-                          {col.key === "situation" ? (
-                            <input
-                              list={`sit-${row.id}`}
-                              className={cellClass}
-                              value={value}
-                              onChange={(e) =>
-                                autosave(row, patchFromKey(col.key, e.target.value))
-                              }
-                            />
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-bg-hover text-sm font-semibold text-cyan">
+                        {row.creatorName.slice(0, 2).toUpperCase() || "—"}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-base font-semibold">
+                          {row.creatorName.startsWith("@")
+                            ? row.creatorName
+                            : `@${row.creatorName}`}
+                        </span>
+                        <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
+                          <span>{formatDay(row.requestDate)}</span>
+                          {row.phone ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Phone className="h-3 w-3" />
+                              {row.phone}
+                            </span>
                           ) : (
-                            <input
-                              type={col.type === "date" ? "date" : "text"}
-                              className={cellClass}
-                              value={value}
-                              onChange={(e) =>
-                                autosave(row, patchFromKey(col.key, e.target.value))
-                              }
-                            />
+                            <span>Sin teléfono</span>
                           )}
-                          {col.key === "situation" && (
-                            <datalist id={`sit-${row.id}`}>
-                              {SITUATION_OPTIONS.map((opt) => (
-                                <option key={opt} value={opt} />
-                              ))}
-                            </datalist>
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="sticky right-0 bg-bg-elevated/95 px-1 py-1">
+                          <span>
+                            {done}/{RECRUITMENT_COLUMNS.length} campos
+                          </span>
+                        </span>
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          "ml-auto h-5 w-5 shrink-0 text-text-muted transition",
+                          open && "rotate-180"
+                        )}
+                      />
+                    </button>
+                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                      <select
+                        className={cn(
+                          inputClass,
+                          "h-10 min-w-[14rem] py-0 text-sm"
+                        )}
+                        value={row.situation}
+                        onChange={(e) =>
+                          autosave(row, { situation: e.target.value })
+                        }
+                      >
+                        {!row.situation && (
+                          <option value="">Situación</option>
+                        )}
+                        {situationOpts.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         type="button"
                         title="Eliminar"
-                        className="rounded p-1 text-text-muted hover:text-danger"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border text-text-muted hover:border-danger hover:text-danger"
                         onClick={() => void removeRow(row.id)}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
+                    </div>
+                  </div>
+
+                  {open && (
+                    <div className="mt-5 space-y-6 border-t border-border-soft pt-5">
+                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        {[
+                          { key: "creatorName", label: "Creador", type: "text" },
+                          { key: "recruiter", label: "Reclutador", type: "text" },
+                          { key: "requestDate", label: "Solicitud", type: "date" },
+                          { key: "phone", label: "Teléfono", type: "text" },
+                        ].map((field) => (
+                          <label key={field.key} className="block space-y-1.5">
+                            <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+                              {field.label}
+                            </span>
+                            <input
+                              type={field.type}
+                              className={inputClass}
+                              value={cellValue(row, field.key)}
+                              onChange={(e) =>
+                                autosave(
+                                  row,
+                                  patchFromKey(field.key, e.target.value)
+                                )
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      {RECRUITMENT_GROUPS.map((group) => {
+                        const cols = RECRUITMENT_COLUMNS.filter(
+                          (c) => c.group === group.id && !IDENTITY_KEYS.has(c.key)
+                        );
+                        if (!cols.length) return null;
+                        return (
+                          <section key={group.id}>
+                            <p
+                              className={cn(
+                                "mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]",
+                                group.className.split(" ").slice(-1)[0]
+                              )}
+                            >
+                              {group.label}
+                            </p>
+                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                              {cols.map((col) => (
+                                <label key={col.key} className="block space-y-1.5">
+                                  <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+                                    {col.label}
+                                  </span>
+                                  <input
+                                    type={col.type === "date" ? "date" : "text"}
+                                    className={inputClass}
+                                    value={cellValue(row, col.key)}
+                                    onChange={(e) =>
+                                      autosave(
+                                        row,
+                                        patchFromKey(col.key, e.target.value)
+                                      )
+                                    }
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </section>
+                        );
+                      })}
                       {saveMap[row.id] && (
-                        <span className="sr-only">{saveMap[row.id]}</span>
+                        <p className="text-xs text-text-muted">{saveMap[row.id]}</p>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
