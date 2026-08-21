@@ -8,8 +8,8 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     staleTimes: {
-      dynamic: 120,
-      static: 300,
+      dynamic: 300,
+      static: 600,
     },
   },
 };

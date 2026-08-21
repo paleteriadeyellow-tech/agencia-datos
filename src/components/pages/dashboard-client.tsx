@@ -79,24 +79,16 @@ export default function DashboardClient() {
   }, []);
 
   const { data, error, mutate } = usePanelData(
-    `${PANEL.dashboard}?period=${period}`,
-    {
-      refreshInterval: 8000,
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
-      dedupingInterval: 4000,
-    }
+    `${PANEL.dashboard}?period=${period}`
   ) as {
     data?: Dash;
     error?: Error;
     mutate: () => void;
   };
 
-  const { data: hub } = usePanelData(`${PANEL.hub}?period=${period}`, {
-    refreshInterval: 20000,
-    revalidateOnFocus: true,
-    dedupingInterval: 8000,
-  }) as { data?: HubData };
+  const { data: hub } = usePanelData(`${PANEL.hub}?period=${period}`) as {
+    data?: HubData;
+  };
 
   const view = data ? scopeDashboardData(data, viewAsId) : undefined;
   const hubView = hub ? scopeHubData(hub, viewAsId) : undefined;

@@ -25,7 +25,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { filterNavByRole } from "@/lib/permissions";
-import { useNavPending } from "@/components/app-providers";
 import { useAgency } from "@/lib/use-agency";
 import { useViewAs } from "@/components/view-as";
 
@@ -49,7 +48,6 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session } = useSession();
-  const { pending, startNav } = useNavPending();
   const { slug, shortName, path } = useAgency();
   const { viewAsName } = useViewAs();
   const [open, setOpen] = useState(false);
@@ -58,10 +56,8 @@ export function Sidebar() {
   const visibleNav = useMemo(() => filterNavByRole(nav, role), [role]);
 
   useEffect(() => {
-    ["/dashboard", "/creadores", "/metricas"].forEach((href) =>
-      router.prefetch(path(href))
-    );
-  }, [router, path]);
+    visibleNav.forEach((item) => router.prefetch(path(item.href)));
+  }, [router, path, visibleNav]);
 
   const content = (
     <aside className="flex h-full w-64 flex-col border-r border-border-soft bg-bg-elevated">
@@ -74,15 +70,13 @@ export function Sidebar() {
             {shortName}
           </p>
           <p className="mt-1 text-xs text-text-muted">
-            {pending
-              ? "Cargando…"
-              : viewAsName
-                ? `Vista · ${viewAsName}`
-                : role === "admin"
-                  ? "Admin · Backstage"
-                  : role === "manager"
-                    ? "Manager · Backstage"
-                    : "Backstage"}
+            {viewAsName
+              ? `Vista · ${viewAsName}`
+              : role === "admin"
+                ? "Admin · Backstage"
+                : role === "manager"
+                  ? "Manager · Backstage"
+                  : "Backstage"}
           </p>
         </div>
       </div>
@@ -98,20 +92,12 @@ export function Sidebar() {
               key={item.href}
               href={href}
               prefetch
-              onClick={(e) => {
-                if (active) {
-                  e.preventDefault();
-                  return;
-                }
-                startNav();
-                setOpen(false);
-              }}
+              onClick={() => setOpen(false)}
               className={cn(
                 "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
                 active
                   ? "bg-accent-soft text-white"
-                  : "text-text-muted hover:bg-bg-hover hover:text-text",
-                pending && !active && "opacity-70"
+                  : "text-text-muted hover:bg-bg-hover hover:text-text"
               )}
             >
               <Icon

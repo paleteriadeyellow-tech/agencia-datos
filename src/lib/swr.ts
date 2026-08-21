@@ -1,4 +1,5 @@
 import useSWR, { mutate, type SWRConfiguration } from "swr";
+import { currentMonth } from "@/lib/utils";
 
 export async function panelFetcher(url: string) {
   const res = await fetch(url, {
@@ -14,13 +15,19 @@ function urlFromKey(key: unknown): string | null {
   return null;
 }
 
+export const PANEL_SWR_DEFAULTS: SWRConfiguration = {
+  fetcher: panelFetcher,
+  revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+  revalidateIfStale: false,
+  keepPreviousData: true,
+  dedupingInterval: 60_000,
+  errorRetryCount: 1,
+};
+
 export function usePanelData(url: string | null, options?: SWRConfiguration) {
   return useSWR(url, panelFetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 60000,
-    errorRetryCount: 1,
-    keepPreviousData: true,
+    ...PANEL_SWR_DEFAULTS,
     ...options,
   });
 }
@@ -57,6 +64,22 @@ export const PANEL = {
   exportMes: "/api/panel/export",
 } as const;
 
+export function panelWarmUrls(period = currentMonth()) {
+  return [
+    `${PANEL.dashboard}?period=${period}`,
+    `${PANEL.hub}?period=${period}`,
+    PANEL.creators,
+    PANEL.managers,
+    PANEL.livecoins,
+    PANEL.metrics,
+    PANEL.ops,
+    `${PANEL.diamonds}?period=${period}`,
+    `${PANEL.tasks}?period=${period}`,
+    `${PANEL.bonos}?period=${period}`,
+    `${PANEL.kpi}?period=${period}`,
+  ];
+}
+
 function warm(url: string) {
   void panelFetcher(url)
     .then((data) => {
@@ -67,22 +90,15 @@ function warm(url: string) {
     });
 }
 
-/** Prefetch ligero: primero lo crítico, el resto en idle */
+/** Precarga las APIs del panel para que cada pestaña abra al instante. */
 export function prefetchPanel() {
   if (typeof window === "undefined") return;
 
-  warm(PANEL.dashboard);
-  warm(PANEL.creators);
-
-  const rest = [PANEL.metrics, PANEL.tasks, PANEL.ops, PANEL.managers];
-  const schedule =
-    typeof window.requestIdleCallback === "function"
-      ? window.requestIdleCallback
-      : (cb: () => void) => window.setTimeout(cb, 900);
-
-  schedule(() => {
-    rest.forEach((url, i) => {
-      window.setTimeout(() => warm(url), i * 180);
+  const urls = panelWarmUrls();
+  urls.slice(0, 3).forEach(warm);
+  window.setTimeout(() => {
+    urls.slice(3).forEach((url, i) => {
+      window.setTimeout(() => warm(url), i * 40);
     });
-  });
+  }, 40);
 }

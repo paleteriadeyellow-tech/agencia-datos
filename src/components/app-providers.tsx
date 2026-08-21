@@ -1,57 +1,47 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { usePathname } from "next/navigation";
-import { NavigationProgress } from "@/components/navigation-progress";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { SWRConfig } from "swr";
 import { QuickCreateProvider } from "@/components/quick-create";
-import { prefetchPanel } from "@/lib/swr";
+import { PANEL_SWR_DEFAULTS } from "@/lib/swr";
 import { ViewAsProvider } from "@/components/view-as";
+import { PanelWarmup } from "@/components/panel-warmup";
+import { useAgency } from "@/lib/use-agency";
 
-type NavCtx = {
-  pending: boolean;
-  startNav: () => void;
-};
-
-const Ctx = createContext<NavCtx>({ pending: false, startNav: () => {} });
-
-export function useNavPending() {
-  return useContext(Ctx);
-}
+const ALL_ROUTES = [
+  "/dashboard",
+  "/creadores",
+  "/control-diamantes",
+  "/metricas",
+  "/envio-kpi",
+  "/mensajes-wa",
+  "/tareas",
+  "/campanas",
+  "/calendario",
+  "/finanzas",
+  "/bonos",
+  "/contratos",
+  "/managers",
+];
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [pending, setPending] = useState(false);
+  const router = useRouter();
+  const { path } = useAgency();
 
   useEffect(() => {
-    setPending(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    const t = window.setTimeout(() => prefetchPanel(), 800);
-    return () => window.clearTimeout(t);
-  }, []);
-
-  const startNav = useCallback(() => {
-    setPending(true);
-  }, []);
-
-  const value = useMemo(() => ({ pending, startNav }), [pending, startNav]);
+    ALL_ROUTES.forEach((href) => router.prefetch(path(href)));
+  }, [router, path, pathname]);
 
   return (
-    <Ctx.Provider value={value}>
+    <SWRConfig value={PANEL_SWR_DEFAULTS}>
       <ViewAsProvider>
         <QuickCreateProvider>
-          <NavigationProgress pending={pending} />
+          <PanelWarmup />
           {children}
         </QuickCreateProvider>
       </ViewAsProvider>
-    </Ctx.Provider>
+    </SWRConfig>
   );
 }
