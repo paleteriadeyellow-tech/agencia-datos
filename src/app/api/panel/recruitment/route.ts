@@ -229,17 +229,24 @@ async function postRecruitment(req: NextRequest) {
   }
 
   if (data.action === "create") {
-    const recruiter = admin
-      ? (data.recruiter ?? "").trim()
-      : (data.recruiter ?? userName).trim() || userName;
     const creatorName = (data.creatorName ?? "").trim() || "Nuevo creador";
     const requestDate = toDate(data.requestDate ?? null);
     const parts = dateParts(isoDate(requestDate));
+    let recruiter = (data.recruiter ?? "").trim();
+    let managerId = data.managerId ?? null;
+    if (!admin) {
+      recruiter = recruiter || userName;
+      managerId = userId ?? null;
+    } else if (!recruiter && managerId) {
+      recruiter = users.find((u) => u.id === managerId)?.name ?? "";
+    } else if (!managerId) {
+      managerId = resolveManager(recruiter, null);
+    }
     const row = await prisma.recruitmentLead.create({
       data: {
         agencySlug,
         recruiter,
-        managerId: resolveManager(recruiter, data.managerId),
+        managerId,
         requestDate,
         year: parts.year,
         month: parts.month,
@@ -250,7 +257,7 @@ async function postRecruitment(req: NextRequest) {
         comment2: data.comment2 ?? "",
         recontact: data.recontact ?? "",
         integrationDate: toDate(data.integrationDate ?? null),
-        steps: {},
+        steps: asSteps(data.steps),
         createdById: userId,
       },
     });
@@ -311,6 +318,12 @@ async function postRecruitment(req: NextRequest) {
   const incoming = data.rows ?? [];
   if (!incoming.length) {
     return NextResponse.json({ error: "Sin filas para importar" }, { status: 400 });
+  }
+  if (!admin) {
+    return NextResponse.json(
+      { error: "Solo un admin puede importar Excel." },
+      { status: 403 }
+    );
   }
 
   const existing = await prisma.recruitmentLead.findMany({

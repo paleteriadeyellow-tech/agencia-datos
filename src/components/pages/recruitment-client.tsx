@@ -6,6 +6,7 @@ import { ChevronDown, Download, Plus, Trash2, Upload } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, EmptyState, Field, Panel, inputClass } from "@/components/ui";
+import { Modal } from "@/components/modal";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
@@ -15,6 +16,8 @@ import {
   RECRUITMENT_COLUMNS,
   RECRUITMENT_GROUPS,
   SITUATION_OPTIONS,
+  STEP_KEYS,
+  dateParts,
   parseRecruitmentSheet,
   templateHeaders,
 } from "@/lib/recruitment";
@@ -67,8 +70,24 @@ function formatDay(iso: string | null) {
   return `${d}/${m}/${y}`;
 }
 
-function filledCount(row: Lead) {
-  return RECRUITMENT_COLUMNS.filter((c) => cellValue(row, c.key).trim()).length;
+function todayIso() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+}
+
+function emptyDraft(recruiter: string): Record<string, string> {
+  return {
+    creatorName: "",
+    recruiter,
+    managerId: "",
+    requestDate: todayIso(),
+    phone: "",
+    situation: "pendiente",
+    comment: "",
+    comment2: "",
+    recontact: "",
+    integrationDate: "",
+  };
 }
 
 function cellValue(row: Lead, key: string) {
@@ -110,7 +129,10 @@ export default function RecruitmentClient() {
   const [q, setQ] = useState("");
   const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
-  const [newName, setNewName] = useState("");
+  const [openAdd, setOpenAdd] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>(() =>
+    emptyDraft("")
+  );
   const fileRef = useRef<HTMLInputElement>(null);
   const timers = useRef<Record<string, number>>({});
   const pending = useRef<Record<string, Partial<Lead>>>({});
@@ -225,19 +247,41 @@ export default function RecruitmentClient() {
 
   async function addRow(e: React.FormEvent) {
     e.preventDefault();
+    if (!draft.creatorName.trim()) {
+      setHint("Escribe el nombre o usuario del creador.");
+      return;
+    }
     setBusy(true);
     setHint("");
     try {
+      const manager =
+        admin && (viewAsId || draft.managerId)
+          ? managers.find((m) => m.id === (viewAsId || draft.managerId))
+          : null;
+      const recruiter = admin
+        ? viewAsName || manager?.name || draft.recruiter.trim()
+        : session?.user?.name ?? draft.recruiter;
+      const steps: Record<string, string> = {};
+      for (const key of STEP_KEYS) {
+        const v = (draft[key] ?? "").trim();
+        if (v) steps[key] = v;
+      }
       const res = await fetch(PANEL.recruitment, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "create",
-          creatorName: newName.trim() || "Nuevo creador",
-          recruiter: session?.user?.name ?? "",
-          managerId: viewAsId || (admin ? null : undefined),
-          requestDate: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
-          situation: "pendiente",
+          creatorName: draft.creatorName.trim(),
+          recruiter,
+          managerId: admin ? viewAsId || draft.managerId || null : undefined,
+          requestDate: draft.requestDate || todayIso(),
+          situation: draft.situation || "pendiente",
+          phone: draft.phone,
+          comment: draft.comment,
+          comment2: draft.comment2,
+          recontact: draft.recontact,
+          integrationDate: draft.integrationDate || null,
+          steps,
         }),
       });
       const json = await res.json();
@@ -245,9 +289,17 @@ export default function RecruitmentClient() {
         setHint(json.error || "No se pudo agregar");
         return;
       }
-      setNewName("");
-      await mutate();
+      const parts = dateParts(draft.requestDate || todayIso());
+      if (parts.year) setYear(String(parts.year));
+      if (parts.month) setMonth(String(parts.month));
+      setOpenAdd(false);
+      setDraft(emptyDraft(session?.user?.name ?? ""));
+      const mesNombre = parts.month ? MESES_NOMBRE[parts.month] : "";
+      setHint(
+        `Ficha de ${draft.creatorName.trim()} guardada en ${mesNombre} ${parts.year ?? ""}`.trim()
+      );
       invalidatePanel(PANEL.recruitment);
+      await mutate();
     } finally {
       setBusy(false);
     }
@@ -467,52 +519,48 @@ export default function RecruitmentClient() {
       </div>
 
       <Panel>
-        <form
-          onSubmit={(e) => void addRow(e)}
-          className="flex flex-col gap-4 lg:flex-row lg:items-end"
-        >
-          <div className="min-w-0 flex-1">
-            <label className="mb-1.5 block text-[11px] uppercase tracking-wide text-text-muted">
-              Nuevo creador
-            </label>
-            <input
-              className={inputClass}
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Usuario TikTok o nombre"
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={busy}>
-              <Plus className="h-4 w-4" /> Agregar
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".xlsx,.xls,.csv,.tsv"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void importXlsx(file);
-              }}
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => fileRef.current?.click()}
-            >
-              <Upload className="h-4 w-4" />
-              {busy ? "Importando…" : "Importar Excel"}
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => void downloadTemplate()}>
-              <Download className="h-4 w-4" /> Plantilla
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => void exportXlsx()}>
-              <Download className="h-4 w-4" /> Exportar
-            </Button>
-          </div>
-        </form>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button
+            type="button"
+            onClick={() => {
+              const next = emptyDraft(viewAsName || session?.user?.name || "");
+              if (viewAsId) next.managerId = viewAsId;
+              setDraft(next);
+              setOpenAdd(true);
+            }}
+          >
+            <Plus className="h-4 w-4" /> Agregar
+          </Button>
+          {admin && (
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void importXlsx(file);
+                }}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+              >
+                <Upload className="h-4 w-4" />
+                {busy ? "Importando…" : "Importar Excel"}
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => void downloadTemplate()}>
+                <Download className="h-4 w-4" /> Plantilla
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => void exportXlsx()}>
+                <Download className="h-4 w-4" /> Exportar
+              </Button>
+            </div>
+          )}
+        </div>
         <p className="mt-3 text-xs text-text-muted">
           {rows.length} registros
           {month === currentMonthNum && year === currentYear
@@ -727,6 +775,164 @@ export default function RecruitmentClient() {
           })}
         </div>
       )}
+
+      <Modal
+        open={openAdd}
+        onClose={() => setOpenAdd(false)}
+        wide
+        title="Nueva ficha"
+        subtitle={
+          admin
+            ? "Se guarda en el mes de la fecha de solicitud. Elige el manager."
+            : "Se guarda en tu lista y en el mes de la fecha de solicitud."
+        }
+      >
+        <form onSubmit={(e) => void addRow(e)} className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                Creador
+              </span>
+              <input
+                className={cn(inputClass, "h-9 py-0 text-sm")}
+                required
+                placeholder="@usuario"
+                value={draft.creatorName}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, creatorName: e.target.value }))
+                }
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                Fecha de solicitud
+              </span>
+              <input
+                type="date"
+                className={cn(inputClass, "h-9 py-0 text-sm")}
+                required
+                value={draft.requestDate}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, requestDate: e.target.value }))
+                }
+              />
+            </label>
+            {admin && !viewAsId ? (
+              <label className="block space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                  Manager
+                </span>
+                <select
+                  className={cn(inputClass, "h-9 py-0 text-sm")}
+                  value={draft.managerId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const name = managers.find((m) => m.id === id)?.name ?? "";
+                    setDraft((d) => ({ ...d, managerId: id, recruiter: name }));
+                  }}
+                >
+                  <option value="">Sin asignar</option>
+                  {managers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="block space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                  Manager
+                </span>
+                <input
+                  className={cn(inputClass, "h-9 py-0 text-sm")}
+                  readOnly
+                  value={viewAsName || session?.user?.name || ""}
+                />
+              </label>
+            )}
+            <label className="block space-y-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                Teléfono
+              </span>
+              <input
+                className={cn(inputClass, "h-9 py-0 text-sm")}
+                value={draft.phone}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, phone: e.target.value }))
+                }
+              />
+            </label>
+            <label className="block space-y-1 sm:col-span-2">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                Situación
+              </span>
+              <select
+                className={cn(inputClass, "h-9 py-0 text-sm")}
+                value={draft.situation}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, situation: e.target.value }))
+                }
+              >
+                {SITUATION_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {RECRUITMENT_GROUPS.map((group) => {
+            const cols = RECRUITMENT_COLUMNS.filter(
+              (c) => c.group === group.id && !IDENTITY_KEYS.has(c.key)
+            );
+            if (!cols.length) return null;
+            return (
+              <section key={group.id}>
+                <p
+                  className={cn(
+                    "mb-2 text-[10px] font-semibold uppercase tracking-[0.14em]",
+                    group.className.split(" ").slice(-1)[0]
+                  )}
+                >
+                  {group.label}
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {cols.map((col) => (
+                    <label key={col.key} className="block space-y-1">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                        {col.label}
+                      </span>
+                      <input
+                        type={col.type === "date" ? "date" : "text"}
+                        className={cn(inputClass, "h-9 py-0 text-sm")}
+                        value={draft[col.key] ?? ""}
+                        onChange={(e) =>
+                          setDraft((d) => ({ ...d, [col.key]: e.target.value }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setOpenAdd(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Guardando…" : "Guardar ficha"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
