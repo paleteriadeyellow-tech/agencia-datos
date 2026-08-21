@@ -372,6 +372,7 @@ export default function DiamondsControlClient() {
       )}
 
       {canImport && (
+      <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input
           ref={fileRef}
@@ -430,6 +431,7 @@ export default function DiamondsControlClient() {
           </div>
         </form>
       </Panel>
+      </>
       )}
 
       {!data ? (
