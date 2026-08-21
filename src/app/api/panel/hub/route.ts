@@ -9,6 +9,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import {
   currentMonth,
+  formatNumber,
   pctChange,
   periodMeta,
   prevPeriod,
@@ -31,18 +32,14 @@ export async function GET(req: NextRequest) {
   const previous = prevPeriod(period);
   const meta = periodMeta(period);
   const week = weekBounds();
-  const in30 = new Date();
-  in30.setDate(in30.getDate() + 30);
-  const fourteenDaysAgo = new Date();
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 
   const [
     creators,
     diamondNow,
     diamondPrev,
     goals,
-    kpiRows,
-    contracts,
+    _kpiRows,
+    _contracts,
     schedules,
     importLogs,
     templates,
@@ -197,14 +194,6 @@ export async function GET(req: NextRequest) {
   for (const row of diamondPrev) addTo(prevByCreator, prevAgency, row);
 
   const goalByCreator = new Map(goals.map((g) => [g.creatorId, g]));
-  const kpiNicks = new Set(kpiRows.map((k) => cleanNick(k.nombre)));
-
-  const contractsByCreator = new Map<string, typeof contracts>();
-  for (const ct of contracts) {
-    const list = contractsByCreator.get(ct.creatorId) ?? [];
-    list.push(ct);
-    contractsByCreator.set(ct.creatorId, list);
-  }
 
   const managerMap = new Map<
     string,
@@ -258,11 +247,40 @@ export async function GET(req: NextRequest) {
     countryMap.set(country, (countryMap.get(country) ?? 0) + d);
   }
 
+  function statsForCreator(c: { id: string; name: string; tiktokUser: string | null }) {
+    return (
+      nowByCreator.get(c.id) ??
+      (c.tiktokUser
+        ? nowByCreator.get(`nick:${cleanNick(c.tiktokUser)}`)
+        : undefined) ??
+      nowByCreator.get(`nick:${cleanNick(c.name)}`) ??
+      empty()
+    );
+  }
+
+  function prevForCreator(c: { id: string; name: string; tiktokUser: string | null }) {
+    return (
+      prevByCreator.get(c.id) ??
+      (c.tiktokUser
+        ? prevByCreator.get(`nick:${cleanNick(c.tiktokUser)}`)
+        : undefined) ??
+      prevByCreator.get(`nick:${cleanNick(c.name)}`) ??
+      empty()
+    );
+  }
+
+  function hasImportRow(c: { id: string; name: string; tiktokUser: string | null }) {
+    if (nowByCreator.has(c.id)) return true;
+    if (c.tiktokUser && nowByCreator.has(`nick:${cleanNick(c.tiktokUser)}`)) {
+      return true;
+    }
+    return nowByCreator.has(`nick:${cleanNick(c.name)}`);
+  }
   const creatorCards = creators
     .filter((c) => c.status === "activo")
     .map((c) => {
-      const stats = nowByCreator.get(c.id) ?? empty();
-      const prev = prevByCreator.get(c.id) ?? empty();
+      const stats = statsForCreator(c);
+      const prev = prevForCreator(c);
       const goal = goalByCreator.get(c.id);
       const lastLive = c.metrics[0]?.date ?? null;
       const drop =
@@ -300,96 +318,117 @@ export async function GET(req: NextRequest) {
     type: string;
     label: string;
     severity: "warning" | "danger" | "cyan";
+    diamonds: number;
+    days: number;
+    hours: number;
   }[] = [];
+
+  const hasDiamondImport = diamondNow.length > 0;
+  const importedDiamonds = [...nowByCreator.values()]
+    .map((s) => s.diamonds)
+    .filter((d) => d > 0)
+    .sort((a, b) => a - b);
+  const lowDiamondCut =
+    importedDiamonds.length >= 4
+      ? importedDiamonds[Math.floor(importedDiamonds.length * 0.25)]!
+      : 15000;
+  const lowDaysCut = Math.max(3, Math.floor(meta.dayElapsed * 0.45));
+
+  function pushAlert(
+    c: (typeof creators)[0],
+    type: string,
+    label: string,
+    severity: "warning" | "danger" | "cyan"
+  ) {
+    const stats = statsForCreator(c);
+    alerts.push({
+      id: `${type}-${c.id}`,
+      creatorId: c.id,
+      name: c.name,
+      phone: c.phone,
+      country: c.country,
+      type,
+      label,
+      severity,
+      diamonds: stats.diamonds,
+      days: stats.days,
+      hours: stats.hours,
+    });
+  }
 
   for (const c of creators) {
     if (c.status !== "activo") continue;
-    const stats = nowByCreator.get(c.id) ?? empty();
-    const prev = prevByCreator.get(c.id) ?? empty();
-    const last = c.metrics[0]?.date;
-    const cts = contractsByCreator.get(c.id) ?? [];
-    const activeCt = cts.find((x) => x.status === "activo");
-    const nick = cleanNick(c.tiktokUser || c.name);
+    const stats = statsForCreator(c);
+    const prev = prevForCreator(c);
+    const inFile = hasImportRow(c);
+    const goal = goalByCreator.get(c.id);
 
-    if (!last || last < fourteenDaysAgo) {
-      alerts.push({
-        id: `inactive-${c.id}`,
-        creatorId: c.id,
-        name: c.name,
-        phone: c.phone,
-        country: c.country,
-        type: "inactive",
-        label: "Sin LIVE reciente (14+ días)",
-        severity: "warning",
-      });
+    if (!hasDiamondImport || !inFile) continue;
+
+    if (stats.days <= 0) {
+      pushAlert(
+        c,
+        "nodays",
+        `0 días transmitidos · ${formatNumber(stats.diamonds)} ◆`,
+        "danger"
+      );
+      continue;
     }
+
+    const fewDays = stats.days < lowDaysCut;
+    const lowDiamonds = stats.diamonds <= lowDiamondCut;
+    if (fewDays && lowDiamonds) {
+      pushAlert(
+        c,
+        "low",
+        `Va bajo: ${formatNumber(stats.diamonds)} ◆ · ${stats.days}d de ~${meta.dayElapsed} · ${stats.hours.toFixed(0)}h`,
+        "warning"
+      );
+    } else if (fewDays) {
+      pushAlert(
+        c,
+        "lowdays",
+        `Pocos días LIVE (${stats.days} de ~${meta.dayElapsed}) · ${formatNumber(stats.diamonds)} ◆`,
+        "warning"
+      );
+    } else if (lowDiamonds) {
+      pushAlert(
+        c,
+        "low",
+        `Va bajo: ${formatNumber(stats.diamonds)} ◆ · ${stats.days}d · ${stats.hours.toFixed(0)}h`,
+        "warning"
+      );
+    }
+
+    if (goal && goal.targetDiamonds > 0 && stats.diamonds < goal.targetDiamonds * 0.4) {
+      const pct = Math.round((stats.diamonds / goal.targetDiamonds) * 100);
+      pushAlert(
+        c,
+        "goal",
+        `Lejos de su meta (${pct}% · ${formatNumber(stats.diamonds)} / ${formatNumber(goal.targetDiamonds)})`,
+        "warning"
+      );
+    }
+
     if (prev.diamonds >= 20000 && stats.diamonds < prev.diamonds * 0.7) {
-      alerts.push({
-        id: `drop-${c.id}`,
-        creatorId: c.id,
-        name: c.name,
-        phone: c.phone,
-        country: c.country,
-        type: "drop",
-        label: `Cayó ${Math.round(((prev.diamonds - stats.diamonds) / prev.diamonds) * 100)}% vs mes anterior`,
-        severity: "danger",
-      });
-    }
-    if (c.livecoinsStatus === "pendiente") {
-      alerts.push({
-        id: `livecoins-${c.id}`,
-        creatorId: c.id,
-        name: c.name,
-        phone: c.phone,
-        country: c.country,
-        type: "livecoins",
-        label: "App Livecoins pendiente",
-        severity: "cyan",
-      });
-    }
-    if (!kpiNicks.has(nick) && !kpiNicks.has(cleanNick(c.name))) {
-      alerts.push({
-        id: `kpi-${c.id}`,
-        creatorId: c.id,
-        name: c.name,
-        phone: c.phone,
-        country: c.country,
-        type: "kpi",
-        label: "Sin envío de KPI este mes",
-        severity: "warning",
-      });
-    }
-    if (!activeCt) {
-      alerts.push({
-        id: `nocontract-${c.id}`,
-        creatorId: c.id,
-        name: c.name,
-        phone: c.phone,
-        country: c.country,
-        type: "nocontract",
-        label: "Sin contrato activo",
-        severity: "warning",
-      });
-    } else if (activeCt.endDate && activeCt.endDate <= in30) {
-      alerts.push({
-        id: `expiring-${c.id}`,
-        creatorId: c.id,
-        name: c.name,
-        phone: c.phone,
-        country: c.country,
-        type: "expiring",
-        label: `Contrato por vencer (${activeCt.title})`,
-        severity: "danger",
-      });
+      pushAlert(
+        c,
+        "drop",
+        `Cayó ${Math.round(((prev.diamonds - stats.diamonds) / prev.diamonds) * 100)}% vs mes anterior`,
+        "danger"
+      );
     }
   }
 
   const severityRank = { danger: 0, warning: 1, cyan: 2 };
   alerts.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
 
-  const atRisk = creatorCards
-    .filter((c) => c.diamonds === 0 || c.days < 10 || (c.lastLive && new Date(c.lastLive) < fourteenDaysAgo))
-    .slice(0, 5);
+  const atRiskIds = new Set(
+    alerts
+      .filter((a) => a.type === "nodays" || a.type === "lowdays" || a.type === "low")
+      .map((a) => a.creatorId)
+  );
+  const atRisk = creatorCards.filter((c) => atRiskIds.has(c.id)).slice(0, 5);
   const top = creatorCards.filter((c) => c.diamonds > 0).slice(0, 3);
 
   const dailyPace = nowAgency.diamonds / meta.dayElapsed;

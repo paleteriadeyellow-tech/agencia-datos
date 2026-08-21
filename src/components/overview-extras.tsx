@@ -61,6 +61,9 @@ export type HubData = {
     type: string;
     label: string;
     severity: "warning" | "danger" | "cyan";
+    diamonds?: number;
+    days?: number;
+    hours?: number;
   }[];
   managers: {
     id: string;
@@ -163,10 +166,18 @@ export function OverviewExtras({
     const link = whatsappUrl(alert.phone, alert.country);
     if (!link) return;
     const text = fillWaTemplate(
-      alert.type === "inactive"
-        ? "Hola {nombre}, no te hemos visto en LIVE. ¿Todo bien? Agenda hoy aunque sea 1 hora."
-        : "Hola {nombre}, te escribimos por: {nicho}.",
-      { nombre: alert.name, nicho: alert.label }
+      alert.type === "nodays"
+        ? "Hola {nombre}, en Control de diamantes sales con 0 días transmitidos este mes. ¿Todo bien? Agenda LIVE hoy."
+        : alert.type === "lowdays" || alert.type === "low"
+          ? "Hola {nombre}, vas bajo este mes: {diamantes} diamantes y {dias} días LIVE. Necesitamos recuperar ritmo."
+          : "Hola {nombre}, te escribimos por: {nicho}.",
+      {
+        nombre: alert.name,
+        nicho: alert.label,
+        diamantes: formatNumber(alert.diamonds ?? 0),
+        dias: alert.days ?? 0,
+        horas: Math.round(alert.hours ?? 0),
+      }
     );
     window.open(`${link}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
   }
@@ -328,7 +339,7 @@ export function OverviewExtras({
             {hub.alerts.length === 0 && (
               <li className="text-sm text-text-muted">Sin alertas. El roster va bien.</li>
             )}
-            {hub.alerts.slice(0, 18).map((a) => (
+            {hub.alerts.map((a) => (
               <li
                 key={a.id}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border-soft bg-bg px-3 py-2.5"
