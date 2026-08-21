@@ -264,7 +264,7 @@ export async function DELETE(req: NextRequest) {
   const clearPeriod = req.nextUrl.searchParams.get("clearPeriod") === "1";
 
   if (clearPeriod && period && /^\d{4}-\d{2}$/.test(period)) {
-    if (scope.admin) {
+    if (auth.isAdmin) {
       const res = await prisma.kpiRecord.deleteMany({
         where: { agencySlug, period },
       });

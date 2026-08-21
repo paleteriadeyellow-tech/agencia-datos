@@ -4,6 +4,8 @@ import { signOut, useSession } from "next-auth/react";
 import { LogOut } from "lucide-react";
 import { useAgency } from "@/lib/use-agency";
 import { isAdmin } from "@/lib/permissions";
+import { ViewAsSelect } from "@/components/view-as";
+import { writeViewAsCookie } from "@/lib/view-as";
 
 export function TopBar({ title, subtitle }: { title: string; subtitle?: string }) {
   const { data } = useSession();
@@ -22,7 +24,8 @@ export function TopBar({ title, subtitle }: { title: string; subtitle?: string }
         {subtitle && <p className="mt-1 text-sm text-text-muted">{subtitle}</p>}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <ViewAsSelect />
         <div className="rounded-lg border border-border bg-bg-panel px-3 py-2 text-sm">
           <span className="text-text-muted">Hola, </span>
           <span className="font-medium">{data?.user?.name ?? "Manager"}</span>
@@ -32,7 +35,10 @@ export function TopBar({ title, subtitle }: { title: string; subtitle?: string }
         </div>
         <button
           type="button"
-          onClick={() => signOut({ callbackUrl: path("/login") })}
+          onClick={() => {
+            writeViewAsCookie(null);
+            void signOut({ callbackUrl: path("/login") });
+          }}
           className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg-panel px-3 py-2 text-sm text-text-muted transition hover:border-accent hover:text-accent"
         >
           <LogOut className="h-4 w-4" />

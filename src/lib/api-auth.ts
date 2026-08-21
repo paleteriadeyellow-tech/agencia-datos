@@ -2,11 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { isAgencySlug, type AgencySlug } from "@/lib/agencies";
 import { prisma } from "@/lib/prisma";
+import { isAdmin } from "@/lib/permissions";
 import {
+  applyViewAs,
   getScope,
   userIdFromToken,
   type ManagerScope,
 } from "@/lib/creator-scope";
+import { parseViewAsId, VIEW_AS_COOKIE } from "@/lib/view-as";
+
+function viewAsIdFromRequest(req: NextRequest) {
+  return parseViewAsId(
+    req.cookies.get(VIEW_AS_COOKIE)?.value ?? req.headers.get("x-view-as")
+  );
+}
 
 export async function requireApiAuth(req: NextRequest) {
   const token = await getToken({
@@ -19,6 +28,8 @@ export async function requireApiAuth(req: NextRequest) {
       token: null as null,
       agencySlug: null as null,
       scope: null as null,
+      isAdmin: false,
+      viewingAs: null as null,
     };
   }
   const agencySlug = token.agencySlug as string | undefined;
@@ -28,6 +39,8 @@ export async function requireApiAuth(req: NextRequest) {
       token: null as null,
       agencySlug: null as null,
       scope: null as null,
+      isAdmin: false,
+      viewingAs: null as null,
     };
   }
 
@@ -40,6 +53,8 @@ export async function requireApiAuth(req: NextRequest) {
     if (dbUser) token.role = dbUser.role;
   }
 
+  const isAdminUser = isAdmin(token.role as string | undefined);
+
   let scope: ManagerScope;
   try {
     scope = getScope(token);
@@ -49,13 +64,23 @@ export async function requireApiAuth(req: NextRequest) {
       token: null as null,
       agencySlug: null as null,
       scope: null as null,
+      isAdmin: false,
+      viewingAs: null as null,
     };
   }
+
+  const viewed = await applyViewAs(
+    scope,
+    agencySlug,
+    viewAsIdFromRequest(req)
+  );
 
   return {
     error: null as null,
     token,
     agencySlug: agencySlug as AgencySlug,
-    scope,
+    scope: viewed.scope,
+    isAdmin: isAdminUser,
+    viewingAs: viewed.viewingAs,
   };
 }

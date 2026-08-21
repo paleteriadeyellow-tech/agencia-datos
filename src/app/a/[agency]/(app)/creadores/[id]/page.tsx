@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/permissions";
 import { isAgencySlug, agencyPath } from "@/lib/agencies";
-import { getScope } from "@/lib/creator-scope";
+import { applyViewAs, getScope } from "@/lib/creator-scope";
+import { parseViewAsId, VIEW_AS_COOKIE } from "@/lib/view-as";
 import { TopBar } from "@/components/top-bar";
 import { CreatorForm } from "@/components/creator-form";
 import { StatusBadge } from "@/components/status-badge";
@@ -40,8 +42,13 @@ export default async function CreatorDetailPage({
   if (!creator) notFound();
 
   if (session?.user?.id) {
-    const scope = getScope({ id: session.user.id, role: session.user.role });
-    if (!scope.admin && creator.managerId !== scope.userId) {
+    const cookieStore = await cookies();
+    const viewed = await applyViewAs(
+      getScope({ id: session.user.id, role: session.user.role }),
+      agency,
+      parseViewAsId(cookieStore.get(VIEW_AS_COOKIE)?.value)
+    );
+    if (!viewed.scope.admin && creator.managerId !== viewed.scope.userId) {
       notFound();
     }
   }

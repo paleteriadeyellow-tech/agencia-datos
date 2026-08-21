@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
@@ -9,6 +10,7 @@ import { formatPhoneInputValue } from "@/lib/phone";
 import { isAgencySlug, type AgencySlug } from "@/lib/agencies";
 import { isAdmin } from "@/lib/permissions";
 import { filterCreatorIdsForScope, getScope } from "@/lib/creator-scope";
+import { parseViewAsId, VIEW_AS_COOKIE } from "@/lib/view-as";
 
 function revalidateAgency(agencySlug: string, ...paths: string[]) {
   for (const p of paths) {
@@ -124,6 +126,11 @@ export async function createCreator(formData: FormData) {
   let managerId = String(formData.get("managerId") || "") || null;
   if (!isAdmin(session.user.role)) {
     managerId = session.user.id;
+  } else if (!managerId) {
+    const viewAsId = parseViewAsId(
+      (await cookies()).get(VIEW_AS_COOKIE)?.value
+    );
+    if (viewAsId) managerId = viewAsId;
   }
 
   if (!name || !phoneRaw || !niche || !joinDate) {

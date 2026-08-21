@@ -4,12 +4,14 @@ import { useMemo, useState } from "react";
 import { Gem, Pencil, Target, Users } from "lucide-react";
 import { Button, Field, Panel, inputClass } from "@/components/ui";
 import { formatNumber, cn } from "@/lib/utils";
+import { useViewAs } from "@/components/view-as";
 
 export type DiamondGoal = {
   target: number;
   agencyTotal: number;
   myTotal: number;
   canEdit: boolean;
+  isManagerView?: boolean;
   updatedAt: string | null;
   managers: { id: string; name: string; diamonds: number }[];
 };
@@ -67,6 +69,8 @@ export function DiamondGoalCard({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { setViewAs } = useViewAs();
+  const showTeam = Boolean(goal.isManagerView);
 
   const parsedTarget = parseDiamondInput(draft);
   const agencyPct = pctOf(goal.agencyTotal, goal.target);
@@ -186,7 +190,7 @@ export function DiamondGoalCard({
             : "El admin aún no definió una meta de diamantes para este mes."}
         </p>
       ) : (
-        <div className={cn("grid gap-4", !goal.canEdit && "lg:grid-cols-2")}>
+        <div className={cn("grid gap-4", showTeam && "lg:grid-cols-2")}>
           <div className="rounded-xl border border-border-soft bg-bg p-4">
             <div className="mb-2 flex items-center justify-between gap-2 text-sm">
               <span className="inline-flex items-center gap-1.5 text-text-muted">
@@ -215,12 +219,12 @@ export function DiamondGoalCard({
             </p>
           </div>
 
-          {!goal.canEdit && (
+          {showTeam && (
             <div className="rounded-xl border border-border-soft bg-bg p-4">
               <div className="mb-2 flex items-center justify-between gap-2 text-sm">
                 <span className="inline-flex items-center gap-1.5 text-text-muted">
                   <Users className="h-3.5 w-3.5 text-accent" />
-                  Aporte de tu equipo
+                  Aporte del equipo
                 </span>
                 <span className="font-[family-name:var(--font-syne)] text-sm font-bold">
                   {myPctOfGoal.toFixed(1)}%
@@ -243,23 +247,33 @@ export function DiamondGoalCard({
         </div>
       )}
 
-      {goal.canEdit && goal.target > 0 && topManagers.length > 0 && (
+      {goal.canEdit && !showTeam && goal.target > 0 && topManagers.length > 0 && (
         <div className="mt-4">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
-            Aporte por manager
+            Aporte por manager · clic para ver su vista
           </p>
           <ul className="space-y-2">
             {topManagers.map((m) => {
               const pct = pctOf(m.diamonds, goal.target);
+              const canOpen = m.id !== "unassigned";
               return (
                 <li key={m.id}>
-                  <div className="mb-1 flex items-center justify-between gap-2 text-sm">
-                    <span className="font-medium">{m.name}</span>
-                    <span className="tabular-nums text-text-muted">
-                      {formatNumber(m.diamonds)} · {pct.toFixed(1)}%
-                    </span>
-                  </div>
-                  <ProgressBar value={pct} tone="accent" />
+                  <button
+                    type="button"
+                    disabled={!canOpen}
+                    onClick={() => canOpen && setViewAs(m.id, m.name)}
+                    className="w-full text-left disabled:cursor-default"
+                  >
+                    <div className="mb-1 flex items-center justify-between gap-2 text-sm">
+                      <span className="font-medium hover:text-accent">
+                        {m.name}
+                      </span>
+                      <span className="tabular-nums text-text-muted">
+                        {formatNumber(m.diamonds)} · {pct.toFixed(1)}%
+                      </span>
+                    </div>
+                    <ProgressBar value={pct} tone="accent" />
+                  </button>
                 </li>
               );
             })}

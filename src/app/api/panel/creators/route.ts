@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug, scope } = auth;
+  const { agencySlug, scope, isAdmin } = auth;
   const scopeFilter = creatorWhere(scope, agencySlug);
 
   const sp = req.nextUrl.searchParams;
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
       select: { groupName: true },
       orderBy: { groupName: "asc" },
     }),
-    scope.admin
+    isAdmin
       ? prisma.user.findMany({
           where: { agencySlug },
           select: { id: true, name: true, role: true },

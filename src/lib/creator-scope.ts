@@ -24,6 +24,27 @@ export function getScope(token: Pick<JWT, "id" | "sub" | "role">): ManagerScope 
   return { admin: false, userId };
 }
 
+export async function applyViewAs(
+  scope: ManagerScope,
+  agencySlug: string,
+  viewAsId: string | null | undefined
+) {
+  if (!scope.admin || !viewAsId) {
+    return { scope, viewingAs: null as { id: string; name: string } | null };
+  }
+  const manager = await prisma.user.findFirst({
+    where: { id: viewAsId, agencySlug, role: "manager" },
+    select: { id: true, name: true },
+  });
+  if (!manager) {
+    return { scope, viewingAs: null as { id: string; name: string } | null };
+  }
+  return {
+    scope: { admin: false, userId: manager.id } satisfies ManagerScope,
+    viewingAs: manager,
+  };
+}
+
 export function creatorWhere(
   scope: ManagerScope,
   agencySlug: string

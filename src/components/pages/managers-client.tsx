@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { UserPlus, Trash2, Shield } from "lucide-react";
+import { UserPlus, Trash2, Shield, Eye } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
@@ -9,7 +9,7 @@ import { Button, Field, Panel, inputClass } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { createManager, deleteManager } from "@/lib/actions";
-import { useAgency } from "@/lib/use-agency";
+import { useViewAs } from "@/components/view-as";
 
 type ManagerRow = {
   id: string;
@@ -22,7 +22,7 @@ type ManagerRow = {
 
 export default function ManagersClient() {
   const { data: session } = useSession();
-  const { path } = useAgency();
+  const { setViewAs, viewAsId } = useViewAs();
   const { data, error, mutate } = usePanelData(PANEL.managers) as {
     data?: { managers: ManagerRow[] };
     error?: Error;
@@ -176,7 +176,9 @@ export default function ManagersClient() {
             {data.managers.map((m) => (
               <tr
                 key={m.id}
-                className="border-b border-border-soft/70 hover:bg-bg-hover/40"
+                className={`border-b border-border-soft/70 hover:bg-bg-hover/40 ${
+                  viewAsId === m.id ? "bg-cyan/10" : ""
+                }`}
               >
                 <td className="px-4 py-2.5 font-medium">{m.name}</td>
                 <td className="px-4 py-2.5 text-text-muted">{m.email}</td>
@@ -193,7 +195,17 @@ export default function ManagersClient() {
                   {formatDate(m.createdAt)}
                 </td>
                 <td className="px-4 py-2.5">
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
+                    {m.role === "manager" && (
+                      <button
+                        type="button"
+                        title="Ver su vista"
+                        className="rounded-lg border border-border p-2 text-text-muted hover:border-cyan hover:text-cyan"
+                        onClick={() => setViewAs(m.id, m.name)}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       title="Eliminar"

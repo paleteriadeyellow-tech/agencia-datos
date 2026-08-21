@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import useSWR, { mutate, type SWRConfiguration } from "swr";
+import { getViewAsId, subscribeViewAs } from "@/lib/view-as";
 
 async function fetcher(url: string) {
   const res = await fetch(url);
@@ -6,26 +8,55 @@ async function fetcher(url: string) {
   return res.json();
 }
 
+function panelKey(url: string, viewAsId: string | null) {
+  return [url, viewAsId ?? ""] as const;
+}
+
+function urlFromKey(key: unknown): string | null {
+  if (typeof key === "string") return key;
+  if (Array.isArray(key) && typeof key[0] === "string") return key[0];
+  return null;
+}
+
 export function usePanelData(url: string | null, options?: SWRConfiguration) {
-  return useSWR(url, fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 60000,
-    errorRetryCount: 1,
-    keepPreviousData: true,
-    ...options,
-  });
+  const [viewAsId, setViewAsId] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    setViewAsId(getViewAsId());
+    setReady(true);
+    return subscribeViewAs(() => setViewAsId(getViewAsId()));
+  }, []);
+
+  return useSWR(
+    ready && url ? panelKey(url, viewAsId) : null,
+    ([u]: readonly [string, string]) => fetcher(u),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 60000,
+      errorRetryCount: 1,
+      keepPreviousData: true,
+      ...options,
+    }
+  );
 }
 
 export function invalidatePanel(...keys: string[]) {
   for (const k of keys) {
     void mutate(
-      (key) =>
-        typeof key === "string" && (key === k || key.startsWith(`${k}?`)),
+      (key) => {
+        const url = urlFromKey(key);
+        return Boolean(url && (url === k || url.startsWith(`${k}?`)));
+      },
       undefined,
       { revalidate: true }
     );
   }
+}
+
+export function invalidateAllPanel() {
+  void mutate(() => true, undefined, { revalidate: true });
 }
 
 export const PANEL = {
@@ -44,7 +75,7 @@ export const PANEL = {
 function warm(url: string) {
   void fetcher(url)
     .then((data) => {
-      void mutate(url, data, { revalidate: false });
+      void mutate(panelKey(url, getViewAsId()), data, { revalidate: false });
     })
     .catch(() => {
       /* no envenenar la caché */

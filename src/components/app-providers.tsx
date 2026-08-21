@@ -12,6 +12,7 @@ import { usePathname } from "next/navigation";
 import { NavigationProgress } from "@/components/navigation-progress";
 import { QuickCreateProvider } from "@/components/quick-create";
 import { prefetchPanel } from "@/lib/swr";
+import { ViewAsProvider } from "@/components/view-as";
 
 type NavCtx = {
   pending: boolean;
@@ -45,10 +46,12 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   return (
     <Ctx.Provider value={value}>
-      <QuickCreateProvider>
-        <NavigationProgress pending={pending} />
-        {children}
-      </QuickCreateProvider>
+      <ViewAsProvider>
+        <QuickCreateProvider>
+          <NavigationProgress pending={pending} />
+          {children}
+        </QuickCreateProvider>
+      </ViewAsProvider>
     </Ctx.Provider>
   );
 }

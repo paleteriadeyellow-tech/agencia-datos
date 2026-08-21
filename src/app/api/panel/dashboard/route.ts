@@ -16,7 +16,7 @@ function parsePeriod(raw: string | null) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug, scope } = auth;
+  const { agencySlug, scope, isAdmin: isAdminUser } = auth;
   const scopeFilter = creatorWhere(scope, agencySlug);
   const myDiamondWhere = await diamondWhere(scope, agencySlug);
 
@@ -186,7 +186,8 @@ export async function GET(req: NextRequest) {
       target,
       agencyTotal,
       myTotal,
-      canEdit: Boolean(scope.admin),
+      canEdit: Boolean(isAdminUser),
+      isManagerView: !scope.admin,
       updatedAt: goalRow?.updatedAt ?? null,
       managers: managerContributions,
     },
@@ -219,9 +220,9 @@ const patchSchema = z.object({
 export async function PATCH(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug, scope, token } = auth;
+  const { agencySlug, isAdmin: isAdminUser, token } = auth;
 
-  if (!scope.admin) {
+  if (!isAdminUser) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { filterNavByRole } from "@/lib/permissions";
 import { useNavPending } from "@/components/app-providers";
 import { useAgency } from "@/lib/use-agency";
+import { useViewAs } from "@/components/view-as";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -48,6 +49,7 @@ export function Sidebar() {
   const { data: session } = useSession();
   const { pending, startNav } = useNavPending();
   const { slug, shortName, path } = useAgency();
+  const { viewAsName } = useViewAs();
   const [open, setOpen] = useState(false);
 
   const role = session?.user?.role;
@@ -72,11 +74,13 @@ export function Sidebar() {
           <p className="mt-1 text-xs text-text-muted">
             {pending
               ? "Cargando…"
-              : role === "admin"
-                ? "Admin · Backstage"
-                : role === "manager"
-                  ? "Manager · Backstage"
-                  : "Backstage"}
+              : viewAsName
+                ? `Vista · ${viewAsName}`
+                : role === "admin"
+                  ? "Admin · Backstage"
+                  : role === "manager"
+                    ? "Manager · Backstage"
+                    : "Backstage"}
           </p>
         </div>
       </div>
