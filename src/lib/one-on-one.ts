@@ -1,14 +1,12 @@
-export const CALL_SLOTS = [
-  "16:00",
-  "16:30",
-  "17:00",
-  "17:30",
-  "18:00",
-  "18:30",
-  "19:00",
-  "19:30",
-  "20:00",
-] as const;
+export const CALL_SLOTS: string[] = Array.from({ length: 48 }, (_, i) => {
+  const h = Math.floor(i / 2);
+  const m = i % 2 === 0 ? "00" : "30";
+  return `${String(h).padStart(2, "0")}:${m}`;
+});
+
+export function isCallSlot(slot: string) {
+  return /^\d{2}:(00|30)$/.test(slot) && Number(slot.slice(0, 2)) <= 23;
+}
 
 export const WEEKDAYS_ES = [
   "DOMINGO",
@@ -44,6 +42,31 @@ export function daysInMonth(year: number, month: number) {
       label: `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${String(year).slice(-2)}`,
     };
   });
+}
+
+export function weekRangeYmd(d = new Date()) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = x.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  x.setDate(x.getDate() + diff);
+  const end = new Date(x);
+  end.setDate(x.getDate() + 6);
+  const fmt = (dt: Date) =>
+    `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  return { start: fmt(x), end: fmt(end) };
+}
+
+export function splitMonthByWeek<T extends { date: string }>(days: T[], today = new Date()) {
+  const { start, end } = weekRangeYmd(today);
+  const current: T[] = [];
+  const later: T[] = [];
+  const earlier: T[] = [];
+  for (const d of days) {
+    if (d.date >= start && d.date <= end) current.push(d);
+    else if (d.date > end) later.push(d);
+    else earlier.push(d);
+  }
+  return { current, later, earlier, weekStart: start, weekEnd: end };
 }
 
 export function callKey(date: string, slot: string) {

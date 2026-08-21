@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, Fragment } from "react";
 import { ChevronDown } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
@@ -16,6 +16,7 @@ import {
   daysInMonth,
   isCallEmpty,
   slotLabel,
+  splitMonthByWeek,
 } from "@/lib/one-on-one";
 
 type SlotRow = {
@@ -87,10 +88,37 @@ export default function CallsClient() {
     return [...new Set([y0, y0 - 1, y0 + 1, ...fromApi])].sort((a, b) => b - a);
   }, [payload?.years, currentYear]);
 
-  const days = useMemo(
+  const daysAll = useMemo(
     () => daysInMonth(Number(year), Number(month)),
     [year, month]
   );
+  const viewingCurrent = year === currentYear && month === currentMonthNum;
+  const weekParts = useMemo(
+    () => (viewingCurrent ? splitMonthByWeek(daysAll) : null),
+    [viewingCurrent, daysAll]
+  );
+  const weekSet = useMemo(
+    () => new Set((weekParts?.current ?? []).map((d) => d.date)),
+    [weekParts]
+  );
+  const daySections = useMemo(() => {
+    if (!weekParts || weekParts.current.length === 0) {
+      return [{ id: "month", title: null as string | null, days: daysAll }];
+    }
+    const sections: { id: string; title: string | null; days: typeof daysAll }[] =
+      [{ id: "week", title: "Esta semana", days: weekParts.current }];
+    if (weekParts.later.length) {
+      sections.push({ id: "later", title: "Siguientes", days: weekParts.later });
+    }
+    if (weekParts.earlier.length) {
+      sections.push({
+        id: "earlier",
+        title: "Semanas anteriores",
+        days: weekParts.earlier,
+      });
+    }
+    return sections;
+  }, [daysAll, weekParts]);
 
   const map = useMemo(() => {
     const m = new Map<string, SlotRow>();
@@ -98,7 +126,6 @@ export default function CallsClient() {
     return m;
   }, [payload?.slots]);
 
-  const viewingCurrent = year === currentYear && month === currentMonthNum;
   const periodLabel = `${MESES_NOMBRE[Number(month)]} ${year}`;
 
   const writeSlots = useCallback(
@@ -162,7 +189,7 @@ export default function CallsClient() {
 
   function isDayOpen(date: string) {
     if (openDays[date] != null) return openDays[date];
-    return date === today;
+    return weekSet.has(date) || date === today;
   }
 
   const query = q.trim().toLowerCase();
@@ -241,28 +268,28 @@ export default function CallsClient() {
           </div>
 
           <p className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
-            <span>Horario MX · 4:00 PM a 8:00 PM</span>
+            <span>Horario MX · 12:00 AM a 11:30 PM · cada 30 min</span>
             <button
               type="button"
               className="text-cyan hover:underline"
               onClick={() => {
                 const next: Record<string, boolean> = {};
-                for (const d of days) next[d.date] = true;
+                for (const d of daysAll) next[d.date] = weekSet.has(d.date);
                 setOpenDays(next);
               }}
             >
-              Abrir mes
+              Solo esta semana
             </button>
             <button
               type="button"
               className="text-cyan hover:underline"
               onClick={() => {
                 const next: Record<string, boolean> = {};
-                for (const d of days) next[d.date] = d.date === today;
+                for (const d of daysAll) next[d.date] = true;
                 setOpenDays(next);
               }}
             >
-              Solo hoy
+              Abrir mes
             </button>
             {!viewingCurrent && (
               <button
@@ -298,34 +325,22 @@ export default function CallsClient() {
                 </tr>
               </thead>
               <tbody>
-                {days.map((d, di) => {
-                  const open = isDayOpen(d.date);
-                  const isToday = d.date === today;
-                  const daySlots = CALL_SLOTS.filter((slot) => {
-                    if (!query) return true;
-                    const row = map.get(callKey(d.date, slot));
-                    return (row?.creatorName ?? "").toLowerCase().includes(query);
-                  });
-                  if (query && daySlots.length === 0) return null;
-                  const stripe = di % 2 === 0;
-                  return (
-                    <DayBlock
-                      key={d.date}
-                      weekday={d.weekday}
-                      label={d.label}
-                      date={d.date}
-                      open={open}
-                      isToday={isToday}
-                      stripe={stripe}
-                      slots={query ? daySlots : [...CALL_SLOTS]}
-                      map={map}
-                      onToggle={() =>
-                        setOpenDays((s) => ({ ...s, [d.date]: !open }))
-                      }
-                      onPatch={patch}
-                    />
-                  );
-                })}
+                {daySections.map((section) => (
+                  <SectionDays
+                    key={section.id}
+                    title={section.title}
+                    days={section.days}
+                    query={query}
+                    map={map}
+                    today={today}
+                    weekSet={weekSet}
+                    isDayOpen={isDayOpen}
+                    onToggle={(date, open) =>
+                      setOpenDays((s) => ({ ...s, [date]: !open }))
+                    }
+                    onPatch={patch}
+                  />
+                ))}
               </tbody>
             </table>
           </div>
@@ -335,12 +350,76 @@ export default function CallsClient() {
   );
 }
 
+function SectionDays({
+  title,
+  days,
+  query,
+  map,
+  today,
+  weekSet,
+  isDayOpen,
+  onToggle,
+  onPatch,
+}: {
+  title: string | null;
+  days: ReturnType<typeof daysInMonth>;
+  query: string;
+  map: Map<string, SlotRow>;
+  today: string;
+  weekSet: Set<string>;
+  isDayOpen: (date: string) => boolean;
+  onToggle: (date: string, open: boolean) => void;
+  onPatch: (date: string, slot: string, field: keyof SlotRow, value: string) => void;
+}) {
+  return (
+    <>
+      {title && (
+        <tr>
+          <td
+            colSpan={7}
+            className="border-b border-border-soft bg-bg-elevated px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan"
+          >
+            {title}
+          </td>
+        </tr>
+      )}
+      {days.map((d, di) => {
+        const open = isDayOpen(d.date);
+        const isToday = d.date === today;
+        const daySlots = CALL_SLOTS.filter((slot) => {
+          if (!query) return true;
+          const row = map.get(callKey(d.date, slot));
+          return (row?.creatorName ?? "").toLowerCase().includes(query);
+        });
+        if (query && daySlots.length === 0) return null;
+        return (
+          <DayBlock
+            key={d.date}
+            weekday={d.weekday}
+            label={d.label}
+            date={d.date}
+            open={open}
+            isToday={isToday}
+            isWeek={weekSet.has(d.date)}
+            stripe={di % 2 === 0}
+            slots={query ? daySlots : CALL_SLOTS}
+            map={map}
+            onToggle={() => onToggle(d.date, open)}
+            onPatch={onPatch}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 function DayBlock({
   weekday,
   label,
   date,
   open,
   isToday,
+  isWeek,
   stripe,
   slots,
   map,
@@ -352,13 +431,14 @@ function DayBlock({
   date: string;
   open: boolean;
   isToday: boolean;
+  isWeek: boolean;
   stripe: boolean;
   slots: readonly string[];
   map: Map<string, SlotRow>;
   onToggle: () => void;
   onPatch: (date: string, slot: string, field: keyof SlotRow, value: string) => void;
 }) {
-  const booked = slots.filter((slot) => {
+  const booked = CALL_SLOTS.filter((slot) => {
     const row = map.get(callKey(date, slot));
     return row && !isCallEmpty(row);
   }).length;
@@ -392,6 +472,11 @@ function DayBlock({
                 Hoy
               </span>
             )}
+            {isWeek && !isToday && (
+              <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-200">
+                Semana
+              </span>
+            )}
             <span className="ml-auto text-[10px] text-text-muted">
               {booked}/{CALL_SLOTS.length} agendadas
             </span>
@@ -403,14 +488,34 @@ function DayBlock({
           const row = map.get(callKey(date, slot)) ?? emptySlot(date, slot);
           const filled = !isCallEmpty(row);
           return (
-            <tr
-              key={slot}
-              className={cn(
-                "border-b border-border-soft/60",
-                todayBg,
-                filled && "bg-emerald-500/5"
+            <Fragment key={slot}>
+              {slot === "00:00" && (
+                <tr className={todayBg}>
+                  <td
+                    colSpan={7}
+                    className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted"
+                  >
+                    AM
+                  </td>
+                </tr>
               )}
-            >
+              {slot === "12:00" && (
+                <tr className={todayBg}>
+                  <td
+                    colSpan={7}
+                    className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted"
+                  >
+                    PM
+                  </td>
+                </tr>
+              )}
+              <tr
+                className={cn(
+                  "border-b border-border-soft/60",
+                  todayBg,
+                  filled && "bg-emerald-500/5"
+                )}
+              >
               <td className="w-[1px] p-0" />
               <td className="w-[1px] p-0" />
               <td className="whitespace-nowrap px-2 py-1 font-semibold text-text-muted">
@@ -462,6 +567,7 @@ function DayBlock({
                 </div>
               </td>
             </tr>
+            </Fragment>
           );
         })}
     </>

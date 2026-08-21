@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
-import { CALL_SLOTS, isCallEmpty } from "@/lib/one-on-one";
+import { isCallEmpty, isCallSlot } from "@/lib/one-on-one";
 
 export const dynamic = "force-dynamic";
 
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
   }
   const data = parsed.data;
-  if (!(CALL_SLOTS as readonly string[]).includes(data.slot)) {
+  if (!isCallSlot(data.slot)) {
     return NextResponse.json({ error: "Horario inválido" }, { status: 400 });
   }
 
