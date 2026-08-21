@@ -21,6 +21,7 @@ const ALL_ROUTES = [
   "/calendario",
   "/reclutamiento",
   "/programacion",
+  "/control-usuarios",
   "/finanzas",
   "/bonos",
   "/contratos",

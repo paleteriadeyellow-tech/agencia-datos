@@ -70,13 +70,50 @@ export function addDays(d: Date, n: number) {
   return x;
 }
 
-export function formatWeekRange(weekStart: string) {
+export function parseYmd(weekStart: string) {
   const [y, m, d] = weekStart.split("-").map(Number);
-  const start = new Date(y!, (m ?? 1) - 1, d ?? 1);
+  return new Date(y!, (m ?? 1) - 1, d ?? 1);
+}
+
+export function formatWeekRange(weekStart: string) {
+  const start = parseYmd(weekStart);
   const end = addDays(start, 6);
   const f = (dt: Date) =>
     `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`;
   return `${f(start)} – ${f(end)} ${end.getFullYear()}`;
+}
+
+export function currentWeekStart(d = new Date()) {
+  return ymd(mondayOf(d));
+}
+
+export type MonthWeek = {
+  index: number;
+  weekStart: string;
+  label: string;
+};
+
+/** Semanas lun–dom que tocan el mes (1–12). */
+export function weeksInMonth(year: number, month: number): MonthWeek[] {
+  const first = new Date(year, month - 1, 1);
+  const last = new Date(year, month, 0);
+  let monday = mondayOf(first);
+  const weeks: MonthWeek[] = [];
+  let index = 1;
+  while (monday <= last) {
+    const sunday = addDays(monday, 6);
+    if (sunday >= first) {
+      const weekStart = ymd(monday);
+      weeks.push({
+        index,
+        weekStart,
+        label: `Semana ${index} · ${formatWeekRange(weekStart)}`,
+      });
+      index += 1;
+    }
+    monday = addDays(monday, 7);
+  }
+  return weeks;
 }
 
 export function slotKey(day: number, hour: number) {

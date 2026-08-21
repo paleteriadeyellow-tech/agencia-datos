@@ -14,6 +14,9 @@ export function PanelWarmup() {
     `${PANEL.recruitment}?year=${period.slice(0, 4)}&month=${Number(period.slice(5, 7))}`
   );
   usePanelData(`${PANEL.programming}?week=${ymd(mondayOf())}`);
+  usePanelData(
+    `${PANEL.onboarding}?year=${period.slice(0, 4)}&month=${Number(period.slice(5, 7))}`
+  );
   usePanelData(PANEL.managers);
   usePanelData(PANEL.livecoins);
   usePanelData(PANEL.metrics);

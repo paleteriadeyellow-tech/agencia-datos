@@ -4,19 +4,22 @@ import { useCallback, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Eraser } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
-import { Button, Panel } from "@/components/ui";
+import { Button, Field, Panel, inputClass } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { MESES_NOMBRE } from "@/lib/bonos";
 import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
 import {
   SHIFT_HOURS,
   SHIFT_LABELS,
   WEEK_DAYS,
   addDays,
+  currentWeekStart,
   formatWeekRange,
   hourLabel,
   managerColor,
-  mondayOf,
+  parseYmd,
   slotKey,
+  weeksInMonth,
   ymd,
 } from "@/lib/weekly-schedule";
 
@@ -49,11 +52,29 @@ function shortName(name: string) {
   return first.length <= 10 ? first.toUpperCase() : first.slice(0, 8).toUpperCase();
 }
 
+function nowParts() {
+  const n = new Date();
+  return { year: n.getFullYear(), month: n.getMonth() + 1 };
+}
+
 export default function ProgrammingClient() {
-  const [weekStart, setWeekStart] = useState(() => ymd(mondayOf()));
+  const initial = nowParts();
+  const [year, setYear] = useState(initial.year);
+  const [month, setMonth] = useState(initial.month);
+  const [weekStart, setWeekStart] = useState(() => currentWeekStart());
   const [brush, setBrush] = useState<Brush>(null);
   const [label, setLabel] = useState("");
   const [hint, setHint] = useState("");
+
+  const years = useMemo(() => {
+    const y0 = nowParts().year;
+    return [y0 - 1, y0, y0 + 1];
+  }, []);
+
+  const monthWeeks = useMemo(() => weeksInMonth(year, month), [year, month]);
+  const runningWeek = currentWeekStart();
+  const current = nowParts();
+  const viewingCurrentMonth = year === current.year && month === current.month;
 
   const url = `${PANEL.programming}?week=${weekStart}`;
   const { data, error, mutate } = usePanelData(url, {
@@ -223,16 +244,47 @@ export default function ProgrammingClient() {
     }
   }
 
+  function applyPeriod(nextYear: number, nextMonth: number) {
+    const weeks = weeksInMonth(nextYear, nextMonth);
+    const now = nowParts();
+    const running = currentWeekStart();
+    const inCurrent = nextYear === now.year && nextMonth === now.month;
+    const pick =
+      inCurrent && weeks.some((w) => w.weekStart === running)
+        ? running
+        : (weeks[0]?.weekStart ?? running);
+    setYear(nextYear);
+    setMonth(nextMonth);
+    setWeekStart(pick);
+    setHint("");
+  }
+
+  function goRunningWeek() {
+    const now = nowParts();
+    setYear(now.year);
+    setMonth(now.month);
+    setWeekStart(currentWeekStart());
+    setHint("");
+  }
+
   function shiftWeek(delta: number) {
-    const [y, m, d] = weekStart.split("-").map(Number);
-    setWeekStart(ymd(addDays(new Date(y!, (m ?? 1) - 1, d ?? 1), delta * 7)));
+    const next = ymd(addDays(parseYmd(weekStart), delta * 7));
+    const stays = weeksInMonth(year, month).some((w) => w.weekStart === next);
+    if (stays) {
+      setWeekStart(next);
+      setHint("");
+      return;
+    }
+    const mid = addDays(parseYmd(next), 3);
+    setYear(mid.getFullYear());
+    setMonth(mid.getMonth() + 1);
+    setWeekStart(next);
     setHint("");
   }
 
   const today = ymd(new Date());
   const weekDates = useMemo(() => {
-    const [y, m, d] = weekStart.split("-").map(Number);
-    const start = new Date(y!, (m ?? 1) - 1, d ?? 1);
+    const start = parseYmd(weekStart);
     return Array.from({ length: 7 }, (_, i) => addDays(start, i));
   }, [weekStart]);
 
@@ -240,7 +292,11 @@ export default function ProgrammingClient() {
     <div>
       <TopBar
         title="Programación semanal"
-        subtitle="Horario de managers · todos ven el mismo calendario"
+        subtitle={`${MESES_NOMBRE[month]} ${year} · ${
+          viewingCurrentMonth && weekStart === runningWeek
+            ? "semana en curso"
+            : formatWeekRange(weekStart)
+        }`}
       />
 
       {error ? (
@@ -248,51 +304,95 @@ export default function ProgrammingClient() {
       ) : (
         <>
           <Panel className="mb-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="Año">
+                <select
+                  className={inputClass}
+                  value={year}
+                  onChange={(e) => applyPeriod(Number(e.target.value), month)}
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y === current.year ? `${y} · actual` : y}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Mes">
+                <select
+                  className={inputClass}
+                  value={month}
+                  onChange={(e) => applyPeriod(year, Number(e.target.value))}
+                >
+                  {MESES_NOMBRE.slice(1).map((name, i) => (
+                    <option key={name} value={i + 1}>
+                      {i + 1 === current.month && year === current.year
+                        ? `${name} · mes actual`
+                        : name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Semana">
+                <select
+                  className={inputClass}
+                  value={weekStart}
+                  onChange={(e) => {
+                    setWeekStart(e.target.value);
+                    setHint("");
+                  }}
+                >
+                  {monthWeeks.map((w) => (
+                    <option key={w.weekStart} value={w.weekStart}>
+                      {w.weekStart === runningWeek
+                        ? `${w.label} · en curso`
+                        : w.label}
+                    </option>
+                  ))}
+                  {!monthWeeks.some((w) => w.weekStart === weekStart) && (
+                    <option value={weekStart}>
+                      {formatWeekRange(weekStart)}
+                    </option>
+                  )}
+                </select>
+              </Field>
+              <div className="flex items-end gap-2">
                 <Button
                   type="button"
                   variant="secondary"
-                  className="px-2 py-2"
+                  className="px-2 py-2.5"
                   onClick={() => shiftWeek(-1)}
                   aria-label="Semana anterior"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <div className="min-w-[180px] text-center">
-                  <p className="text-[10px] uppercase tracking-wide text-text-muted">
-                    Semana
-                  </p>
-                  <p className="font-[family-name:var(--font-syne)] text-lg font-bold">
-                    {formatWeekRange(weekStart)}
-                  </p>
-                </div>
                 <Button
                   type="button"
                   variant="secondary"
-                  className="px-2 py-2"
+                  className="flex-1"
+                  onClick={goRunningWeek}
+                >
+                  Semana en curso
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="px-2 py-2.5"
                   onClick={() => shiftWeek(1)}
                   aria-label="Semana siguiente"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="text-xs"
-                  onClick={() => setWeekStart(ymd(mondayOf()))}
-                >
-                  Esta semana
-                </Button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={() => void copyPrev()}>
-                  Copiar semana anterior
-                </Button>
-                <Button type="button" variant="secondary" onClick={() => void fillSunday()}>
-                  Domingo FREE
-                </Button>
-              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={() => void copyPrev()}>
+                Copiar semana anterior
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => void fillSunday()}>
+                Domingo FREE
+              </Button>
             </div>
 
             <p className="mt-4 text-xs text-text-muted">

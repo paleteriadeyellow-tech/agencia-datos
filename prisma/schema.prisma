@@ -334,6 +334,26 @@ model ManagerShift {
   @@index([agencySlug, weekStart])
 }
 
+model OnboardingUser {
+  id               String   @id @default(cuid())
+  agencySlug       String   @default("streamersfederation")
+  creatorName      String
+  phone            String   @default("")
+  situation        String   @default("capacitación")
+  integrationMonth String   @default("")
+  year             Int?
+  month            Int?
+  managerId        String?
+  managerName      String   @default("")
+  checks           Json     @default("{}")
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([agencySlug, year, month])
+  @@index([agencySlug, creatorName])
+}
+
 model CreatorPortalToken {
   id         String   @id @default(cuid())
   agencySlug String   @default("streamersfederation")
