@@ -6,7 +6,7 @@ import { ChevronDown, Download, Plus, Trash2, Upload } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, EmptyState, Field, Panel, inputClass } from "@/components/ui";
-import { Modal } from "@/components/modal";
+import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
@@ -646,9 +646,12 @@ export default function RecruitmentClient() {
                       onClick={() => setOpenId(open ? null : row.id)}
                       className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     >
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-hover text-[10px] font-semibold text-cyan">
-                        {row.creatorName.slice(0, 2).toUpperCase() || "—"}
-                      </span>
+                      <TikTokAvatar
+                        username={row.creatorName}
+                        name={row.creatorName}
+                        size={28}
+                        link={false}
+                      />
                       <span className="w-[9.5rem] shrink-0 truncate text-sm font-medium">
                         {row.creatorName.startsWith("@")
                           ? row.creatorName
