@@ -10,7 +10,7 @@ export function PanelWarmup() {
   usePanelData(`${PANEL.hub}?period=${period}`);
   usePanelData(PANEL.creators);
   usePanelData(
-    `${PANEL.recruitment}?year=${period.slice(0, 4)}&month=all`
+    `${PANEL.recruitment}?year=${period.slice(0, 4)}&month=${Number(period.slice(5, 7))}`
   );
   usePanelData(PANEL.managers);
   usePanelData(PANEL.livecoins);

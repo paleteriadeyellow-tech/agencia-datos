@@ -71,7 +71,7 @@ export function panelWarmUrls(period = currentMonth()) {
     `${PANEL.dashboard}?period=${period}`,
     `${PANEL.hub}?period=${period}`,
     PANEL.creators,
-    `${PANEL.recruitment}?year=${year}&month=all`,
+    `${PANEL.recruitment}?year=${year}&month=${Number(period.slice(5, 7))}`,
     PANEL.managers,
     PANEL.livecoins,
     PANEL.metrics,

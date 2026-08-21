@@ -102,8 +102,10 @@ export default function RecruitmentClient() {
   const admin = isAdmin(session?.user?.role);
   const { viewAsId, viewAsName } = useViewAs();
   const now = new Date();
-  const [year, setYear] = useState<string>(String(now.getFullYear()));
-  const [month, setMonth] = useState<string>("all");
+  const currentYear = String(now.getFullYear());
+  const currentMonthNum = String(now.getMonth() + 1);
+  const [year, setYear] = useState<string>(currentYear);
+  const [month, setMonth] = useState<string>(currentMonthNum);
   const [managerFilter, setManagerFilter] = useState("all");
   const [q, setQ] = useState("");
   const [hint, setHint] = useState("");
@@ -398,7 +400,7 @@ export default function RecruitmentClient() {
     <div className="space-y-6">
       <TopBar
         title="Reclutamiento y seguimiento"
-        subtitle="Lista por creador · abre cada ficha para el seguimiento, sin scroll de lado"
+        subtitle="Solo el mes en curso · el resto queda en archivo"
       />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -422,12 +424,17 @@ export default function RecruitmentClient() {
             value={month}
             onChange={(e) => setMonth(e.target.value)}
           >
-            <option value="all">Todos</option>
-            {MESES_NOMBRE.slice(1).map((name, i) => (
-              <option key={name} value={i + 1}>
-                {name}
-              </option>
-            ))}
+            <option value={currentMonthNum}>
+              {MESES_NOMBRE[Number(currentMonthNum)]} · mes actual
+            </option>
+            <option value="all">Archivo · todos los meses</option>
+            {MESES_NOMBRE.slice(1).map((name, i) =>
+              String(i + 1) === currentMonthNum ? null : (
+                <option key={name} value={i + 1}>
+                  {name} · archivo
+                </option>
+              )
+            )}
           </select>
         </Field>
         {admin && !viewAsId && (
@@ -506,7 +513,41 @@ export default function RecruitmentClient() {
             </Button>
           </div>
         </form>
-        <p className="mt-3 text-xs text-text-muted">{rows.length} registros</p>
+        <p className="mt-3 text-xs text-text-muted">
+          {rows.length} registros
+          {month === currentMonthNum && year === currentYear
+            ? ` · ${MESES_NOMBRE[Number(currentMonthNum)]} ${year}`
+            : " · archivo"}
+          {month === currentMonthNum && year === currentYear ? (
+            <>
+              {" · "}
+              <button
+                type="button"
+                className="text-cyan hover:underline"
+                onClick={() => {
+                  setYear(currentYear);
+                  setMonth("all");
+                }}
+              >
+                Ver archivo
+              </button>
+            </>
+          ) : (
+            <>
+              {" · "}
+              <button
+                type="button"
+                className="text-cyan hover:underline"
+                onClick={() => {
+                  setYear(currentYear);
+                  setMonth(currentMonthNum);
+                }}
+              >
+                Volver al mes actual
+              </button>
+            </>
+          )}
+        </p>
         {hint && <p className="mt-2 text-sm text-cyan">{hint}</p>}
       </Panel>
 
@@ -517,7 +558,11 @@ export default function RecruitmentClient() {
       ) : rows.length === 0 ? (
         <EmptyState
           title="Sin registros"
-          description="Agrega una ficha o importa el Excel de reclutamiento."
+          description={
+            month === currentMonthNum && year === currentYear
+              ? "No hay solicitudes de este mes. Revisa el archivo o agrega una ficha."
+              : "No hay registros en este archivo. Cambia mes o año, o importa un Excel."
+          }
         />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border-soft bg-bg-panel">
