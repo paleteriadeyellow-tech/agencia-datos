@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SWRConfig } from "swr";
 import { QuickCreateProvider } from "@/components/quick-create";
-import { PANEL_SWR_DEFAULTS } from "@/lib/swr";
+import { PANEL_SWR_DEFAULTS, prefetchPanel } from "@/lib/swr";
 import { ViewAsProvider } from "@/components/view-as";
 import { PanelWarmup } from "@/components/panel-warmup";
 import { useAgency } from "@/lib/use-agency";
@@ -34,6 +34,10 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     ALL_ROUTES.forEach((href) => router.prefetch(path(href)));
   }, [router, path, pathname]);
+
+  useEffect(() => {
+    prefetchPanel();
+  }, []);
 
   return (
     <SWRConfig value={PANEL_SWR_DEFAULTS}>

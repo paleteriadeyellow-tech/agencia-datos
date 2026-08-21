@@ -1,12 +1,39 @@
-import useSWR, { mutate, type SWRConfiguration } from "swr";
+"use client";
+
+import { useMemo } from "react";
+import useSWR, { mutate, useSWRConfig, type SWRConfiguration } from "swr";
 import { currentMonth } from "@/lib/utils";
+
+const SESSION_PREFIX = "panel-swr-v1:";
+
+function readSession(url: string) {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = sessionStorage.getItem(SESSION_PREFIX + url);
+    if (!raw) return undefined;
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function writeSession(url: string, data: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(SESSION_PREFIX + url, JSON.stringify(data));
+  } catch {
+    /* quota */
+  }
+}
 
 export async function panelFetcher(url: string) {
   const res = await fetch(url, {
     headers: { "x-skip-view-as": "1" },
   });
   if (!res.ok) throw new Error("Error al cargar");
-  return res.json();
+  const json = await res.json();
+  writeSession(url, json);
+  return json;
 }
 
 function urlFromKey(key: unknown): string | null {
@@ -26,10 +53,23 @@ export const PANEL_SWR_DEFAULTS: SWRConfiguration = {
 };
 
 export function usePanelData(url: string | null, options?: SWRConfiguration) {
+  const { cache } = useSWRConfig();
+  const memory = url ? cache.get(url)?.data : undefined;
+  const fallback = useMemo(() => {
+    if (!url || memory != null) return undefined;
+    return readSession(url);
+  }, [url, memory]);
+
   return useSWR(url, panelFetcher, {
     ...PANEL_SWR_DEFAULTS,
+    fallbackData: memory ?? fallback,
+    revalidateOnMount: Boolean(fallback) && memory == null,
     ...options,
   });
+}
+
+export function persistPanelCache(url: string, data: unknown) {
+  writeSession(url, data);
 }
 
 export function invalidatePanel(...keys: string[]) {
@@ -98,9 +138,9 @@ export function prefetchPanel() {
   if (typeof window === "undefined") return;
 
   const urls = panelWarmUrls();
-  urls.slice(0, 3).forEach(warm);
+  urls.slice(0, 4).forEach(warm);
   window.setTimeout(() => {
-    urls.slice(3).forEach((url, i) => {
+    urls.slice(4).forEach((url, i) => {
       window.setTimeout(() => warm(url), i * 40);
     });
   }, 40);

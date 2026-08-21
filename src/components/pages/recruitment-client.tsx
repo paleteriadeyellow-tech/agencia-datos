@@ -10,7 +10,7 @@ import { Modal } from "@/components/modal";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
-import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
+import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
 import { mutate as cacheMutate } from "swr";
 import { useViewAs } from "@/components/view-as";
 import { isAdmin } from "@/lib/permissions";
@@ -238,7 +238,9 @@ export default function RecruitmentClient() {
             managers,
             years: payload?.years ?? [],
           };
-          return { ...base, rows: updater(base.rows) };
+          const next = { ...base, rows: updater(base.rows) };
+          persistPanelCache(key, next);
+          return next;
         },
         { revalidate: false }
       );
@@ -480,8 +482,7 @@ export default function RecruitmentClient() {
           (skipped ? ` · ${skipped} omitidas` : "") +
           ` · ${parsed.mapped} columnas reconocidas.`
       );
-      await mutate();
-      invalidatePanel(PANEL.recruitment);
+      void mutate();
     } catch (e) {
       setHint(
         e instanceof Error ? e.message : "No se pudo leer el archivo."
