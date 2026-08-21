@@ -212,159 +212,187 @@ export function OverviewExtras({
   const maxManager = Math.max(1, ...hub.managers.map((m) => m.diamonds));
 
   return (
-    <div className="mt-6 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-text-muted">
-          Ritmo del mes · día {hub.projection.dayElapsed}/{hub.projection.daysInMonth}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <a
-            href={`${PANEL.exportMes}?period=${period}`}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-bg-panel px-4 py-2.5 text-sm font-medium hover:bg-bg-hover"
-          >
-            <Download className="h-4 w-4" /> Exportar Excel
-          </a>
-          <Link
-            href={path(`/reporte?period=${period}`)}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-bg-panel px-4 py-2.5 text-sm font-medium hover:bg-bg-hover"
-          >
-            Vista para PDF
-          </Link>
+    <div className="space-y-8">
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
+              Ritmo del mes
+            </h2>
+            <p className="mt-0.5 text-sm text-text-muted">
+              Día {hub.projection.dayElapsed} de {hub.projection.daysInMonth}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`${PANEL.exportMes}?period=${period}`}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-bg-panel px-4 py-2 text-sm font-medium hover:bg-bg-hover"
+            >
+              <Download className="h-4 w-4" /> Excel
+            </a>
+            <Link
+              href={path(`/reporte?period=${period}`)}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-bg-panel px-4 py-2 text-sm font-medium hover:bg-bg-hover"
+            >
+              Vista PDF
+            </Link>
+          </div>
         </div>
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Panel>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
-            Vs mes anterior
-          </p>
-          <p className="mt-2 font-[family-name:var(--font-syne)] text-3xl font-bold tabular-nums">
-            {formatNumber(hub.trend.diamonds)}
-          </p>
-          <Delta value={hub.trend.diamondsPct} />
-          <p className="mt-3 text-sm text-text-muted">
-            Horas {formatNumber(Math.round(hub.trend.hours))}{" "}
-            <Delta value={hub.trend.hoursPct} />
-          </p>
-        </Panel>
-        <Panel>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
-            Proyección de cierre
-          </p>
-          <p className="mt-2 font-[family-name:var(--font-syne)] text-3xl font-bold tabular-nums">
-            {formatNumber(hub.projection.projected)}
-          </p>
-          <p className="mt-1 text-sm text-text-muted">
-            Ritmo {formatNumber(hub.projection.dailyPace)} ◆ / día
-          </p>
-          {hub.projection.target > 0 && (
-            <p className="mt-2 text-sm">
-              {hub.projection.needPerDay > 0 ? (
-                <span className="text-warning">
-                  Para la meta: {formatNumber(hub.projection.needPerDay)} ◆/día ·{" "}
-                  {hub.projection.daysLeft} días
-                </span>
-              ) : (
-                <span className="text-success">Van en ritmo de meta o ya la cubrieron.</span>
-              )}
-            </p>
-          )}
-        </Panel>
-        <Panel>
-          <div className="mb-2 flex items-center justify-between">
+        <div className="grid gap-5 xl:grid-cols-12">
+          <Panel className="xl:col-span-3">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
-              Check-in del manager
+              Vs mes anterior
             </p>
-            <Flag className="h-4 w-4 text-warning" />
-          </div>
-          <p className="mb-2 text-[11px] uppercase tracking-wide text-text-muted">
-            En riesgo
-          </p>
-          <ul className="space-y-1.5">
-            {hub.checkin.atRisk.length === 0 && (
-              <li className="text-sm text-text-muted">Nadie en riesgo.</li>
-            )}
-            {hub.checkin.atRisk.map((c) => (
-              <li key={c.id}>
-                <Link href={path(`/creadores/${c.id}`)} className="text-sm hover:text-accent">
-                  {c.name}{" "}
-                  <span className="text-text-muted">
-                    · {formatNumber(c.diamonds)} ◆ · {c.days}d
+            <p className="mt-3 font-[family-name:var(--font-syne)] text-3xl font-bold tabular-nums">
+              {formatNumber(hub.trend.diamonds)}
+            </p>
+            <div className="mt-2">
+              <Delta value={hub.trend.diamondsPct} />
+            </div>
+            <p className="mt-4 text-sm text-text-muted">
+              Horas {formatNumber(Math.round(hub.trend.hours))}
+            </p>
+            <div className="mt-1">
+              <Delta value={hub.trend.hoursPct} />
+            </div>
+          </Panel>
+
+          <Panel className="xl:col-span-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
+              Proyección de cierre
+            </p>
+            <p className="mt-3 font-[family-name:var(--font-syne)] text-3xl font-bold tabular-nums">
+              {formatNumber(hub.projection.projected)}
+            </p>
+            <p className="mt-2 text-sm text-text-muted">
+              Ritmo {formatNumber(hub.projection.dailyPace)} ◆ / día
+            </p>
+            {hub.projection.target > 0 && (
+              <p className="mt-4 text-sm">
+                {hub.projection.needPerDay > 0 ? (
+                  <span className="text-warning">
+                    Para la meta: {formatNumber(hub.projection.needPerDay)} ◆/día
+                    · {hub.projection.daysLeft} días
                   </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      </div>
+                ) : (
+                  <span className="text-success">
+                    Van en ritmo de meta o ya la cubrieron.
+                  </span>
+                )}
+              </p>
+            )}
+          </Panel>
 
-      {podiumSlots.length > 0 && (
-        <Panel>
-          <div className="mb-5 flex items-center gap-2">
-            <Crown className="h-4 w-4 text-warning" />
-            <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
-              Pódium del mes
-            </h2>
-          </div>
-          <div className="flex items-end justify-center gap-3 sm:gap-6">
-            {podiumSlots.map(({ place, person }) => {
-              if (!person) return null;
-              const barH = 56 + Math.round((person.diamonds / maxPodium) * 140);
-              return (
-                <Link
-                  key={person.id}
-                  href={path(`/creadores/${person.id}`)}
-                  className="flex w-28 flex-col items-center sm:w-36"
-                >
-                  <TikTokAvatar
-                    username={person.tiktokUser ?? person.name}
-                    name={person.name}
-                    size={place === 1 ? 64 : 48}
-                  />
-                  <p className="mt-2 w-full truncate text-center text-sm font-semibold">
-                    {person.name}
+          <Panel className="xl:col-span-6">
+            {podiumSlots.length > 0 ? (
+              <>
+                <div className="mb-4 flex items-center gap-2">
+                  <Crown className="h-4 w-4 text-warning" />
+                  <h3 className="font-[family-name:var(--font-syne)] text-base font-semibold">
+                    Pódium del mes
+                  </h3>
+                </div>
+                <div className="flex items-end justify-center gap-4 sm:gap-8">
+                  {podiumSlots.map(({ place, person }) => {
+                    if (!person) return null;
+                    const barH = 48 + Math.round((person.diamonds / maxPodium) * 96);
+                    return (
+                      <Link
+                        key={person.id}
+                        href={path(`/creadores/${person.id}`)}
+                        className="flex w-24 flex-col items-center sm:w-32"
+                      >
+                        <TikTokAvatar
+                          username={person.tiktokUser ?? person.name}
+                          name={person.name}
+                          size={place === 1 ? 56 : 44}
+                        />
+                        <p className="mt-2 w-full truncate text-center text-sm font-semibold">
+                          {person.name}
+                        </p>
+                        <p className="text-xs tabular-nums text-text-muted">
+                          {formatNumber(person.diamonds)} ◆
+                        </p>
+                        <div
+                          className={cn(
+                            "mt-3 flex w-full items-end justify-center rounded-t-2xl text-base font-bold",
+                            place === 1
+                              ? "bg-gradient-to-t from-warning/40 to-warning/10 text-warning"
+                              : place === 2
+                                ? "bg-gradient-to-t from-cyan/30 to-cyan/5 text-cyan"
+                                : "bg-gradient-to-t from-accent/30 to-accent/5 text-accent"
+                          )}
+                          style={{ height: barH }}
+                        >
+                          {place}°
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
+                    Check-in
                   </p>
-                  <p className="text-xs tabular-nums text-text-muted">
-                    {formatNumber(person.diamonds)} ◆
-                  </p>
-                  <div
-                    className={cn(
-                      "mt-3 flex w-full items-end justify-center rounded-t-2xl text-lg font-bold transition-[height] duration-500",
-                      place === 1
-                        ? "bg-gradient-to-t from-warning/40 to-warning/10 text-warning"
-                        : place === 2
-                          ? "bg-gradient-to-t from-cyan/30 to-cyan/5 text-cyan"
-                          : "bg-gradient-to-t from-accent/30 to-accent/5 text-accent"
-                    )}
-                    style={{ height: barH }}
-                  >
-                    {place}°
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </Panel>
-      )}
+                  <Flag className="h-4 w-4 text-warning" />
+                </div>
+                <ul className="space-y-2">
+                  {hub.checkin.atRisk.length === 0 && (
+                    <li className="text-sm text-text-muted">Nadie en riesgo.</li>
+                  )}
+                  {hub.checkin.atRisk.map((c) => (
+                    <li key={c.id}>
+                      <Link
+                        href={path(`/creadores/${c.id}`)}
+                        className="text-sm hover:text-accent"
+                      >
+                        {c.name}{" "}
+                        <span className="text-text-muted">
+                          · {formatNumber(c.diamonds)} ◆ · {c.days}d
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </Panel>
+        </div>
+      </section>
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <Panel className="xl:col-span-2">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
-              Alertas accionables
-            </h2>
-            <span className="text-xs text-text-muted">{hub.alerts.length}</span>
+      <section className="grid gap-5 xl:grid-cols-12">
+        <Panel className="xl:col-span-7">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
+                Alertas accionables
+              </h2>
+              {hub.checkin.atRisk.length > 0 && podiumSlots.length > 0 && (
+                <p className="mt-0.5 text-xs text-text-muted">
+                  {hub.checkin.atRisk.length} en riesgo este mes
+                </p>
+              )}
+            </div>
+            <span className="rounded-full border border-border-soft px-2.5 py-0.5 text-xs text-text-muted">
+              {hub.alerts.length}
+            </span>
           </div>
-          <ul className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+          <ul className="max-h-[380px] space-y-2 overflow-y-auto pr-1">
             {hub.alerts.length === 0 && (
-              <li className="text-sm text-text-muted">Sin alertas. El roster va bien.</li>
+              <li className="py-6 text-sm text-text-muted">
+                Sin alertas. El roster va bien.
+              </li>
             )}
             {hub.alerts.map((a) => (
               <li
                 key={a.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border-soft bg-bg px-3 py-2.5"
+                className="flex items-center justify-between gap-3 rounded-xl border border-border-soft bg-bg px-3.5 py-3"
               >
-                <div>
+                <div className="min-w-0">
                   <Link
                     href={path(`/creadores/${a.creatorId}`)}
                     className="text-sm font-medium hover:text-accent"
@@ -373,7 +401,7 @@ export function OverviewExtras({
                   </Link>
                   <p
                     className={cn(
-                      "text-xs",
+                      "mt-0.5 truncate text-xs",
                       a.severity === "danger"
                         ? "text-danger"
                         : a.severity === "cyan"
@@ -384,7 +412,7 @@ export function OverviewExtras({
                     {a.label}
                   </p>
                 </div>
-                <div className="flex gap-1.5">
+                <div className="flex shrink-0 gap-1.5">
                   <button
                     type="button"
                     title="WhatsApp"
@@ -407,8 +435,8 @@ export function OverviewExtras({
           </ul>
         </Panel>
 
-        <Panel>
-          <h2 className="mb-4 font-[family-name:var(--font-syne)] text-lg font-semibold">
+        <Panel className="xl:col-span-5">
+          <h2 className="mb-5 font-[family-name:var(--font-syne)] text-lg font-semibold">
             Ranking managers
           </h2>
           <ul className="space-y-3">
@@ -419,7 +447,7 @@ export function OverviewExtras({
               <li key={m.id}>
                 <button
                   type="button"
-                  className="w-full rounded-xl border border-border-soft bg-bg px-3 py-2.5 text-left hover:border-cyan/40"
+                  className="w-full rounded-xl border border-border-soft bg-bg px-3.5 py-3 text-left hover:border-cyan/40"
                   onClick={() => setViewAs(m.id, m.name)}
                 >
                   <div className="flex items-center justify-between text-sm">
@@ -430,7 +458,7 @@ export function OverviewExtras({
                       {formatNumber(m.diamonds)} ◆
                     </span>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg-hover">
+                  <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-bg-hover">
                     <div
                       className="h-full rounded-full bg-accent"
                       style={{
@@ -438,54 +466,59 @@ export function OverviewExtras({
                       }}
                     />
                   </div>
-                  <p className="mt-1.5 text-xs text-text-muted">
-                    {m.active} activos · {m.hours.toFixed(0)}h · ver su vista
+                  <p className="mt-2 text-xs text-text-muted">
+                    {m.active} activos · {m.hours.toFixed(0)}h
                   </p>
                 </button>
               </li>
             ))}
           </ul>
         </Panel>
-      </div>
+      </section>
 
       {hub.goals.length > 0 && (
-        <Panel>
-          <h2 className="mb-4 font-[family-name:var(--font-syne)] text-lg font-semibold">
-            Metas individuales
-          </h2>
-          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {hub.goals.map((g) => {
-              const pct =
-                g.targetDiamonds > 0
-                  ? Math.min(100, (g.diamonds / g.targetDiamonds) * 100)
-                  : 0;
-              return (
-                <li
-                  key={g.id}
-                  className="rounded-xl border border-border-soft bg-bg p-3"
-                >
-                  <Link href={path(`/creadores/${g.id}`)} className="font-medium hover:text-accent">
-                    {g.name}
-                  </Link>
-                  <p className="mt-1 text-sm tabular-nums text-text-muted">
-                    {formatNumber(g.diamonds)} / {formatNumber(g.targetDiamonds)}
-                  </p>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg-hover">
-                    <div
-                      className="h-full rounded-full bg-cyan"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </Panel>
+        <section>
+          <Panel>
+            <h2 className="mb-5 font-[family-name:var(--font-syne)] text-lg font-semibold">
+              Metas individuales
+            </h2>
+            <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {hub.goals.map((g) => {
+                const pct =
+                  g.targetDiamonds > 0
+                    ? Math.min(100, (g.diamonds / g.targetDiamonds) * 100)
+                    : 0;
+                return (
+                  <li
+                    key={g.id}
+                    className="rounded-xl border border-border-soft bg-bg p-4"
+                  >
+                    <Link
+                      href={path(`/creadores/${g.id}`)}
+                      className="font-medium hover:text-accent"
+                    >
+                      {g.name}
+                    </Link>
+                    <p className="mt-1.5 text-sm tabular-nums text-text-muted">
+                      {formatNumber(g.diamonds)} / {formatNumber(g.targetDiamonds)}
+                    </p>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-hover">
+                      <div
+                        className="h-full rounded-full bg-cyan"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </Panel>
+        </section>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <section className="grid gap-5 lg:grid-cols-2">
         <Panel>
-          <div className="mb-4 flex items-center gap-2">
+          <div className="mb-5 flex items-center gap-2">
             <Trophy className="h-4 w-4 text-accent" />
             <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
               Por nicho
@@ -494,7 +527,7 @@ export function OverviewExtras({
           <MiniBars items={hub.niches} tone="accent" />
         </Panel>
         <Panel>
-          <div className="mb-4 flex items-center gap-2">
+          <div className="mb-5 flex items-center gap-2">
             <Globe2 className="h-4 w-4 text-cyan" />
             <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
               Por país
@@ -502,46 +535,50 @@ export function OverviewExtras({
           </div>
           <MiniBars items={hub.countries} tone="cyan" />
         </Panel>
-      </div>
+      </section>
 
-      <Panel>
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-cyan" />
-            <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
-              Lives de esta semana
-            </h2>
+      <section>
+        <Panel>
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-cyan" />
+              <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
+                Lives de esta semana
+              </h2>
+            </div>
+            <Link
+              href={path("/calendario")}
+              className="text-sm text-accent hover:underline"
+            >
+              Abrir calendario
+            </Link>
           </div>
-          <Link href={path("/calendario")} className="text-sm text-accent hover:underline">
-            Abrir calendario
-          </Link>
-        </div>
-        {hub.calendar.length === 0 ? (
-          <p className="text-sm text-text-muted">
-            Aún no hay lives agendados. Ábrelos en Calendario.
-          </p>
-        ) : (
-          <ul className="grid gap-2 sm:grid-cols-2">
-            {hub.calendar.slice(0, 8).map((s) => (
-              <li
-                key={s.id}
-                className="rounded-xl border border-border-soft bg-bg px-3 py-2 text-sm"
-              >
-                <span className="font-medium">{s.creatorName}</span>
-                <span className="text-text-muted">
-                  {" "}
-                  · {new Date(s.startAt).toLocaleString("es-MX", {
-                    weekday: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}{" "}
-                  · {s.durationMin} min
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+          {hub.calendar.length === 0 ? (
+            <p className="py-4 text-sm text-text-muted">
+              Aún no hay lives agendados. Ábrelos en Calendario.
+            </p>
+          ) : (
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {hub.calendar.slice(0, 8).map((s) => (
+                <li
+                  key={s.id}
+                  className="rounded-xl border border-border-soft bg-bg px-3.5 py-3 text-sm"
+                >
+                  <span className="font-medium">{s.creatorName}</span>
+                  <span className="mt-0.5 block text-text-muted">
+                    {new Date(s.startAt).toLocaleString("es-MX", {
+                      weekday: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}{" "}
+                    · {s.durationMin} min
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </section>
     </div>
   );
 }

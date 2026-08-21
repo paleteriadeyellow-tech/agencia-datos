@@ -22,7 +22,7 @@ export function KpiCard({
   };
 
   return (
-    <div className="glass-panel rounded-xl p-4">
+    <div className="glass-panel rounded-2xl p-5">
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm text-text-muted">{label}</p>
         <Icon className={cn("h-4 w-4", tones[tone])} />

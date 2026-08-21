@@ -213,7 +213,7 @@ export function DiamondGoalCard({
   }
 
   return (
-    <section className="relative mt-4 overflow-hidden rounded-2xl border border-border-soft bg-bg-panel">
+    <section className="relative overflow-hidden rounded-2xl border border-border-soft bg-bg-panel">
       <div
         className="pointer-events-none absolute inset-0 opacity-80"
         style={{

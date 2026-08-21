@@ -7,7 +7,6 @@ import {
   Gem,
   Clock3,
   UserPlus,
-  AlertTriangle,
   Plus,
 } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
@@ -100,8 +99,9 @@ export default function DashboardClient() {
         subtitle={`${MESES_NOMBRE[mes]} ${anio} · Datos desde Control de diamantes`}
       />
 
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap gap-3">
+      <div className="space-y-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
           <Button type="button" onClick={openCreateCreator}>
             <Plus className="h-4 w-4" /> Nuevo creador
           </Button>
@@ -143,17 +143,17 @@ export default function DashboardClient() {
       {error ? (
         <PanelLoadError onRetry={() => mutate()} />
       ) : !view ? (
-        <div className="space-y-4">
-          <div className="grid animate-pulse gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="space-y-5">
+          <div className="grid animate-pulse gap-5 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="glass-panel h-28 rounded-2xl" />
             ))}
           </div>
-          <div className="glass-panel h-36 animate-pulse rounded-2xl" />
+          <div className="glass-panel h-48 animate-pulse rounded-2xl" />
         </div>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               label="Creadores en roster"
               value={formatNumber(view.kpis.totalCreators)}
@@ -195,9 +195,9 @@ export default function DashboardClient() {
 
           {hubView && <OverviewExtras hub={hubView} period={period} />}
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-3">
-            <Panel className="xl:col-span-2">
-              <div className="mb-4 flex items-center justify-between">
+          <div className="grid gap-5 xl:grid-cols-12">
+            <Panel className="xl:col-span-7">
+              <div className="mb-5 flex items-center justify-between gap-3">
                 <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
                   Top performers del mes
                 </h2>
@@ -223,7 +223,7 @@ export default function DashboardClient() {
                       <tr>
                         <td
                           colSpan={4}
-                          className="py-8 text-center text-text-muted"
+                          className="py-10 text-center text-text-muted"
                         >
                           Sin datos en Control de diamantes para este mes.
                         </td>
@@ -234,7 +234,7 @@ export default function DashboardClient() {
                         key={row.id}
                         className="border-b border-border-soft/60 last:border-0"
                       >
-                        <td className="py-3">
+                        <td className="py-3.5">
                           <div className="flex items-center gap-3">
                             <span className="w-5 shrink-0 text-text-muted">
                               #{row.rank}
@@ -256,11 +256,11 @@ export default function DashboardClient() {
                             )}
                           </div>
                         </td>
-                        <td className="py-3 text-text-muted">{row.niche}</td>
-                        <td className="py-3 font-medium">
+                        <td className="py-3.5 text-text-muted">{row.niche}</td>
+                        <td className="py-3.5 font-medium">
                           {formatNumber(row.diamonds)}
                         </td>
-                        <td className="py-3 text-text-muted">
+                        <td className="py-3.5 text-text-muted">
                           {row.hours.toFixed(1)}h
                         </td>
                       </tr>
@@ -270,39 +270,8 @@ export default function DashboardClient() {
               </div>
             </Panel>
 
-            <Panel>
-              <div className="mb-4 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <h2 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
-                  Alertas
-                </h2>
-              </div>
-              <ul className="space-y-3">
-                {view.inactiveCreators.length === 0 && (
-                  <li className="text-sm text-text-muted">
-                    Sin alertas de inactividad.
-                  </li>
-                )}
-                {view.inactiveCreators.map((c) => (
-                  <li
-                    key={c.id}
-                    className="rounded-xl border border-border-soft bg-bg px-3 py-2.5"
-                  >
-                    <Link href={path(`/creadores/${c.id}`)} className="block">
-                      <p className="text-sm font-medium">{c.name}</p>
-                      <p className="text-xs text-warning">
-                        Sin LIVE reciente (14+ días)
-                      </p>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          </div>
-
-          <div className="mt-6">
-            <Panel>
-              <h2 className="mb-4 font-[family-name:var(--font-syne)] text-lg font-semibold">
+            <Panel className="xl:col-span-5">
+              <h2 className="mb-5 font-[family-name:var(--font-syne)] text-lg font-semibold">
                 Cola de tareas
               </h2>
               <ul className="space-y-3">
@@ -314,11 +283,11 @@ export default function DashboardClient() {
                 {view.pendingTasks.map((t) => (
                   <li
                     key={t.id}
-                    className="flex items-start justify-between gap-3 rounded-xl border border-border-soft bg-bg px-3 py-2.5"
+                    className="flex items-start justify-between gap-3 rounded-xl border border-border-soft bg-bg px-3.5 py-3"
                   >
                     <div>
                       <p className="text-sm font-medium">{t.title}</p>
-                      <p className="text-xs text-text-muted">
+                      <p className="mt-0.5 text-xs text-text-muted">
                         {t.creatorName}
                         {t.dueDate ? ` · vence ${formatDate(t.dueDate)}` : ""}
                       </p>
@@ -331,6 +300,7 @@ export default function DashboardClient() {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }
