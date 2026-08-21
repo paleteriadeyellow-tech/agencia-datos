@@ -163,18 +163,22 @@ export async function GET(req: NextRequest) {
   });
 }
 
+const cellSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]).transform(
+  (v) => (v == null ? "" : String(v))
+);
+
 const rowSchema = z.object({
-  recruiter: z.string().optional(),
-  requestDate: z.string().nullable().optional(),
-  creatorName: z.string().optional(),
-  situation: z.string().optional(),
-  phone: z.string().optional(),
-  comment: z.string().optional(),
-  comment2: z.string().optional(),
-  recontact: z.string().optional(),
-  integrationDate: z.string().nullable().optional(),
+  recruiter: cellSchema.optional(),
+  requestDate: cellSchema.nullable().optional(),
+  creatorName: cellSchema.optional(),
+  situation: cellSchema.optional(),
+  phone: cellSchema.optional(),
+  comment: cellSchema.optional(),
+  comment2: cellSchema.optional(),
+  recontact: cellSchema.optional(),
+  integrationDate: cellSchema.nullable().optional(),
   managerId: z.string().nullable().optional(),
-  steps: z.record(z.string(), z.string()).optional(),
+  steps: z.record(z.string(), cellSchema).optional(),
 });
 
 const postSchema = z.object({
@@ -185,6 +189,16 @@ const postSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  try {
+    return await postRecruitment(req);
+  } catch (e) {
+    const message =
+      e instanceof Error ? e.message : "No se pudo guardar el reclutamiento";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+async function postRecruitment(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
   const { agencySlug, isAdmin: admin, token } = auth;
@@ -299,8 +313,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Sin filas para importar" }, { status: 400 });
   }
 
-  let upserted = 0;
+  const existing = await prisma.recruitmentLead.findMany({
+    where: { agencySlug },
+    select: { id: true, creatorName: true, recruiter: true, managerId: true },
+  });
+  const byKey = new Map(
+    existing.map((row) => [
+      `${row.creatorName.trim().toLowerCase()}|${row.recruiter.trim().toLowerCase()}`,
+      row,
+    ])
+  );
+
+  const toCreate: Prisma.RecruitmentLeadCreateManyInput[] = [];
+  const toUpdate: { id: string; data: Prisma.RecruitmentLeadUpdateInput }[] = [];
   let skipped = 0;
+
   for (const item of incoming) {
     const creatorName = (item.creatorName ?? "").trim().replace(/^@/, "");
     if (!creatorName) {
@@ -311,26 +338,14 @@ export async function POST(req: NextRequest) {
     if (!admin && !recruiter) recruiter = userName;
     const managerId = resolveManager(recruiter, item.managerId);
     if (!admin) {
-      const ok = canTouch(
-        { managerId, recruiter },
-        false,
-        userId,
-        userName
-      );
+      const ok = canTouch({ managerId, recruiter }, false, userId, userName);
       if (!ok) {
         skipped += 1;
         continue;
       }
     }
-    const requestDate = toDate(item.requestDate ?? null);
-    const parts = dateParts(item.requestDate ?? isoDate(requestDate));
-    const existing = await prisma.recruitmentLead.findFirst({
-      where: {
-        agencySlug,
-        creatorName: { equals: creatorName, mode: "insensitive" },
-        recruiter: { equals: recruiter, mode: "insensitive" },
-      },
-    });
+    const requestDate = toDate(item.requestDate || null);
+    const parts = dateParts(item.requestDate || isoDate(requestDate));
     const payload = {
       recruiter,
       managerId,
@@ -343,27 +358,50 @@ export async function POST(req: NextRequest) {
       comment: item.comment ?? "",
       comment2: item.comment2 ?? "",
       recontact: item.recontact ?? "",
-      integrationDate: toDate(item.integrationDate ?? null),
-      steps: asSteps(item.steps),
+      integrationDate: toDate(item.integrationDate || null),
+      steps: asSteps(item.steps) as Prisma.InputJsonValue,
     };
-    if (existing) {
-      if (!canTouch(existing, admin, userId, userName)) {
+    const key = `${creatorName.toLowerCase()}|${recruiter.toLowerCase()}`;
+    const found = byKey.get(key);
+    if (found) {
+      if (!canTouch(found, admin, userId, userName)) {
         skipped += 1;
         continue;
       }
-      await prisma.recruitmentLead.update({
-        where: { id: existing.id },
-        data: payload,
-      });
+      toUpdate.push({ id: found.id, data: payload });
     } else {
-      await prisma.recruitmentLead.create({
-        data: { agencySlug, createdById: userId, ...payload },
+      toCreate.push({ agencySlug, createdById: userId, ...payload });
+      byKey.set(key, {
+        id: `new-${toCreate.length}`,
+        creatorName,
+        recruiter,
+        managerId,
       });
     }
-    upserted += 1;
   }
 
-  return NextResponse.json({ ok: true, upserted, skipped });
+  for (let i = 0; i < toCreate.length; i += 80) {
+    await prisma.recruitmentLead.createMany({
+      data: toCreate.slice(i, i + 80),
+    });
+  }
+  for (let i = 0; i < toUpdate.length; i += 20) {
+    const chunk = toUpdate.slice(i, i + 20);
+    await prisma.$transaction(
+      chunk.map((item) =>
+        prisma.recruitmentLead.update({
+          where: { id: item.id },
+          data: item.data,
+        })
+      )
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    upserted: toCreate.length + toUpdate.length,
+    skipped,
+  });
 }
 
 export async function DELETE(req: NextRequest) {

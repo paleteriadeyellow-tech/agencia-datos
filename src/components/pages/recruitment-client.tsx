@@ -300,22 +300,38 @@ export default function RecruitmentClient() {
         setHint("El archivo no tiene filas con nombre de creador.");
         return;
       }
-      const res = await fetch(PANEL.recruitment, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "import",
-          rows: parsed.rows,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setHint(json.error || "No se pudo importar");
-        return;
+
+      let upserted = 0;
+      let skipped = 0;
+      const chunkSize = 80;
+      for (let i = 0; i < parsed.rows.length; i += chunkSize) {
+        const chunk = parsed.rows.slice(i, i + chunkSize);
+        const res = await fetch(PANEL.recruitment, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "import", rows: chunk }),
+        });
+        const text = await res.text();
+        let json: { error?: string; upserted?: number; skipped?: number } = {};
+        try {
+          json = text ? (JSON.parse(text) as typeof json) : {};
+        } catch {
+          setHint(
+            "El servidor no pudo guardar este Excel. Prueba de nuevo; si el archivo es muy grande, parte las filas."
+          );
+          return;
+        }
+        if (!res.ok) {
+          setHint(json.error || "No se pudo importar");
+          return;
+        }
+        upserted += json.upserted ?? chunk.length;
+        skipped += json.skipped ?? 0;
       }
+
       setHint(
-        `Importadas ${json.upserted} filas` +
-          (json.skipped ? ` · ${json.skipped} omitidas` : "") +
+        `Importadas ${upserted} filas` +
+          (skipped ? ` · ${skipped} omitidas` : "") +
           ` · ${parsed.mapped} columnas reconocidas.`
       );
       await mutate();
