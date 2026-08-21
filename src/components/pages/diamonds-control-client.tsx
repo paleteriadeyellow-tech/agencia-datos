@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Upload, Plus, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
@@ -19,6 +20,7 @@ import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { useViewAs } from "@/components/view-as";
 import { nickKey } from "@/lib/scope-view";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
+import { isAdmin } from "@/lib/permissions";
 import { fetchJsonWithTimeout } from "@/lib/fetch-timeout";
 
 type Row = {
@@ -35,6 +37,8 @@ type Row = {
 };
 
 export default function DiamondsControlClient() {
+  const { data: session } = useSession();
+  const canImport = isAdmin(session?.user?.role);
   const now = new Date();
   const [anio, setAnio] = useState(now.getFullYear());
   const [mes, setMes] = useState(now.getMonth() + 1);
@@ -343,7 +347,7 @@ export default function DiamondsControlClient() {
         </Panel>
       </div>
 
-      {Array.isArray(hub?.importLogs) && hub.importLogs.length > 0 && (
+      {canImport && Array.isArray(hub?.importLogs) && hub.importLogs.length > 0 && (
         <Panel className="mb-5">
           <p className="mb-2 text-sm font-medium">Historial de importaciones</p>
           <ul className="space-y-1.5 text-sm">
@@ -367,6 +371,7 @@ export default function DiamondsControlClient() {
         </Panel>
       )}
 
+      {canImport && (
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input
           ref={fileRef}
@@ -425,6 +430,7 @@ export default function DiamondsControlClient() {
           </div>
         </form>
       </Panel>
+      )}
 
       {!data ? (
         <div className="glass-panel h-64 animate-pulse rounded-2xl" />
@@ -437,18 +443,24 @@ export default function DiamondsControlClient() {
                 <th className="px-4 py-2.5 font-medium">Diamantes</th>
                 <th className="px-4 py-2.5 font-medium">Horas LIVE</th>
                 <th className="px-4 py-2.5 font-medium">Días válidos</th>
-                <th className="px-4 py-2.5 font-medium">Estado</th>
-                <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
+                {canImport && (
+                  <th className="px-4 py-2.5 font-medium">Estado</th>
+                )}
+                {canImport && (
+                  <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
+                )}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={canImport ? 6 : 4}
                     className="px-4 py-10 text-center text-sm text-text-muted"
                   >
-                    Sin registros en este mes. Importa un XLSX o añade uno.
+                    {canImport
+                      ? "Sin registros en este mes. Importa un XLSX o añade uno."
+                      : "Sin registros en este mes."}
                   </td>
                 </tr>
               ) : (
@@ -467,15 +479,19 @@ export default function DiamondsControlClient() {
                           size={32}
                         />
                         <div>
-                          <input
-                            className={cn(inputClass, "h-9 py-1")}
-                            defaultValue={r.username}
-                            onChange={(e) =>
-                              autosave(r, {
-                                username: e.target.value.replace(/^@/, ""),
-                              })
-                            }
-                          />
+                          {canImport ? (
+                            <input
+                              className={cn(inputClass, "h-9 py-1")}
+                              defaultValue={r.username}
+                              onChange={(e) =>
+                                autosave(r, {
+                                  username: e.target.value.replace(/^@/, ""),
+                                })
+                              }
+                            />
+                          ) : (
+                            <p className="font-medium">{r.username}</p>
+                          )}
                           {r.creatorName && (
                             <p className="mt-0.5 text-[11px] text-text-muted">
                               {r.creatorName}
@@ -485,59 +501,77 @@ export default function DiamondsControlClient() {
                       </div>
                     </td>
                     <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        className={cn(inputClass, "h-9 w-28 py-1 font-semibold text-accent")}
-                        defaultValue={r.diamonds}
-                        onChange={(e) =>
-                          autosave(r, {
-                            diamonds: Math.round(Number(e.target.value) || 0),
-                          })
-                        }
-                      />
+                      {canImport ? (
+                        <input
+                          type="number"
+                          min={0}
+                          className={cn(inputClass, "h-9 w-28 py-1 font-semibold text-accent")}
+                          defaultValue={r.diamonds}
+                          onChange={(e) =>
+                            autosave(r, {
+                              diamonds: Math.round(Number(e.target.value) || 0),
+                            })
+                          }
+                        />
+                      ) : (
+                        <span className="font-semibold text-accent">
+                          {formatNumber(r.diamonds)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.1}
-                        className={cn(inputClass, "h-9 w-24 py-1")}
-                        defaultValue={r.hours}
-                        onChange={(e) =>
-                          autosave(r, {
-                            hours: Number(e.target.value) || 0,
-                          })
-                        }
-                      />
+                      {canImport ? (
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          className={cn(inputClass, "h-9 w-24 py-1")}
+                          defaultValue={r.hours}
+                          onChange={(e) =>
+                            autosave(r, {
+                              hours: Number(e.target.value) || 0,
+                            })
+                          }
+                        />
+                      ) : (
+                        <span>{r.hours}</span>
+                      )}
                     </td>
                     <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        className={cn(inputClass, "h-9 w-20 py-1")}
-                        defaultValue={r.days}
-                        onChange={(e) =>
-                          autosave(r, {
-                            days: Math.round(Number(e.target.value) || 0),
-                          })
-                        }
-                      />
+                      {canImport ? (
+                        <input
+                          type="number"
+                          min={0}
+                          className={cn(inputClass, "h-9 w-20 py-1")}
+                          defaultValue={r.days}
+                          onChange={(e) =>
+                            autosave(r, {
+                              days: Math.round(Number(e.target.value) || 0),
+                            })
+                          }
+                        />
+                      ) : (
+                        <span>{r.days}</span>
+                      )}
                     </td>
-                    <td className="px-4 py-2 text-xs text-text-muted">
-                      {saveMap[r.id] || "—"}
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          className="rounded-lg border border-border p-2 text-text-muted hover:border-danger hover:text-danger"
-                          onClick={() => void removeRow(r.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
+                    {canImport && (
+                      <td className="px-4 py-2 text-xs text-text-muted">
+                        {saveMap[r.id] || "—"}
+                      </td>
+                    )}
+                    {canImport && (
+                      <td className="px-4 py-2">
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            className="rounded-lg border border-border p-2 text-text-muted hover:border-danger hover:text-danger"
+                            onClick={() => void removeRow(r.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                   );
                 })

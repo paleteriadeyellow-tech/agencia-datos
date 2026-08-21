@@ -13,6 +13,15 @@ export const DEFAULT_WA_TEMPLATES = [
   },
 ];
 
+export const WA_TEMPLATE_VARS = [
+  { key: "nombre", label: "Nombre", example: "albertoreyesyt" },
+  { key: "diamantes", label: "Diamantes", example: "338,968" },
+  { key: "horas", label: "Horas", example: "89" },
+  { key: "dias", label: "Días", example: "20" },
+  { key: "meta", label: "Meta", example: "500,000" },
+  { key: "faltan", label: "Faltan", example: "161,032" },
+] as const;
+
 export type WaVars = {
   nombre?: string;
   diamantes?: string | number;

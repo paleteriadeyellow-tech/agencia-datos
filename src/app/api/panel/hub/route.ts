@@ -568,6 +568,16 @@ export async function POST(req: NextRequest) {
     if (!name || !body) {
       return NextResponse.json({ error: "Nombre y texto son obligatorios" }, { status: 400 });
     }
+    if (data.id) {
+      const updated = await prisma.waTemplate.updateMany({
+        where: { id: data.id, agencySlug },
+        data: { name, body },
+      });
+      if (updated.count === 0) {
+        return NextResponse.json({ error: "Plantilla no encontrada" }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true, id: data.id, name, body });
+    }
     const row = await prisma.waTemplate.create({
       data: { agencySlug, name, body },
     });

@@ -81,7 +81,13 @@ const upsertSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug, scope } = auth;
+  const { agencySlug, scope, isAdmin } = auth;
+  if (!isAdmin) {
+    return NextResponse.json(
+      { error: "Solo el admin puede importar o editar diamantes" },
+      { status: 403 }
+    );
+  }
 
   let body: unknown;
   try {
@@ -362,7 +368,13 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug, scope } = auth;
+  const { agencySlug, scope, isAdmin } = auth;
+  if (!isAdmin) {
+    return NextResponse.json(
+      { error: "Solo el admin puede eliminar registros" },
+      { status: 403 }
+    );
+  }
 
   const id = req.nextUrl.searchParams.get("id");
   if (!id) {

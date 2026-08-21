@@ -1,16 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
-import { Button, EmptyState, Panel, inputClass } from "@/components/ui";
+import { Button, EmptyState, Field, Panel, inputClass } from "@/components/ui";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { PanelLoadError } from "@/components/panel-load-error";
-import { PANEL, usePanelData } from "@/lib/swr";
+import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { useViewAs } from "@/components/view-as";
 import { filterByManagerId } from "@/lib/scope-view";
 import { whatsappUrl } from "@/lib/phone";
-import { cn, formatNumber } from "@/lib/utils";
-import { DEFAULT_WA_TEMPLATES, fillWaTemplate } from "@/lib/wa-template";
+import { cn, currentMonth, formatNumber } from "@/lib/utils";
+import {
+  DEFAULT_WA_TEMPLATES,
+  WA_TEMPLATE_VARS,
+  fillWaTemplate,
+} from "@/lib/wa-template";
 
 type CreatorRow = {
   id: string;
@@ -63,12 +68,29 @@ export default function MensajesWaClient() {
     error?: Error;
     mutate: () => void;
   };
-  const { data: hub } = usePanelData(PANEL.hub) as {
-    data?: { templates: { id: string; name: string; body: string }[] };
+  const { data: hub, mutate: mutateHub } = usePanelData(
+    `${PANEL.hub}?period=${period}`
+  ) as {
+    data?: {
+      templates: { id: string; name: string; body: string }[];
+      roster?: {
+        id: string;
+        diamonds: number;
+        hours: number;
+        days: number;
+        targetDiamonds: number;
+      }[];
+    };
+    mutate: () => void;
   };
 
   const [tplName, setTplName] = useState("");
   const [tplBody, setTplBody] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [activeTpl, setActiveTpl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const period = currentMonth();
 
   useEffect(() => {
     setDrafts(loadDrafts());
@@ -104,6 +126,35 @@ export default function MensajesWaClient() {
       });
   }, [data, q, viewAsId]);
 
+  const rosterById = useMemo(() => {
+    const map = new Map<
+      string,
+      { diamonds: number; hours: number; days: number; targetDiamonds: number }
+    >();
+    for (const row of hub?.roster ?? []) {
+      map.set(row.id, row);
+    }
+    return map;
+  }, [hub?.roster]);
+
+  function varsFor(c: CreatorRow) {
+    const stats = rosterById.get(c.id);
+    const diamonds = stats?.diamonds ?? c.diamondsMonth ?? c.diamonds ?? 0;
+    const hours = stats ? Math.round(stats.hours) : null;
+    const days = stats?.days ?? null;
+    const meta = stats?.targetDiamonds ?? 0;
+    const faltan = meta > 0 ? Math.max(0, meta - diamonds) : null;
+    return {
+      nombre: c.name,
+      diamantes: formatNumber(diamonds),
+      horas: hours == null ? "—" : String(hours),
+      dias: days == null ? "—" : String(days),
+      meta: meta > 0 ? formatNumber(meta) : "—",
+      faltan: faltan == null ? "—" : formatNumber(faltan),
+      nicho: "",
+    };
+  }
+
   function setMessage(id: string, value: string) {
     setDrafts((prev) => {
       const next = { ...prev };
@@ -113,40 +164,89 @@ export default function MensajesWaClient() {
     });
   }
 
-  function applyTemplate(body: string) {
+  function applyTemplate(body: string, name?: string) {
     setDrafts((prev) => {
       const next = { ...prev };
       for (const c of list) {
-        next[c.id] = fillWaTemplate(body, {
-          nombre: c.name,
-          diamantes: formatNumber(c.diamondsMonth ?? c.diamonds ?? 0),
-          horas: "—",
-          dias: "—",
-          meta: "—",
-          faltan: "—",
-          nicho: "",
-        });
+        next[c.id] = fillWaTemplate(body, varsFor(c));
       }
       return next;
     });
+    if (name) setActiveTpl(name);
     setHint("Plantilla aplicada a los creadores visibles.");
+  }
+
+  function insertVar(key: string) {
+    const token = `{${key}}`;
+    const el = bodyRef.current;
+    if (!el) {
+      setTplBody((prev) => `${prev}${token}`);
+      return;
+    }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const next = `${tplBody.slice(0, start)}${token}${tplBody.slice(end)}`;
+    setTplBody(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
+  function newTemplate() {
+    setEditingId(null);
+    setActiveTpl(null);
+    setTplName("");
+    setTplBody("Hola {nombre}, vas {diamantes} diamantes y {dias} días LIVE.");
   }
 
   async function saveTemplate(e: React.FormEvent) {
     e.preventDefault();
     if (!tplName.trim() || !tplBody.trim()) return;
+    setSaving(true);
+    const wasEdit = Boolean(editingId);
+    try {
+      const res = await fetch(PANEL.hub, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "template",
+          id: editingId ?? undefined,
+          name: tplName.trim(),
+          body: tplBody.trim(),
+        }),
+      });
+      const json = (await res.json()) as { row?: { id: string } };
+      if (!res.ok) {
+        setHint("No se pudo guardar la plantilla.");
+        return;
+      }
+      if (json.row?.id) setEditingId(json.row.id);
+      applyTemplate(tplBody.trim(), tplName.trim());
+      setHint(
+        wasEdit
+          ? "Plantilla actualizada y aplicada."
+          : "Plantilla guardada y aplicada."
+      );
+      invalidatePanel(PANEL.hub);
+      await mutateHub();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteTemplate(id: string) {
+    if (!confirm("¿Eliminar esta plantilla?")) return;
     await fetch(PANEL.hub, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "template",
-        name: tplName,
-        body: tplBody,
-      }),
+      body: JSON.stringify({ action: "delete-template", id }),
     });
-    setTplName("");
-    setTplBody("");
-    setHint("Plantilla guardada.");
+    if (editingId === id) newTemplate();
+    invalidatePanel(PANEL.hub);
+    await mutateHub();
+    setHint("Plantilla eliminada.");
   }
 
   function openWa(c: CreatorRow) {
@@ -208,51 +308,140 @@ export default function MensajesWaClient() {
       </div>
 
       <Panel className="mb-4">
-        <p className="mb-2 text-sm font-medium">Plantillas</p>
-        <p className="mb-3 text-xs text-text-muted">
-          Variables: {"{nombre} {diamantes} {horas} {dias} {meta} {faltan}"}
-        </p>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Plantillas</p>
+            <p className="mt-1 text-xs text-text-muted">
+              Clic en una variable para insertarla. Se reemplaza sola con el
+              nombre, diamantes, horas y días de cada creador.
+            </p>
+          </div>
+          <Button type="button" variant="secondary" onClick={newTemplate}>
+            <Plus className="h-4 w-4" /> Nueva plantilla
+          </Button>
+        </div>
+
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {WA_TEMPLATE_VARS.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              title={`Insertar {${v.key}} · ej. ${v.example}`}
+              className="rounded-full border border-cyan/30 bg-cyan/10 px-2.5 py-1 font-mono text-[11px] text-cyan hover:bg-cyan/20"
+              onClick={() => insertVar(v.key)}
+            >
+              {`{${v.key}}`}
+              <span className="ml-1.5 font-sans text-text-muted">{v.label}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="mb-3 flex flex-wrap gap-2">
           {DEFAULT_WA_TEMPLATES.map((t) => (
             <button
               key={t.name}
               type="button"
-              className="rounded-full border border-border px-3 py-1 text-xs hover:border-accent"
-              onClick={() => applyTemplate(t.body)}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs",
+                activeTpl === t.name
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-border hover:border-accent"
+              )}
+              onClick={() => {
+                setEditingId(null);
+                setTplName(t.name);
+                setTplBody(t.body);
+                applyTemplate(t.body, t.name);
+              }}
             >
               {t.name}
             </button>
           ))}
           {(hub?.templates ?? []).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className="rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-xs text-cyan"
-              onClick={() => applyTemplate(t.body)}
-            >
-              {t.name}
-            </button>
+            <span key={t.id} className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs",
+                  editingId === t.id || activeTpl === t.name
+                    ? "border-cyan bg-cyan/15 text-cyan"
+                    : "border-cyan/30 bg-cyan/10 text-cyan hover:border-cyan"
+                )}
+                onClick={() => {
+                  setEditingId(t.id);
+                  setTplName(t.name);
+                  setTplBody(t.body);
+                  applyTemplate(t.body, t.name);
+                }}
+              >
+                {t.name}
+              </button>
+              <button
+                type="button"
+                title="Eliminar plantilla"
+                className="rounded-full border border-border p-1 text-text-muted hover:border-danger hover:text-danger"
+                onClick={() => void deleteTemplate(t.id)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </span>
           ))}
         </div>
-        <form
-          onSubmit={(e) => void saveTemplate(e)}
-          className="grid gap-2 md:grid-cols-[160px_1fr_auto]"
-        >
-          <input
-            className={inputClass}
-            placeholder="Nombre"
-            value={tplName}
-            onChange={(e) => setTplName(e.target.value)}
-          />
-          <input
-            className={inputClass}
-            placeholder="Hola {nombre}, vas {diamantes}…"
-            value={tplBody}
-            onChange={(e) => setTplBody(e.target.value)}
-          />
-          <Button type="submit" variant="secondary">
-            Guardar
-          </Button>
+
+        <form onSubmit={(e) => void saveTemplate(e)} className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-[200px_1fr]">
+            <Field label="Nombre de la plantilla">
+              <input
+                className={inputClass}
+                placeholder="Ej. Recordatorio de días"
+                value={tplName}
+                onChange={(e) => setTplName(e.target.value)}
+                required
+              />
+            </Field>
+            <div className="flex items-end">
+              <p className="pb-2.5 text-xs text-text-muted">
+                {editingId
+                  ? "Estás editando una plantilla guardada."
+                  : "Se guardará como plantilla nueva de la agencia."}
+              </p>
+            </div>
+          </div>
+          <Field label="Mensaje">
+            <textarea
+              ref={bodyRef}
+              className={cn(inputClass, "min-h-[6rem] resize-y leading-relaxed")}
+              placeholder="Hola {nombre}, vas {diamantes} diamantes y {dias} días LIVE…"
+              value={tplBody}
+              onChange={(e) => setTplBody(e.target.value)}
+              required
+            />
+          </Field>
+          {tplBody.trim() && list[0] && (
+            <p className="rounded-lg border border-border-soft bg-bg px-3 py-2 text-xs text-text-muted">
+              Vista previa · {list[0].name}:{" "}
+              <span className="text-text">
+                {fillWaTemplate(tplBody, varsFor(list[0]))}
+              </span>
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={saving}>
+              {saving
+                ? "Guardando…"
+                : editingId
+                  ? "Guardar cambios"
+                  : "Guardar plantilla"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!tplBody.trim()}
+              onClick={() => applyTemplate(tplBody, tplName || "Personalizada")}
+            >
+              Aplicar a visibles
+            </Button>
+          </div>
         </form>
       </Panel>
 
