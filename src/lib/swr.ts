@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import useSWR, { mutate, useSWRConfig, type SWRConfiguration } from "swr";
 import { currentMonth } from "@/lib/utils";
+import { mondayOf, ymd } from "@/lib/weekly-schedule";
 
 const SESSION_PREFIX = "panel-swr-v1:";
 
@@ -103,6 +104,7 @@ export const PANEL = {
   hub: "/api/panel/hub",
   exportMes: "/api/panel/export",
   recruitment: "/api/panel/recruitment",
+  programming: "/api/panel/programming",
 } as const;
 
 export function panelWarmUrls(period = currentMonth()) {
@@ -112,6 +114,7 @@ export function panelWarmUrls(period = currentMonth()) {
     `${PANEL.hub}?period=${period}`,
     PANEL.creators,
     `${PANEL.recruitment}?year=${year}&month=${Number(period.slice(5, 7))}`,
+    `${PANEL.programming}?week=${ymd(mondayOf())}`,
     PANEL.managers,
     PANEL.livecoins,
     PANEL.metrics,

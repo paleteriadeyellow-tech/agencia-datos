@@ -318,6 +318,22 @@ model RecruitmentLead {
   @@index([agencySlug, recruiter])
 }
 
+model ManagerShift {
+  id          String   @id @default(cuid())
+  agencySlug  String   @default("streamersfederation")
+  weekStart   String
+  day         Int
+  hour        Int
+  managerId   String?
+  managerName String   @default("")
+  label       String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([agencySlug, weekStart, day, hour])
+  @@index([agencySlug, weekStart])
+}
+
 model CreatorPortalToken {
   id         String   @id @default(cuid())
   agencySlug String   @default("streamersfederation")

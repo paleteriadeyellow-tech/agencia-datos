@@ -2,6 +2,7 @@
 
 import { currentMonth } from "@/lib/utils";
 import { PANEL, usePanelData } from "@/lib/swr";
+import { mondayOf, ymd } from "@/lib/weekly-schedule";
 
 /** Mantiene todas las APIs del panel en caché para cambiar de pestaña al instante. */
 export function PanelWarmup() {
@@ -12,6 +13,7 @@ export function PanelWarmup() {
   usePanelData(
     `${PANEL.recruitment}?year=${period.slice(0, 4)}&month=${Number(period.slice(5, 7))}`
   );
+  usePanelData(`${PANEL.programming}?week=${ymd(mondayOf())}`);
   usePanelData(PANEL.managers);
   usePanelData(PANEL.livecoins);
   usePanelData(PANEL.metrics);

@@ -20,6 +20,7 @@ const ALL_ROUTES = [
   "/campanas",
   "/calendario",
   "/reclutamiento",
+  "/programacion",
   "/finanzas",
   "/bonos",
   "/contratos",
