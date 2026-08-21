@@ -6,10 +6,12 @@ import { ChevronDown, Download, Plus, Trash2, Upload } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, EmptyState, Field, Panel, inputClass } from "@/components/ui";
+import { Modal } from "@/components/modal";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
+import { mutate as cacheMutate } from "swr";
 import { useViewAs } from "@/components/view-as";
 import { isAdmin } from "@/lib/permissions";
 import {
@@ -101,6 +103,10 @@ function cellValue(row: Lead, key: string) {
   if (key === "recontact") return row.recontact;
   if (key === "integrationDate") return row.integrationDate ?? "";
   return row.steps[key] ?? "";
+}
+
+function filledCount(row: Lead) {
+  return RECRUITMENT_COLUMNS.filter((c) => cellValue(row, c.key).trim()).length;
 }
 
 function patchFromKey(key: string, value: string): Partial<Lead> {
@@ -211,6 +217,30 @@ export default function RecruitmentClient() {
     [mutate]
   );
 
+  const writeList = useCallback(
+    (
+      targetYear: string,
+      targetMonth: string,
+      updater: (rows: Lead[]) => Lead[]
+    ) => {
+      const key = `${PANEL.recruitment}?year=${targetYear}&month=${targetMonth}`;
+      void cacheMutate(
+        key,
+        (current: Payload | undefined) => {
+          const base = current ?? {
+            isAdmin: admin,
+            rows: [],
+            managers,
+            years: payload?.years ?? [],
+          };
+          return { ...base, rows: updater(base.rows) };
+        },
+        { revalidate: false }
+      );
+    },
+    [admin, managers, payload?.years]
+  );
+
   const autosave = useCallback(
     (row: Lead, patch: Partial<Lead>) => {
       const prev = pending.current[row.id] ?? {};
@@ -245,72 +275,113 @@ export default function RecruitmentClient() {
     [applyLocal]
   );
 
-  async function addRow(e: React.FormEvent) {
+  function addRow(e: React.FormEvent) {
     e.preventDefault();
     if (!draft.creatorName.trim()) {
       setHint("Escribe el nombre o usuario del creador.");
       return;
     }
-    setBusy(true);
-    setHint("");
-    try {
-      const manager =
-        admin && (viewAsId || draft.managerId)
-          ? managers.find((m) => m.id === (viewAsId || draft.managerId))
-          : null;
-      const recruiter = admin
-        ? viewAsName || manager?.name || draft.recruiter.trim()
-        : session?.user?.name ?? draft.recruiter;
-      const steps: Record<string, string> = {};
-      for (const key of STEP_KEYS) {
-        const v = (draft[key] ?? "").trim();
-        if (v) steps[key] = v;
-      }
-      const res = await fetch(PANEL.recruitment, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          creatorName: draft.creatorName.trim(),
-          recruiter,
-          managerId: admin ? viewAsId || draft.managerId || null : undefined,
-          requestDate: draft.requestDate || todayIso(),
-          situation: draft.situation || "pendiente",
-          phone: draft.phone,
-          comment: draft.comment,
-          comment2: draft.comment2,
-          recontact: draft.recontact,
-          integrationDate: draft.integrationDate || null,
-          steps,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setHint(json.error || "No se pudo agregar");
-        return;
-      }
-      const parts = dateParts(draft.requestDate || todayIso());
-      if (parts.year) setYear(String(parts.year));
-      if (parts.month) setMonth(String(parts.month));
-      setOpenAdd(false);
-      setDraft(emptyDraft(session?.user?.name ?? ""));
-      const mesNombre = parts.month ? MESES_NOMBRE[parts.month] : "";
-      setHint(
-        `Ficha de ${draft.creatorName.trim()} guardada en ${mesNombre} ${parts.year ?? ""}`.trim()
-      );
-      invalidatePanel(PANEL.recruitment);
-      await mutate();
-    } finally {
-      setBusy(false);
+    const manager =
+      admin && (viewAsId || draft.managerId)
+        ? managers.find((m) => m.id === (viewAsId || draft.managerId))
+        : null;
+    const recruiter = admin
+      ? viewAsName || manager?.name || draft.recruiter.trim()
+      : session?.user?.name ?? draft.recruiter;
+    const steps: Record<string, string> = {};
+    for (const key of STEP_KEYS) {
+      const v = (draft[key] ?? "").trim();
+      if (v) steps[key] = v;
     }
+    const requestDate = draft.requestDate || todayIso();
+    const parts = dateParts(requestDate);
+    const targetYear = String(parts.year ?? currentYear);
+    const targetMonth = String(parts.month ?? currentMonthNum);
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic: Lead = {
+      id: tempId,
+      recruiter: recruiter || "",
+      managerId: admin
+        ? viewAsId || draft.managerId || null
+        : null,
+      requestDate,
+      year: parts.year,
+      month: parts.month,
+      creatorName: draft.creatorName.trim(),
+      situation: draft.situation || "pendiente",
+      phone: draft.phone || "",
+      comment: draft.comment || "",
+      comment2: draft.comment2 || "",
+      recontact: draft.recontact || "",
+      integrationDate: draft.integrationDate || null,
+      steps,
+    };
+
+    writeList(targetYear, targetMonth, (list) => [optimistic, ...list]);
+    setYear(targetYear);
+    setMonth(targetMonth);
+    setOpenAdd(false);
+    setDraft(emptyDraft(session?.user?.name ?? ""));
+    setHint(
+      `Ficha de ${optimistic.creatorName} en ${MESES_NOMBRE[Number(targetMonth)] ?? ""} ${targetYear}`.trim()
+    );
+
+    void fetch(PANEL.recruitment, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "create",
+        creatorName: optimistic.creatorName,
+        recruiter,
+        managerId: admin ? viewAsId || draft.managerId || null : undefined,
+        requestDate,
+        situation: optimistic.situation,
+        phone: optimistic.phone,
+        comment: optimistic.comment,
+        comment2: optimistic.comment2,
+        recontact: optimistic.recontact,
+        integrationDate: optimistic.integrationDate,
+        steps,
+      }),
+    })
+      .then(async (res) => {
+        const json = (await res.json()) as { error?: string; row?: Lead };
+        if (!res.ok || !json.row) {
+          writeList(targetYear, targetMonth, (list) =>
+            list.filter((r) => r.id !== tempId)
+          );
+          setHint(json.error || "No se pudo agregar");
+          return;
+        }
+        writeList(targetYear, targetMonth, (list) =>
+          list.map((r) => (r.id === tempId ? { ...optimistic, ...json.row } : r))
+        );
+      })
+      .catch(() => {
+        writeList(targetYear, targetMonth, (list) =>
+          list.filter((r) => r.id !== tempId)
+        );
+        setHint("No se pudo agregar");
+      });
   }
 
-  async function removeRow(id: string) {
+  function removeRow(id: string) {
     if (!confirm("¿Eliminar esta fila?")) return;
-    await fetch(`${PANEL.recruitment}?id=${encodeURIComponent(id)}`, {
+    const snapshot = payload?.rows ?? [];
+    writeList(year, month, (list) => list.filter((r) => r.id !== id));
+    if (openId === id) setOpenId(null);
+    if (id.startsWith("tmp-")) return;
+    void fetch(`${PANEL.recruitment}?id=${encodeURIComponent(id)}`, {
       method: "DELETE",
+    }).then((res) => {
+      if (!res.ok) {
+        writeList(year, month, () => snapshot);
+        setHint("No se pudo eliminar");
+      }
+    }).catch(() => {
+      writeList(year, month, () => snapshot);
+      setHint("No se pudo eliminar");
     });
-    await mutate();
   }
 
   async function importXlsx(file: File) {
