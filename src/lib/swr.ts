@@ -106,6 +106,7 @@ export const PANEL = {
   recruitment: "/api/panel/recruitment",
   programming: "/api/panel/programming",
   onboarding: "/api/panel/onboarding",
+  calls: "/api/panel/calls",
 } as const;
 
 export function panelWarmUrls(period = currentMonth()) {
@@ -117,6 +118,7 @@ export function panelWarmUrls(period = currentMonth()) {
     `${PANEL.recruitment}?year=${year}&month=${Number(period.slice(5, 7))}`,
     `${PANEL.programming}?week=${ymd(mondayOf())}`,
     `${PANEL.onboarding}?year=${year}&month=${Number(period.slice(5, 7))}`,
+    `${PANEL.calls}?year=${year}&month=${Number(period.slice(5, 7))}`,
     PANEL.managers,
     PANEL.livecoins,
     PANEL.metrics,

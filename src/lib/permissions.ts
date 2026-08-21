@@ -12,6 +12,7 @@ export const MANAGER_ALLOWED_PATHS = [
   "/calendario",
   "/programacion",
   "/control-usuarios",
+  "/llamadas",
   "/reporte",
 ] as const;
 

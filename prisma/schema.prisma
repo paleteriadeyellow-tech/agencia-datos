@@ -354,6 +354,29 @@ model OnboardingUser {
   @@index([agencySlug, creatorName])
 }
 
+model OneOnOneCall {
+  id          String   @id @default(cuid())
+  agencySlug  String   @default("streamersfederation")
+  date        String
+  year        Int
+  month       Int
+  slot        String
+  creatorName String   @default("")
+  top         String   @default("")
+  reason      String   @default("")
+  needF       String   @default("")
+  needO       String   @default("")
+  needD       String   @default("")
+  needA       String   @default("")
+  managerId   String?
+  managerName String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([agencySlug, date, slot])
+  @@index([agencySlug, year, month])
+}
+
 model CreatorPortalToken {
   id         String   @id @default(cuid())
   agencySlug String   @default("streamersfederation")
