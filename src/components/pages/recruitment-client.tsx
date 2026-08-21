@@ -20,6 +20,7 @@ import {
   SITUATION_OPTIONS,
   STEP_KEYS,
   dateParts,
+  normalizeSituation,
   parseRecruitmentSheet,
   templateHeaders,
 } from "@/lib/recruitment";
@@ -58,10 +59,14 @@ const IDENTITY_KEYS = new Set([
 ]);
 
 function situationBar(situation: string) {
-  const s = situation.toLowerCase();
-  if (s.includes("no apto")) return "border-l-danger";
-  if (s.includes("apto")) return "border-l-success";
-  if (s.includes("pendiente")) return "border-l-warning";
+  const s = normalizeSituation(situation).toLowerCase();
+  if (s.includes("permiso") || s.includes("otra agencia") || s.includes("no apto")) {
+    return "border-l-danger";
+  }
+  if (s === "apto") return "border-l-success";
+  if (s.includes("faltan") || s.includes("riesgo") || s.includes("pendiente")) {
+    return "border-l-warning";
+  }
   return "border-l-cyan/40";
 }
 
@@ -691,10 +696,11 @@ export default function RecruitmentClient() {
             const showRecruiter =
               !prev || nickKey(prev.recruiter) !== nickKey(row.recruiter);
             const done = filledCount(row);
-            const situationOpts = SITUATION_OPTIONS.includes(row.situation)
+            const situationValue = normalizeSituation(row.situation);
+            const situationOpts = SITUATION_OPTIONS.includes(situationValue)
               ? SITUATION_OPTIONS
-              : row.situation
-                ? [row.situation, ...SITUATION_OPTIONS]
+              : situationValue
+                ? [situationValue, ...SITUATION_OPTIONS]
                 : SITUATION_OPTIONS;
             return (
               <div key={row.id}>
@@ -749,12 +755,12 @@ export default function RecruitmentClient() {
                         inputClass,
                         "h-8 w-[11rem] shrink-0 px-2 py-0 text-xs"
                       )}
-                      value={row.situation}
+                      value={situationValue}
                       onChange={(e) =>
                         autosave(row, { situation: e.target.value })
                       }
                     >
-                      {!row.situation && <option value="">Situación</option>}
+                      {!situationValue && <option value="">Situación</option>}
                       {situationOpts.map((opt) => (
                         <option key={opt} value={opt}>
                           {opt}

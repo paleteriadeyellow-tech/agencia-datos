@@ -430,11 +430,23 @@ export const STEP_KEYS = RECRUITMENT_COLUMNS.filter((c) => c.type === "text").ma
 export const SITUATION_OPTIONS = [
   "pendiente",
   "Apto",
-  "Apto - Faltan lives",
-  "Apto - Riesgo de varias cuentas",
-  "No apto - sin permiso de datos",
-  "No apto - Esta en otra agencia",
+  "Faltan lives",
+  "Riesgo de varias cuentas",
+  "sin permiso de datos",
+  "Esta en otra agencia",
 ];
+
+const SITUATION_ALIASES: Record<string, string> = {
+  "apto - faltan lives": "Faltan lives",
+  "apto - riesgo de varias cuentas": "Riesgo de varias cuentas",
+  "no apto - sin permiso de datos": "sin permiso de datos",
+  "no apto - esta en otra agencia": "Esta en otra agencia",
+};
+
+export function normalizeSituation(value: string) {
+  const key = value.trim().toLowerCase();
+  return SITUATION_ALIASES[key] ?? value.trim();
+}
 
 export type RecruitmentParsedRow = {
   recruiter: string;
