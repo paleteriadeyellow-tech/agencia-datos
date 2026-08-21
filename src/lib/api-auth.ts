@@ -69,11 +69,11 @@ export async function requireApiAuth(req: NextRequest) {
     };
   }
 
-  const viewed = await applyViewAs(
-    scope,
-    agencySlug,
-    viewAsIdFromRequest(req)
-  );
+  const skipViewAs = req.headers.get("x-skip-view-as") === "1";
+  const viewed =
+    skipViewAs && isAdminUser
+      ? { scope, viewingAs: null as { id: string; name: string } | null }
+      : await applyViewAs(scope, agencySlug, viewAsIdFromRequest(req));
 
   return {
     error: null as null,

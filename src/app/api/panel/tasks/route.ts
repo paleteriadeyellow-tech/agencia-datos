@@ -34,12 +34,12 @@ export async function GET(req: NextRequest) {
   const [creators, tasks] = await Promise.all([
     prisma.creator.findMany({
       where: scopeFilter,
-      select: { id: true, name: true },
+      select: { id: true, name: true, managerId: true },
       orderBy: { name: "asc" },
     }),
     prisma.task.findMany({
       where: taskWhere(scope, agencySlug, { period }),
-      include: { creator: { select: { name: true } } },
+      include: { creator: { select: { name: true, managerId: true } } },
       orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     }),
   ]);
@@ -55,7 +55,11 @@ export async function GET(req: NextRequest) {
       status: t.status,
       period: t.period,
       dueDate: t.dueDate,
-      creator: t.creator ? { name: t.creator.name } : null,
+      creator: t.creator
+        ? { name: t.creator.name, managerId: t.creator.managerId }
+        : null,
+      managerId: t.creator?.managerId ?? null,
+      creatorId: t.creatorId,
     })),
   });
 }

@@ -15,8 +15,10 @@ import {
   parseNumericCell,
   parseLiveDurationHours,
 } from "@/lib/bonos";
-import { PANEL, invalidatePanel } from "@/lib/swr";
-import useSWR from "swr";
+import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
+import { useViewAs } from "@/components/view-as";
+import { nickKey } from "@/lib/scope-view";
+import { useCreatorsRoster } from "@/lib/use-creators-roster";
 import { fetchJsonWithTimeout } from "@/lib/fetch-timeout";
 
 type Row = {
@@ -28,14 +30,9 @@ type Row = {
   days: number;
   notes: string | null;
   creatorName: string | null;
+  managerId?: string | null;
   updatedAt?: string;
 };
-
-async function fetcher(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Error al cargar");
-  return res.json();
-}
 
 export default function DiamondsControlClient() {
   const now = new Date();
@@ -43,12 +40,14 @@ export default function DiamondsControlClient() {
   const [mes, setMes] = useState(now.getMonth() + 1);
   const period = periodKey(anio, mes);
   const url = `${PANEL.diamonds}?period=${period}`;
+  const { viewAsId } = useViewAs();
+  const { nickSet } = useCreatorsRoster();
 
-  const { data, error, mutate: reload } = useSWR(url, fetcher, {
+  const { data, error, mutate: reload } = usePanelData(url, {
     revalidateOnFocus: false,
     dedupingInterval: 10000,
   });
-  const { data: hub } = useSWR(`${PANEL.hub}?period=${period}`, fetcher, {
+  const { data: hub } = usePanelData(`${PANEL.hub}?period=${period}`, {
     revalidateOnFocus: false,
     dedupingInterval: 15000,
   });
@@ -66,7 +65,15 @@ export default function DiamondsControlClient() {
     return Array.from({ length: 7 }, (_, i) => y0 - 4 + i);
   }, []);
 
-  const rows: Row[] = data?.rows ?? [];
+  const rows: Row[] = useMemo(() => {
+    const list = (data?.rows ?? []) as Row[];
+    if (!viewAsId) return list;
+    return list.filter(
+      (r) =>
+        r.managerId === viewAsId ||
+        (!r.managerId && nickSet.has(nickKey(r.username)))
+    );
+  }, [data?.rows, viewAsId, nickSet]);
 
   const autosave = useCallback(
     (row: Row, patch: Partial<Pick<Row, "diamonds" | "hours" | "days" | "notes" | "username">>) => {

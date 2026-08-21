@@ -15,6 +15,8 @@ import {
   periodKey,
 } from "@/lib/bonos";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
+import { nickKey } from "@/lib/scope-view";
+import { useViewAs } from "@/components/view-as";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { fetchJsonWithTimeout } from "@/lib/fetch-timeout";
 
@@ -51,7 +53,7 @@ export default function BonosClient() {
   const [horas, setHoras] = useState(0);
   const [dias, setDias] = useState(1);
 
-  const { suggestList } = useCreatorsRoster();
+  const { suggestList, nickSet } = useCreatorsRoster();
   const fileRef = useRef<HTMLInputElement>(null);
   const pk = periodKey(anio, mes);
 
@@ -69,8 +71,16 @@ export default function BonosClient() {
     isLoading: boolean;
   };
 
-  const rows = data?.rows ?? [];
-  const totalBono = data?.totalBono ?? 0;
+  const { viewAsId } = useViewAs();
+  const rows = useMemo(() => {
+    const list = data?.rows ?? [];
+    if (!viewAsId) return list;
+    return list.filter((r) => nickSet.has(nickKey(r.nombre)));
+  }, [data?.rows, viewAsId, nickSet]);
+  const totalBono = useMemo(
+    () => rows.reduce((sum, r) => sum + (r.bono ?? 0), 0),
+    [rows]
+  );
 
   async function onAdd(e: React.FormEvent) {
     e.preventDefault();

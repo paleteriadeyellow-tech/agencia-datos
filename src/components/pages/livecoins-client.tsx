@@ -9,6 +9,8 @@ import { KpiCard } from "@/components/kpi-card";
 import { Panel, inputClass } from "@/components/ui";
 import { formatNumber, cn } from "@/lib/utils";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
+import { useViewAs } from "@/components/view-as";
+import { filterByManagerId } from "@/lib/scope-view";
 
 const STATUSES = [
   { value: "pendiente", label: "Pendiente" },
@@ -28,6 +30,7 @@ type Row = {
   livecoinsStatus: LiveStatus;
   livecoinsComment: string;
   hasApp: boolean;
+  managerId?: string | null;
 };
 
 type Payload = {
@@ -43,6 +46,7 @@ const commentClass =
   "h-9 w-full min-w-[12rem] rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-sm text-text outline-none backdrop-blur-sm transition placeholder:text-text-muted/50 hover:border-white/20 hover:bg-white/10 focus:border-accent/50 focus:bg-white/10";
 
 export default function LivecoinsClient() {
+  const { viewAsId } = useViewAs();
   const { data, error, mutate } = usePanelData(PANEL.livecoins) as {
     data?: Payload;
     error?: Error;
@@ -63,7 +67,7 @@ export default function LivecoinsClient() {
   }, []);
 
   const rows = useMemo(() => {
-    const list = data?.creators ?? [];
+    const list = filterByManagerId(data?.creators ?? [], viewAsId);
     const query = q.trim().toLowerCase();
     return list.filter((c) => {
       if (filter !== "todos" && c.livecoinsStatus !== filter) return false;
@@ -74,7 +78,7 @@ export default function LivecoinsClient() {
         (c.livecoinsComment ?? "").toLowerCase().includes(query)
       );
     });
-  }, [data, q, filter]);
+  }, [data, q, filter, viewAsId]);
 
   async function patchRow(
     id: string,

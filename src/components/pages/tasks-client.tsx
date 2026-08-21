@@ -8,6 +8,7 @@ import { Field, inputClass } from "@/components/ui";
 import { MESES_NOMBRE, periodKey } from "@/lib/bonos";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
+import { useViewAs } from "@/components/view-as";
 
 type TaskRow = {
   id: string;
@@ -17,6 +18,8 @@ type TaskRow = {
   status: string;
   dueDate: string | null;
   creator: { name: string } | null;
+  managerId?: string | null;
+  creatorId?: string | null;
 };
 
 type TasksPayload = {
@@ -31,6 +34,7 @@ export default function TasksClient() {
   const [mes, setMes] = useState(now.getMonth() + 1);
   const period = periodKey(anio, mes);
   const { creators: roster } = useCreatorsRoster();
+  const { viewAsId } = useViewAs();
 
   const years = useMemo(() => {
     const y0 = new Date().getFullYear();
@@ -53,6 +57,15 @@ export default function TasksClient() {
     }
     return data?.creators ?? [];
   }, [roster, data?.creators]);
+
+  const visibleTasks = useMemo(() => {
+    const list = data?.tasks ?? [];
+    if (!viewAsId) return list;
+    const ids = new Set(roster.map((c) => c.id));
+    return list.filter(
+      (t) => t.managerId === viewAsId || (t.creatorId ? ids.has(t.creatorId) : true)
+    );
+  }, [data?.tasks, viewAsId, roster]);
 
   async function moveTask(id: string, status: string) {
     // Optimistic: mueve al instante
@@ -147,7 +160,7 @@ export default function TasksClient() {
               }}
             />
           </div>
-          <TaskBoard tasks={data.tasks} onMove={moveTask} />
+          <TaskBoard tasks={visibleTasks} onMove={moveTask} />
         </>
       )}
     </div>

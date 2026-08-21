@@ -17,6 +17,8 @@ import { Button, Panel, Field, inputClass } from "@/components/ui";
 import { formatCurrency, formatNumber, cn } from "@/lib/utils";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
+import { nickKey } from "@/lib/scope-view";
+import { useViewAs } from "@/components/view-as";
 import { MESES_NOMBRE, periodKey } from "@/lib/bonos";
 
 type BonoRow = {
@@ -193,7 +195,8 @@ export default function FinanceClient() {
     mutate: () => void;
   };
 
-  const { creators: rosterCreators } = useCreatorsRoster();
+  const { creators: rosterCreators, nickSet } = useCreatorsRoster();
+  const { viewAsId } = useViewAs();
 
   const formCreators = useMemo(() => {
     if (rosterCreators.length) {
@@ -209,7 +212,7 @@ export default function FinanceClient() {
 
   const bonos = useMemo(() => {
     const rows = bonosData?.rows ?? [];
-    return rows.map((r) => ({
+    const mapped = rows.map((r) => ({
       id: r.id,
       nombre: String(r.nombre ?? ""),
       diamantes: Number(r.diamantes ?? 0),
@@ -219,12 +222,17 @@ export default function FinanceClient() {
       gananciaAgencia: Number(r.gananciaAgencia ?? 0) || 0,
       pagado: Boolean(r.pagado),
     }));
-  }, [bonosData]);
+    if (!viewAsId) return mapped;
+    return mapped.filter((r) => nickSet.has(nickKey(r.nombre)));
+  }, [bonosData, viewAsId, nickSet]);
 
   const periodSettlements = useMemo(() => {
     const all = data?.finance.settlements ?? [];
-    return all.filter((s) => s.month === pk);
-  }, [data, pk]);
+    const ofMonth = all.filter((s) => s.month === pk);
+    if (!viewAsId) return ofMonth;
+    const ids = new Set(rosterCreators.map((c) => c.id));
+    return ofMonth.filter((s) => !s.creatorId || ids.has(s.creatorId));
+  }, [data, pk, viewAsId, rosterCreators]);
 
   const displayBonos = useMemo(() => {
     const byNick = new Map<string, number>();

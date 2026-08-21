@@ -9,10 +9,9 @@ import {
   useState,
 } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { Eye, X } from "lucide-react";
 import { isAdmin } from "@/lib/permissions";
-import { PANEL, invalidateAllPanel, usePanelData } from "@/lib/swr";
+import { PANEL, usePanelData } from "@/lib/swr";
 import { inputClass } from "@/components/ui";
 import {
   getViewAsId,
@@ -40,7 +39,6 @@ export function useViewAs() {
 
 export function ViewAsProvider({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
-  const router = useRouter();
   const admin = isAdmin(session?.user?.role);
   const [viewAsId, setViewAsId] = useState<string | null>(null);
   const [viewAsName, setViewAsName] = useState<string | null>(null);
@@ -73,9 +71,7 @@ export function ViewAsProvider({ children }: { children: React.ReactNode }) {
     writeViewAsCookie(id);
     setViewAsId(id);
     setViewAsName(id ? name ?? null : null);
-    invalidateAllPanel();
-    router.refresh();
-  }, [router]);
+  }, []);
 
   const value = useMemo(
     () => ({

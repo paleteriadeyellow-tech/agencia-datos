@@ -64,6 +64,7 @@ export type HubData = {
     diamonds?: number;
     days?: number;
     hours?: number;
+    managerId?: string | null;
   }[];
   managers: {
     id: string;
@@ -82,6 +83,7 @@ export type HubData = {
     targetDiamonds: number;
     targetHours: number;
     tiktokUser: string | null;
+    managerId?: string | null;
   }[];
   calendar: {
     id: string;
@@ -89,6 +91,24 @@ export type HubData = {
     durationMin: number;
     creatorName: string;
     status: string;
+    creatorId?: string;
+    managerId?: string | null;
+  }[];
+  roster?: {
+    id: string;
+    name: string;
+    phone: string;
+    niche: string | null;
+    country: string | null;
+    tiktokUser: string | null;
+    managerId: string | null;
+    diamonds: number;
+    hours: number;
+    days: number;
+    prevDiamonds: number;
+    prevHours: number;
+    targetDiamonds: number;
+    targetHours: number;
   }[];
 };
 

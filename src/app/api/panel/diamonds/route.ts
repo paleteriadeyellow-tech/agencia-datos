@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const rows = await prisma.diamondControl.findMany({
     where: { period, ...whereScope },
     include: {
-      creator: { select: { id: true, name: true, tiktokUser: true } },
+      creator: { select: { id: true, name: true, tiktokUser: true, managerId: true } },
     },
     orderBy: [{ diamonds: "desc" }, { username: "asc" }],
   });
@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
       notes: r.notes,
       creatorId: r.creatorId,
       creatorName: r.creator?.name ?? null,
+      managerId: r.creator?.managerId ?? null,
       updatedAt: r.updatedAt,
     })),
   });

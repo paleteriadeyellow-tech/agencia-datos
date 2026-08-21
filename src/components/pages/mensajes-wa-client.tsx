@@ -6,6 +6,8 @@ import { Button, EmptyState, Panel, inputClass } from "@/components/ui";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { PANEL, usePanelData } from "@/lib/swr";
+import { useViewAs } from "@/components/view-as";
+import { filterByManagerId } from "@/lib/scope-view";
 import { whatsappUrl } from "@/lib/phone";
 import { cn, formatNumber } from "@/lib/utils";
 import { DEFAULT_WA_TEMPLATES, fillWaTemplate } from "@/lib/wa-template";
@@ -20,6 +22,7 @@ type CreatorRow = {
   diamondsMonth?: number;
   diamondsTotal?: number;
   diamonds?: number;
+  managerId?: string | null;
 };
 
 const STORAGE_KEY = "mensajes_wa_drafts_v1";
@@ -53,6 +56,7 @@ export default function MensajesWaClient() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [ready, setReady] = useState(false);
   const [hint, setHint] = useState("");
+  const { viewAsId } = useViewAs();
 
   const { data, error, mutate } = usePanelData(PANEL.creators) as {
     data?: { creators: CreatorRow[] };
@@ -81,7 +85,7 @@ export default function MensajesWaClient() {
   }, [drafts, ready]);
 
   const list = useMemo(() => {
-    const creators = data?.creators ?? [];
+    const creators = filterByManagerId(data?.creators ?? [], viewAsId);
     const query = q.trim().toLowerCase();
     return creators
       .filter((c) => {
@@ -98,7 +102,7 @@ export default function MensajesWaClient() {
         if (db !== da) return db - da;
         return a.name.localeCompare(b.name);
       });
-  }, [data, q]);
+  }, [data, q, viewAsId]);
 
   function setMessage(id: string, value: string) {
     setDrafts((prev) => {

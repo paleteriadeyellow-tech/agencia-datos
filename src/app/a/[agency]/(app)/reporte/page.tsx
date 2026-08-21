@@ -7,13 +7,17 @@ import { Panel } from "@/components/ui";
 import { PANEL, usePanelData } from "@/lib/swr";
 import { currentMonth, formatNumber } from "@/lib/utils";
 import type { HubData } from "@/components/overview-extras";
+import { useViewAs } from "@/components/view-as";
+import { scopeHubData } from "@/lib/scope-view";
 
 function ReportInner() {
   const sp = useSearchParams();
   const period = sp.get("period") || currentMonth();
+  const { viewAsId } = useViewAs();
   const { data } = usePanelData(`${PANEL.hub}?period=${period}`) as {
     data?: HubData;
   };
+  const hub = data ? scopeHubData(data, viewAsId) : undefined;
 
   return (
     <div>
@@ -30,7 +34,7 @@ function ReportInner() {
           Imprimir / PDF
         </button>
       </div>
-      {!data ? (
+      {!hub ? (
         <p className="text-sm text-text-muted">Cargando…</p>
       ) : (
         <div className="space-y-4">
@@ -39,9 +43,9 @@ function ReportInner() {
               Resumen
             </h2>
             <p className="mt-2 text-sm">
-              Diamantes {formatNumber(data.trend.diamonds)} · vs mes anterior{" "}
-              {data.trend.diamondsPct.toFixed(1)}% · proyección{" "}
-              {formatNumber(data.projection.projected)}
+              Diamantes {formatNumber(hub.trend.diamonds)} · vs mes anterior{" "}
+              {hub.trend.diamondsPct.toFixed(1)}% · proyección{" "}
+              {formatNumber(hub.projection.projected)}
             </p>
           </Panel>
           <Panel>
@@ -49,7 +53,7 @@ function ReportInner() {
               Top 3
             </h2>
             <ol className="space-y-1 text-sm">
-              {data.podium.map((p, i) => (
+              {hub.podium.map((p, i) => (
                 <li key={p.id}>
                   {i + 1}. {p.name} — {formatNumber(p.diamonds)}
                 </li>
@@ -61,7 +65,7 @@ function ReportInner() {
               Managers
             </h2>
             <ul className="space-y-1 text-sm">
-              {data.managers.map((m) => (
+              {hub.managers.map((m) => (
                 <li key={m.id}>
                   {m.name}: {formatNumber(m.diamonds)} ◆ · {m.active} activos
                 </li>
@@ -73,7 +77,7 @@ function ReportInner() {
               Alertas
             </h2>
             <ul className="space-y-1 text-sm">
-              {data.alerts.slice(0, 25).map((a) => (
+              {hub.alerts.slice(0, 25).map((a) => (
                 <li key={a.id}>
                   {a.name} — {a.label}
                 </li>

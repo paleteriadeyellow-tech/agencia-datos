@@ -57,10 +57,12 @@ export async function GET(req: NextRequest) {
     prisma.diamondControl.findMany({
       where: { period, ...myDiamondWhere },
       include: {
-        creator: { select: { id: true, name: true, niche: true } },
+        creator: {
+          select: { id: true, name: true, niche: true, managerId: true },
+        },
       },
       orderBy: [{ diamonds: "desc" }, { username: "asc" }],
-      take: 5,
+      take: 80,
     }),
     prisma.task.findMany({
       where: scope.admin
@@ -70,18 +72,20 @@ export async function GET(req: NextRequest) {
             status: { in: ["pendiente", "en_progreso"] },
             OR: [{ creatorId: null }, { creator: scopeFilter }],
           },
-      include: { creator: { select: { name: true } } },
+      include: {
+        creator: { select: { name: true, managerId: true } },
+      },
       orderBy: { dueDate: "asc" },
-      take: 6,
+      take: 40,
     }),
     prisma.creator.findMany({
       where: { ...scopeFilter, status: "activo" },
       select: {
         id: true,
         name: true,
+        managerId: true,
         metrics: { orderBy: { date: "desc" }, take: 1, select: { date: true } },
       },
-      take: 40,
       orderBy: { name: "asc" },
     }),
   ]);
@@ -95,6 +99,17 @@ export async function GET(req: NextRequest) {
     name: string;
     diamonds: number;
   }[] = [];
+  const kpisByManager: Record<
+    string,
+    {
+      totalCreators: number;
+      activeCreators: number;
+      newCreators: number;
+      diamonds: number;
+      hours: number;
+      diamondUsers: number;
+    }
+  > = {};
 
   if (scope.admin) {
     const [rows, managerUsers] = await Promise.all([
@@ -102,6 +117,7 @@ export async function GET(req: NextRequest) {
         where: { agencySlug, period },
         select: {
           diamonds: true,
+          hours: true,
           username: true,
           creator: {
             select: {
@@ -115,7 +131,14 @@ export async function GET(req: NextRequest) {
         select: {
           id: true,
           name: true,
-          creators: { select: { name: true, tiktokUser: true } },
+          creators: {
+            select: {
+              name: true,
+              tiktokUser: true,
+              status: true,
+              joinDate: true,
+            },
+          },
         },
       }),
     ]);
@@ -125,6 +148,16 @@ export async function GET(req: NextRequest) {
 
     for (const m of managerUsers) {
       totals.set(m.id, { id: m.id, name: m.name, diamonds: 0 });
+      kpisByManager[m.id] = {
+        totalCreators: m.creators.length,
+        activeCreators: m.creators.filter((c) => c.status === "activo").length,
+        newCreators: m.creators.filter(
+          (c) => c.joinDate >= start && c.joinDate <= end
+        ).length,
+        diamonds: 0,
+        hours: 0,
+        diamondUsers: 0,
+      };
       for (const c of m.creators) {
         nickToManager.set(cleanNick(c.name), { id: m.id, name: m.name });
         const nick = cleanNick(c.tiktokUser || "");
@@ -150,6 +183,12 @@ export async function GET(req: NextRequest) {
       };
       prev.diamonds += row.diamonds;
       totals.set(mgr.id, prev);
+      const kpis = kpisByManager[mgr.id];
+      if (kpis) {
+        kpis.diamonds += row.diamonds;
+        kpis.hours += row.hours;
+        kpis.diamondUsers += 1;
+      }
     }
 
     managerContributions = [...totals.values()].sort(
@@ -169,8 +208,11 @@ export async function GET(req: NextRequest) {
       const last = c.metrics[0]?.date;
       return !last || last < fourteenDaysAgo;
     })
-    .slice(0, 5)
-    .map((c) => ({ id: c.id, name: c.name }));
+    .map((c) => ({ id: c.id, name: c.name, managerId: c.managerId }));
+
+  for (const id of Object.keys(kpisByManager)) {
+    kpisByManager[id]!.hours = Math.round(kpisByManager[id]!.hours);
+  }
 
   return NextResponse.json({
     month: period,
@@ -182,6 +224,7 @@ export async function GET(req: NextRequest) {
       hours: Math.round(diamondAgg._sum.hours ?? 0),
       diamondUsers: diamondAgg._count._all,
     },
+    kpisByManager,
     diamondGoal: {
       target,
       agencyTotal,
@@ -200,6 +243,7 @@ export async function GET(req: NextRequest) {
       niche: row.creator?.niche ?? "—",
       diamonds: row.diamonds,
       hours: row.hours,
+      managerId: row.creator?.managerId ?? null,
     })),
     pendingTasks: pendingTasks.map((t) => ({
       id: t.id,
@@ -207,6 +251,8 @@ export async function GET(req: NextRequest) {
       status: t.status,
       dueDate: t.dueDate,
       creatorName: t.creator?.name ?? "General",
+      creatorId: t.creatorId,
+      managerId: t.creator?.managerId ?? null,
     })),
     inactiveCreators,
   });

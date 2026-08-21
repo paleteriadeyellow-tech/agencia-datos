@@ -23,6 +23,8 @@ import { PANEL, usePanelData } from "@/lib/swr";
 import { useQuickCreate } from "@/components/quick-create";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { useAgency } from "@/lib/use-agency";
+import { useViewAs } from "@/components/view-as";
+import { scopeDashboardData, scopeHubData } from "@/lib/scope-view";
 
 type Dash = {
   month: string;
@@ -34,6 +36,10 @@ type Dash = {
     hours: number;
     diamondUsers: number;
   };
+  kpisByManager?: Record<
+    string,
+    Dash["kpis"]
+  >;
   diamondGoal: DiamondGoal;
   topCreators: {
     rank: number;
@@ -44,6 +50,7 @@ type Dash = {
     niche: string;
     diamonds: number;
     hours: number;
+    managerId?: string | null;
   }[];
   pendingTasks: {
     id: string;
@@ -51,13 +58,16 @@ type Dash = {
     status: string;
     dueDate: string | null;
     creatorName: string;
+    managerId?: string | null;
+    creatorId?: string | null;
   }[];
-  inactiveCreators: { id: string; name: string }[];
+  inactiveCreators: { id: string; name: string; managerId?: string | null }[];
 };
 
 export default function DashboardClient() {
   const { openCreateCreator } = useQuickCreate();
   const { path } = useAgency();
+  const { viewAsId } = useViewAs();
   const now = new Date();
   const [anio, setAnio] = useState(now.getFullYear());
   const [mes, setMes] = useState(now.getMonth() + 1);
@@ -87,6 +97,9 @@ export default function DashboardClient() {
     revalidateOnFocus: true,
     dedupingInterval: 8000,
   }) as { data?: HubData };
+
+  const view = data ? scopeDashboardData(data, viewAsId) : undefined;
+  const hubView = hub ? scopeHubData(hub, viewAsId) : undefined;
 
   return (
     <div>
@@ -137,7 +150,7 @@ export default function DashboardClient() {
 
       {error ? (
         <PanelLoadError onRetry={() => mutate()} />
-      ) : !data ? (
+      ) : !view ? (
         <div className="space-y-4">
           <div className="grid animate-pulse gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -151,44 +164,44 @@ export default function DashboardClient() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               label="Creadores en roster"
-              value={formatNumber(data.kpis.totalCreators)}
-              hint={`${data.kpis.activeCreators} activos`}
+              value={formatNumber(view.kpis.totalCreators)}
+              hint={`${view.kpis.activeCreators} activos`}
               icon={Users}
             />
             <KpiCard
               label="Diamantes del mes"
-              value={formatNumber(data.kpis.diamonds)}
-              hint={`${MESES_NOMBRE[mes]} ${anio} · ${formatNumber(data.kpis.diamondUsers)} usuarios`}
+              value={formatNumber(view.kpis.diamonds)}
+              hint={`${MESES_NOMBRE[mes]} ${anio} · ${formatNumber(view.kpis.diamondUsers)} usuarios`}
               icon={Gem}
               tone="cyan"
             />
             <KpiCard
               label="Horas LIVE del mes"
-              value={formatNumber(data.kpis.hours)}
+              value={formatNumber(view.kpis.hours)}
               hint="Desde Control de diamantes"
               icon={Clock3}
               tone="success"
             />
             <KpiCard
               label="Nuevos este mes"
-              value={formatNumber(data.kpis.newCreators)}
+              value={formatNumber(view.kpis.newCreators)}
               hint="Incorporaciones"
               icon={UserPlus}
               tone="warning"
             />
           </div>
 
-          {data.diamondGoal && (
+          {view.diamondGoal && (
             <DiamondGoalCard
               key={period}
-              goal={data.diamondGoal}
+              goal={view.diamondGoal}
               period={period}
               periodLabel={`${MESES_NOMBRE[mes]} ${anio}`}
               onSaved={() => mutate()}
             />
           )}
 
-          {hub && <OverviewExtras hub={hub} period={period} />}
+          {hubView && <OverviewExtras hub={hubView} period={period} />}
 
           <div className="mt-6 grid gap-6 xl:grid-cols-3">
             <Panel className="xl:col-span-2">
@@ -214,7 +227,7 @@ export default function DashboardClient() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.topCreators.length === 0 && (
+                    {view.topCreators.length === 0 && (
                       <tr>
                         <td
                           colSpan={4}
@@ -224,7 +237,7 @@ export default function DashboardClient() {
                         </td>
                       </tr>
                     )}
-                    {data.topCreators.map((row) => (
+                    {view.topCreators.map((row) => (
                       <tr
                         key={row.id}
                         className="border-b border-border-soft/60 last:border-0"
@@ -273,12 +286,12 @@ export default function DashboardClient() {
                 </h2>
               </div>
               <ul className="space-y-3">
-                {data.inactiveCreators.length === 0 && (
+                {view.inactiveCreators.length === 0 && (
                   <li className="text-sm text-text-muted">
                     Sin alertas de inactividad.
                   </li>
                 )}
-                {data.inactiveCreators.map((c) => (
+                {view.inactiveCreators.map((c) => (
                   <li
                     key={c.id}
                     className="rounded-xl border border-border-soft bg-bg px-3 py-2.5"
@@ -301,12 +314,12 @@ export default function DashboardClient() {
                 Cola de tareas
               </h2>
               <ul className="space-y-3">
-                {data.pendingTasks.length === 0 && (
+                {view.pendingTasks.length === 0 && (
                   <li className="text-sm text-text-muted">
                     No hay tareas pendientes.
                   </li>
                 )}
-                {data.pendingTasks.map((t) => (
+                {view.pendingTasks.map((t) => (
                   <li
                     key={t.id}
                     className="flex items-start justify-between gap-3 rounded-xl border border-border-soft bg-bg px-3 py-2.5"

@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     await Promise.all([
     prisma.creator.findMany({
       where: scopeFilter,
-      select: { id: true, name: true, tiktokUser: true, diamonds: true },
+      select: { id: true, name: true, tiktokUser: true, diamonds: true, managerId: true },
       orderBy: { diamonds: "desc" },
     }),
     prisma.campaign.findMany({
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.contract.findMany({
       where: scope.admin ? { agencySlug } : { agencySlug, creator: scopeFilter },
-      include: { creator: { select: { name: true } } },
+      include: { creator: { select: { name: true, id: true } } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.diamondControl.findMany({
@@ -210,6 +210,7 @@ export async function GET(req: NextRequest) {
     contracts: contracts.map((c) => ({
       id: c.id,
       title: c.title,
+      creatorId: c.creatorId,
       creatorName: c.creator.name,
       status: c.status,
       startDate: c.startDate,

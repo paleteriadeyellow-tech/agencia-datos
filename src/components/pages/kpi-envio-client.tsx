@@ -19,6 +19,8 @@ import {
 } from "@/lib/bonos";
 import { whatsappUrl, normalizePhone } from "@/lib/phone";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
+import { nickKey } from "@/lib/scope-view";
+import { useViewAs } from "@/components/view-as";
 import { PANEL, usePanelData, invalidatePanel } from "@/lib/swr";
 import { fetchJsonWithTimeout } from "@/lib/fetch-timeout";
 
@@ -80,7 +82,8 @@ export default function KpiEnvioClient() {
   const fileRef = useRef<HTMLInputElement>(null);
   const formTopRef = useRef<HTMLDivElement>(null);
 
-  const { creators: roster, suggestList: rosterSuggest } = useCreatorsRoster();
+  const { creators: roster, suggestList: rosterSuggest, nickSet } = useCreatorsRoster();
+  const { viewAsId } = useViewAs();
 
   const years = useMemo(() => {
     const y0 = new Date().getFullYear();
@@ -116,10 +119,13 @@ export default function KpiEnvioClient() {
       horas: Number(r.horas ?? 0),
       dias: Number(r.dias ?? 0),
     }));
-    return list.sort(
+    const scoped = viewAsId
+      ? list.filter((r) => nickSet.has(nickKey(r.nombre)))
+      : list;
+    return scoped.sort(
       (a, b) => b.diamantes - a.diamantes || a.nombre.localeCompare(b.nombre)
     );
-  }, [data]);
+  }, [data, viewAsId, nickSet]);
 
   const diamondMap = useMemo(() => {
     const map = new Map<

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { ExternalLink } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { ContractForm } from "@/components/contract-form";
@@ -19,6 +20,7 @@ export default function ContractsClient() {
         id: string;
         title: string;
         creatorName: string;
+        creatorId?: string;
         status: string;
         startDate: string | null;
         endDate: string | null;
@@ -32,6 +34,13 @@ export default function ContractsClient() {
   const formCreators = roster.length
     ? roster.map((c) => ({ id: c.id, name: c.name }))
     : data?.creators ?? [];
+
+  const contracts = useMemo(() => {
+    const list = data?.contracts ?? [];
+    if (!roster.length) return list;
+    const ids = new Set(roster.map((c) => c.id));
+    return list.filter((c) => !c.creatorId || ids.has(c.creatorId));
+  }, [data?.contracts, roster]);
 
   if (error) {
     return (
@@ -78,14 +87,14 @@ export default function ContractsClient() {
             </tr>
           </thead>
           <tbody>
-            {data.contracts.length === 0 && (
+            {contracts.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-5 py-10 text-center text-text-muted">
                   Sin contratos registrados.
                 </td>
               </tr>
             )}
-            {data.contracts.map((c) => (
+            {contracts.map((c) => (
               <tr key={c.id} className="border-b border-border-soft/60">
                 <td className="px-5 py-3 font-medium">{c.title}</td>
                 <td className="px-5 py-3">{c.creatorName}</td>

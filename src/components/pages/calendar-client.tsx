@@ -7,6 +7,7 @@ import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Field, Panel, inputClass } from "@/components/ui";
 import { PANEL, usePanelData, invalidatePanel } from "@/lib/swr";
 import { weekBounds } from "@/lib/utils";
+import { useCreatorsRoster } from "@/lib/use-creators-roster";
 
 type CreatorOpt = { id: string; name: string };
 type Slot = {
@@ -37,6 +38,7 @@ export default function CalendarClient() {
     [start]
   );
 
+  const { creators: roster } = useCreatorsRoster();
   const { data, error, mutate } = usePanelData(PANEL.hub) as {
     data?: { calendar: Slot[] };
     error?: Error;
@@ -52,8 +54,15 @@ export default function CalendarClient() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const slots = data?.calendar ?? [];
-  const creators = creatorsData?.creators ?? [];
+  const slots = useMemo(() => {
+    const list = data?.calendar ?? [];
+    if (!roster.length) return list;
+    const ids = new Set(roster.map((c) => c.id));
+    return list.filter((s) => ids.has(s.creatorId));
+  }, [data?.calendar, roster]);
+  const creators = roster.length
+    ? roster.map((c) => ({ id: c.id, name: c.name }))
+    : creatorsData?.creators ?? [];
 
   async function addSlot(e: React.FormEvent) {
     e.preventDefault();

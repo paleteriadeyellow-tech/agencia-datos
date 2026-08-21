@@ -18,6 +18,8 @@ import { deleteCreator } from "@/lib/actions";
 import { whatsappUrl } from "@/lib/phone";
 import { isAdmin } from "@/lib/permissions";
 import { useAgency } from "@/lib/use-agency";
+import { useViewAs } from "@/components/view-as";
+import { filterByManagerId } from "@/lib/scope-view";
 import { fetchJsonWithTimeout } from "@/lib/fetch-timeout";
 
 type CreatorRow = {
@@ -73,6 +75,7 @@ export default function CreatorsClient() {
   const { path } = useAgency();
   const canEditCreators = isAdmin(session?.user?.role);
   const { openCreateCreator } = useQuickCreate();
+  const { viewAsId } = useViewAs();
   const fileRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
   const [niche, setNiche] = useState("");
@@ -95,7 +98,7 @@ export default function CreatorsClient() {
   };
 
   const filtered = useMemo(() => {
-    const list = data?.creators ?? [];
+    const list = filterByManagerId(data?.creators ?? [], viewAsId);
     const query = q.trim().toLowerCase();
     return list
       .filter((c) => {
@@ -119,7 +122,7 @@ export default function CreatorsClient() {
         if (db !== da) return db - da;
         return a.name.localeCompare(b.name);
       });
-  }, [data, q, niche, status, managerFilter]);
+  }, [data, q, niche, status, managerFilter, viewAsId]);
 
   const niches = (data?.niches ?? []).filter(Boolean);
   const managers = data?.managers ?? [];

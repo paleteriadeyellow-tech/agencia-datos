@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
       niche: true,
       status: true,
       diamonds: true,
+      managerId: true,
       livecoinsStatus: true,
       livecoinsComment: true,
     },

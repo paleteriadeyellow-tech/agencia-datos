@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Gem, Clock3, Swords, Eye } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { KpiCard } from "@/components/kpi-card";
@@ -10,9 +11,11 @@ import { Panel } from "@/components/ui";
 import { formatDate, formatNumber } from "@/lib/utils";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
+import { useViewAs } from "@/components/view-as";
 
 export default function MetricsClient() {
   const { creators: roster } = useCreatorsRoster();
+  const { viewAsId } = useViewAs();
   const { data, error, mutate } = usePanelData(PANEL.metrics) as {
     data?: {
       month: string;
@@ -43,6 +46,13 @@ export default function MetricsClient() {
     roster.length > 0
       ? roster.map((c) => ({ id: c.id, name: c.name }))
       : data?.creators ?? [];
+
+  const metrics = useMemo(() => {
+    const list = data?.metrics ?? [];
+    if (!viewAsId) return list;
+    const names = new Set(roster.map((c) => c.name));
+    return list.filter((m) => names.has(m.creatorName));
+  }, [data?.metrics, viewAsId, roster]);
 
   const delta = data
     ? data.kpis.diamonds - data.kpis.prevDiamonds
@@ -136,7 +146,7 @@ export default function MetricsClient() {
               </tr>
             </thead>
             <tbody>
-              {data.metrics.map((m) => (
+              {metrics.map((m) => (
                 <tr key={m.id} className="border-b border-border-soft/60">
                   <td className="px-5 py-3 text-text-muted">{formatDate(m.date)}</td>
                   <td className="px-5 py-3">{m.creatorName}</td>

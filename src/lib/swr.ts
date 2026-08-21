@@ -1,15 +1,11 @@
-import { useEffect, useState } from "react";
 import useSWR, { mutate, type SWRConfiguration } from "swr";
-import { getViewAsId, subscribeViewAs } from "@/lib/view-as";
 
-async function fetcher(url: string) {
-  const res = await fetch(url);
+export async function panelFetcher(url: string) {
+  const res = await fetch(url, {
+    headers: { "x-skip-view-as": "1" },
+  });
   if (!res.ok) throw new Error("Error al cargar");
   return res.json();
-}
-
-function panelKey(url: string, viewAsId: string | null) {
-  return [url, viewAsId ?? ""] as const;
 }
 
 function urlFromKey(key: unknown): string | null {
@@ -19,27 +15,14 @@ function urlFromKey(key: unknown): string | null {
 }
 
 export function usePanelData(url: string | null, options?: SWRConfiguration) {
-  const [viewAsId, setViewAsId] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    setViewAsId(getViewAsId());
-    setReady(true);
-    return subscribeViewAs(() => setViewAsId(getViewAsId()));
-  }, []);
-
-  return useSWR(
-    ready && url ? panelKey(url, viewAsId) : null,
-    ([u]: readonly [string, string]) => fetcher(u),
-    {
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false,
-      dedupingInterval: 60000,
-      errorRetryCount: 1,
-      keepPreviousData: true,
-      ...options,
-    }
-  );
+  return useSWR(url, panelFetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 60000,
+    errorRetryCount: 1,
+    keepPreviousData: true,
+    ...options,
+  });
 }
 
 export function invalidatePanel(...keys: string[]) {
@@ -75,9 +58,9 @@ export const PANEL = {
 } as const;
 
 function warm(url: string) {
-  void fetcher(url)
+  void panelFetcher(url)
     .then((data) => {
-      void mutate(panelKey(url, getViewAsId()), data, { revalidate: false });
+      void mutate(url, data, { revalidate: false });
     })
     .catch(() => {
       /* no envenenar la caché */

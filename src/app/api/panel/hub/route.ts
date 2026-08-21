@@ -111,7 +111,11 @@ export async function GET(req: NextRequest) {
         startAt: { gte: week.start, lte: week.end },
         creator: scopeFilter,
       },
-      include: { creator: { select: { id: true, name: true, tiktokUser: true } } },
+      include: {
+        creator: {
+          select: { id: true, name: true, tiktokUser: true, managerId: true },
+        },
+      },
       orderBy: { startAt: "asc" },
     }),
     prisma.diamondImportLog.findMany({
@@ -294,12 +298,14 @@ export async function GET(req: NextRequest) {
         niche: c.niche,
         country: c.country,
         tiktokUser: c.tiktokUser,
+        managerId: c.managerId,
         managerName: c.manager?.name ?? null,
         livecoinsStatus: c.livecoinsStatus,
         diamonds: stats.diamonds,
         hours: stats.hours,
         days: stats.days,
         prevDiamonds: prev.diamonds,
+        prevHours: prev.hours,
         dropPct: drop,
         lastLive,
         targetDiamonds: goal?.targetDiamonds ?? 0,
@@ -321,6 +327,7 @@ export async function GET(req: NextRequest) {
     diamonds: number;
     days: number;
     hours: number;
+    managerId: string | null;
   }[] = [];
 
   const hasDiamondImport = diamondNow.length > 0;
@@ -353,6 +360,7 @@ export async function GET(req: NextRequest) {
       diamonds: stats.diamonds,
       days: stats.days,
       hours: stats.hours,
+      managerId: c.managerId,
     });
   }
 
@@ -462,7 +470,7 @@ export async function GET(req: NextRequest) {
     },
     podium: top,
     checkin: { atRisk, top },
-    alerts: alerts.slice(0, 40),
+    alerts,
     managers: [...managerMap.values()].sort((a, b) => b.diamonds - a.diamonds),
     niches: [...nicheMap.entries()]
       .map(([name, diamonds]) => ({ name, diamonds }))
@@ -482,6 +490,23 @@ export async function GET(req: NextRequest) {
       creatorId: s.creatorId,
       creatorName: s.creator.name,
       username: s.creator.tiktokUser,
+      managerId: s.creator.managerId,
+    })),
+    roster: creatorCards.map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      niche: c.niche,
+      country: c.country,
+      tiktokUser: c.tiktokUser,
+      managerId: c.managerId,
+      diamonds: c.diamonds,
+      hours: c.hours,
+      days: c.days,
+      prevDiamonds: c.prevDiamonds,
+      prevHours: c.prevHours,
+      targetDiamonds: c.targetDiamonds,
+      targetHours: c.targetHours,
     })),
     importLogs: importLogs.map((l) => ({
       id: l.id,
