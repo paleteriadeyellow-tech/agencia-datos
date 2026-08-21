@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
-import { isCallEmpty, isCallSlot } from "@/lib/one-on-one";
+import { daysOfWeek, isCallEmpty, isCallSlot } from "@/lib/one-on-one";
 
 export const dynamic = "force-dynamic";
 
@@ -39,13 +39,20 @@ export async function GET(req: NextRequest) {
   if (auth.error) return auth.error;
   const { agencySlug } = auth;
 
+  const weekRaw = req.nextUrl.searchParams.get("week");
   const now = new Date();
   const year = Number(req.nextUrl.searchParams.get("year")) || now.getFullYear();
   const month = Number(req.nextUrl.searchParams.get("month")) || now.getMonth() + 1;
 
+  const weekDays =
+    weekRaw && /^\d{4}-\d{2}-\d{2}$/.test(weekRaw) ? daysOfWeek(weekRaw) : null;
+  const dateFilter = weekDays
+    ? { date: { gte: weekDays[0]!.date, lte: weekDays[6]!.date } }
+    : { year, month };
+
   const [rows, yearRows] = await Promise.all([
     prisma.oneOnOneCall.findMany({
-      where: { agencySlug, year, month },
+      where: { agencySlug, ...dateFilter },
       orderBy: [{ date: "asc" }, { slot: "asc" }],
     }),
     prisma.oneOnOneCall.findMany({

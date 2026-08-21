@@ -30,15 +30,19 @@ export function ymdFromParts(year: number, month: number, day: number) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-export function daysInMonth(year: number, month: number) {
-  const last = new Date(year, month, 0).getDate();
-  return Array.from({ length: last }, (_, i) => {
-    const day = i + 1;
-    const d = new Date(year, month - 1, day);
+export function daysOfWeek(weekStart: string) {
+  const [y, m, d] = weekStart.split("-").map(Number);
+  const start = new Date(y!, (m ?? 1) - 1, d ?? 1);
+  return Array.from({ length: 7 }, (_, i) => {
+    const dt = new Date(start);
+    dt.setDate(start.getDate() + i);
+    const year = dt.getFullYear();
+    const month = dt.getMonth() + 1;
+    const day = dt.getDate();
     return {
       date: ymdFromParts(year, month, day),
       day,
-      weekday: WEEKDAYS_ES[d.getDay()] ?? "",
+      weekday: WEEKDAYS_ES[dt.getDay()] ?? "",
       label: `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${String(year).slice(-2)}`,
     };
   });

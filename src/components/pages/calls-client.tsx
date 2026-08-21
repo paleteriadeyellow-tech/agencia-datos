@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, Fragment } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Field, inputClass } from "@/components/ui";
@@ -13,11 +13,18 @@ import { useCreatorsRoster } from "@/lib/use-creators-roster";
 import {
   CALL_SLOTS,
   callKey,
-  daysInMonth,
+  daysOfWeek,
   isCallEmpty,
   slotLabel,
-  splitMonthByWeek,
 } from "@/lib/one-on-one";
+import {
+  addDays,
+  currentWeekStart,
+  formatWeekRange,
+  parseYmd,
+  weeksInMonth,
+  ymd,
+} from "@/lib/weekly-schedule";
 
 type SlotRow = {
   id?: string;
@@ -70,14 +77,16 @@ export default function CallsClient() {
   const now = new Date();
   const currentYear = String(now.getFullYear());
   const currentMonthNum = String(now.getMonth() + 1);
+  const runningWeek = currentWeekStart();
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonthNum);
+  const [weekStart, setWeekStart] = useState(runningWeek);
   const [q, setQ] = useState("");
   const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
   const timers = useRef<Record<string, number>>({});
   const today = todayYmd();
 
-  const url = `${PANEL.calls}?year=${year}&month=${month}`;
+  const url = `${PANEL.calls}?week=${weekStart}`;
   const { data, error, mutate } = usePanelData(url);
   const payload = data as Payload | undefined;
   const { creators: roster } = useCreatorsRoster();
@@ -88,45 +97,19 @@ export default function CallsClient() {
     return [...new Set([y0, y0 - 1, y0 + 1, ...fromApi])].sort((a, b) => b - a);
   }, [payload?.years, currentYear]);
 
-  const daysAll = useMemo(
-    () => daysInMonth(Number(year), Number(month)),
+  const monthWeeks = useMemo(
+    () => weeksInMonth(Number(year), Number(month)),
     [year, month]
   );
-  const viewingCurrent = year === currentYear && month === currentMonthNum;
-  const weekParts = useMemo(
-    () => (viewingCurrent ? splitMonthByWeek(daysAll) : null),
-    [viewingCurrent, daysAll]
-  );
-  const weekSet = useMemo(
-    () => new Set((weekParts?.current ?? []).map((d) => d.date)),
-    [weekParts]
-  );
-  const daySections = useMemo(() => {
-    if (!weekParts || weekParts.current.length === 0) {
-      return [{ id: "month", title: null as string | null, days: daysAll }];
-    }
-    const sections: { id: string; title: string | null; days: typeof daysAll }[] =
-      [{ id: "week", title: "Esta semana", days: weekParts.current }];
-    if (weekParts.later.length) {
-      sections.push({ id: "later", title: "Siguientes", days: weekParts.later });
-    }
-    if (weekParts.earlier.length) {
-      sections.push({
-        id: "earlier",
-        title: "Semanas anteriores",
-        days: weekParts.earlier,
-      });
-    }
-    return sections;
-  }, [daysAll, weekParts]);
+  const days = useMemo(() => daysOfWeek(weekStart), [weekStart]);
+  const viewingCurrent = weekStart === runningWeek;
+  const periodLabel = formatWeekRange(weekStart);
 
   const map = useMemo(() => {
     const m = new Map<string, SlotRow>();
     for (const s of payload?.slots ?? []) m.set(callKey(s.date, s.slot), s);
     return m;
   }, [payload?.slots]);
-
-  const periodLabel = `${MESES_NOMBRE[Number(month)]} ${year}`;
 
   const writeSlots = useCallback(
     (updater: (slots: SlotRow[]) => SlotRow[]) => {
@@ -187,9 +170,39 @@ export default function CallsClient() {
     saveSlot({ ...prev, [field]: value, date, slot });
   }
 
+  function applyPeriod(nextYear: string, nextMonth: string) {
+    const weeks = weeksInMonth(Number(nextYear), Number(nextMonth));
+    const inCurrent = nextYear === currentYear && nextMonth === currentMonthNum;
+    const pick =
+      inCurrent && weeks.some((w) => w.weekStart === runningWeek)
+        ? runningWeek
+        : (weeks[0]?.weekStart ?? runningWeek);
+    setYear(nextYear);
+    setMonth(nextMonth);
+    setWeekStart(pick);
+    setOpenDays({});
+  }
+
+  function goRunningWeek() {
+    setYear(currentYear);
+    setMonth(currentMonthNum);
+    setWeekStart(runningWeek);
+    setOpenDays({});
+  }
+
+  function shiftWeek(delta: number) {
+    const next = ymd(addDays(parseYmd(weekStart), delta * 7));
+    const stays = monthWeeks.some((w) => w.weekStart === next);
+    setWeekStart(next);
+    setOpenDays({});
+    if (stays) return;
+    const mid = addDays(parseYmd(next), 3);
+    setYear(String(mid.getFullYear()));
+    setMonth(String(mid.getMonth() + 1));
+  }
+
   function isDayOpen(date: string) {
-    if (openDays[date] != null) return openDays[date];
-    return weekSet.has(date) || date === today;
+    return Boolean(openDays[date]);
   }
 
   const query = q.trim().toLowerCase();
@@ -197,10 +210,10 @@ export default function CallsClient() {
   return (
     <div>
       <TopBar
-        title={`1:1 ${MESES_NOMBRE[Number(month)]?.toUpperCase() ?? ""}`}
+        title="Llamadas 1:1"
         subtitle={
           viewingCurrent
-            ? `${periodLabel} · mes en curso`
+            ? `${periodLabel} · semana en curso`
             : `${periodLabel} · archivo`
         }
       />
@@ -214,7 +227,7 @@ export default function CallsClient() {
               <select
                 className={inputClass}
                 value={year}
-                onChange={(e) => setYear(e.target.value)}
+                onChange={(e) => applyPeriod(e.target.value, month)}
               >
                 <option value={currentYear}>{currentYear} · actual</option>
                 {years.map((y) =>
@@ -230,7 +243,7 @@ export default function CallsClient() {
               <select
                 className={inputClass}
                 value={month}
-                onChange={(e) => setMonth(e.target.value)}
+                onChange={(e) => applyPeriod(year, e.target.value)}
               >
                 <option value={currentMonthNum}>
                   {MESES_NOMBRE[Number(currentMonthNum)]} · mes actual
@@ -244,63 +257,72 @@ export default function CallsClient() {
                 )}
               </select>
             </Field>
-            <Field label="Buscar creador">
-              <input
+            <Field label="Semana">
+              <select
                 className={inputClass}
-                placeholder="@usuario"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
+                value={weekStart}
+                onChange={(e) => {
+                  setWeekStart(e.target.value);
+                  setOpenDays({});
+                }}
+              >
+                {monthWeeks.map((w) => (
+                  <option key={w.weekStart} value={w.weekStart}>
+                    {w.weekStart === runningWeek
+                      ? `${w.label} · en curso`
+                      : w.label}
+                  </option>
+                ))}
+                {!monthWeeks.some((w) => w.weekStart === weekStart) && (
+                  <option value={weekStart}>{formatWeekRange(weekStart)}</option>
+                )}
+              </select>
             </Field>
-            <div className="flex items-end">
+            <div className="flex items-end gap-2">
               <Button
                 type="button"
                 variant="secondary"
-                className="w-full"
-                onClick={() => {
-                  setYear(currentYear);
-                  setMonth(currentMonthNum);
-                }}
+                className="px-2 py-2.5"
+                onClick={() => shiftWeek(-1)}
+                aria-label="Semana anterior"
               >
-                Mes actual
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1"
+                onClick={goRunningWeek}
+              >
+                Semana en curso
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="px-2 py-2.5"
+                onClick={() => shiftWeek(1)}
+                aria-label="Semana siguiente"
+              >
+                <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          <p className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
-            <span>Horario MX · 12:00 AM a 11:30 PM · cada 30 min</span>
-            <button
-              type="button"
-              className="text-cyan hover:underline"
-              onClick={() => {
-                const next: Record<string, boolean> = {};
-                for (const d of daysAll) next[d.date] = weekSet.has(d.date);
-                setOpenDays(next);
-              }}
-            >
-              Solo esta semana
-            </button>
-            <button
-              type="button"
-              className="text-cyan hover:underline"
-              onClick={() => {
-                const next: Record<string, boolean> = {};
-                for (const d of daysAll) next[d.date] = true;
-                setOpenDays(next);
-              }}
-            >
-              Abrir mes
-            </button>
+          <p className="mb-3 flex flex-wrap items-center gap-3 text-xs text-text-muted">
+            <span>Toca un día para ver los horarios (12:00 AM a 11:30 PM).</span>
+            <input
+              className={cn(inputClass, "h-8 w-44 py-0 text-xs")}
+              placeholder="Buscar creador"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
             {!viewingCurrent && (
               <button
                 type="button"
                 className="text-cyan hover:underline"
-                onClick={() => {
-                  setYear(currentYear);
-                  setMonth(currentMonthNum);
-                }}
+                onClick={goRunningWeek}
               >
-                Volver al mes actual
+                Volver a esta semana
               </button>
             )}
           </p>
@@ -325,91 +347,39 @@ export default function CallsClient() {
                 </tr>
               </thead>
               <tbody>
-                {daySections.map((section) => (
-                  <SectionDays
-                    key={section.id}
-                    title={section.title}
-                    days={section.days}
-                    query={query}
-                    map={map}
-                    today={today}
-                    weekSet={weekSet}
-                    isDayOpen={isDayOpen}
-                    onToggle={(date, open) =>
-                      setOpenDays((s) => ({ ...s, [date]: !open }))
-                    }
-                    onPatch={patch}
-                  />
-                ))}
+                {days.map((d, di) => {
+                  const open = isDayOpen(d.date);
+                  const daySlots = CALL_SLOTS.filter((slot) => {
+                    if (!query) return true;
+                    const row = map.get(callKey(d.date, slot));
+                    return (row?.creatorName ?? "").toLowerCase().includes(query);
+                  });
+                  if (query && daySlots.length === 0) return null;
+                  return (
+                    <DayBlock
+                      key={d.date}
+                      weekday={d.weekday}
+                      label={d.label}
+                      date={d.date}
+                      open={open}
+                      isToday={d.date === today}
+                      isWeek={false}
+                      stripe={di % 2 === 0}
+                      slots={query ? daySlots : CALL_SLOTS}
+                      map={map}
+                      onToggle={() =>
+                        setOpenDays((s) => ({ ...s, [d.date]: !open }))
+                      }
+                      onPatch={patch}
+                    />
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </>
       )}
     </div>
-  );
-}
-
-function SectionDays({
-  title,
-  days,
-  query,
-  map,
-  today,
-  weekSet,
-  isDayOpen,
-  onToggle,
-  onPatch,
-}: {
-  title: string | null;
-  days: ReturnType<typeof daysInMonth>;
-  query: string;
-  map: Map<string, SlotRow>;
-  today: string;
-  weekSet: Set<string>;
-  isDayOpen: (date: string) => boolean;
-  onToggle: (date: string, open: boolean) => void;
-  onPatch: (date: string, slot: string, field: keyof SlotRow, value: string) => void;
-}) {
-  return (
-    <>
-      {title && (
-        <tr>
-          <td
-            colSpan={7}
-            className="border-b border-border-soft bg-bg-elevated px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan"
-          >
-            {title}
-          </td>
-        </tr>
-      )}
-      {days.map((d, di) => {
-        const open = isDayOpen(d.date);
-        const isToday = d.date === today;
-        const daySlots = CALL_SLOTS.filter((slot) => {
-          if (!query) return true;
-          const row = map.get(callKey(d.date, slot));
-          return (row?.creatorName ?? "").toLowerCase().includes(query);
-        });
-        if (query && daySlots.length === 0) return null;
-        return (
-          <DayBlock
-            key={d.date}
-            weekday={d.weekday}
-            label={d.label}
-            date={d.date}
-            open={open}
-            isToday={isToday}
-            isWeek={weekSet.has(d.date)}
-            stripe={di % 2 === 0}
-            slots={query ? daySlots : CALL_SLOTS}
-            map={map}
-            onToggle={() => onToggle(d.date, open)}
-            onPatch={onPatch}
-          />
-        );
-      })}
-    </>
   );
 }
 

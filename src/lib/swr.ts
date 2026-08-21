@@ -118,7 +118,7 @@ export function panelWarmUrls(period = currentMonth()) {
     `${PANEL.recruitment}?year=${year}&month=${Number(period.slice(5, 7))}`,
     `${PANEL.programming}?week=${ymd(mondayOf())}`,
     `${PANEL.onboarding}?year=${year}&month=${Number(period.slice(5, 7))}`,
-    `${PANEL.calls}?year=${year}&month=${Number(period.slice(5, 7))}`,
+    `${PANEL.calls}?week=${ymd(mondayOf())}`,
     PANEL.managers,
     PANEL.livecoins,
     PANEL.metrics,
