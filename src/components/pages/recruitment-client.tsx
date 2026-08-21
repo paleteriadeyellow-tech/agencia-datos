@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { ChevronDown, Download, Phone, Plus, Trash2, Upload } from "lucide-react";
+import { ChevronDown, Download, Plus, Trash2, Upload } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, EmptyState, Field, Panel, inputClass } from "@/components/ui";
@@ -520,7 +520,7 @@ export default function RecruitmentClient() {
           description="Agrega una ficha o importa el Excel de reclutamiento."
         />
       ) : (
-        <div className="space-y-3">
+        <div className="overflow-hidden rounded-xl border border-border-soft bg-bg-panel">
           {rows.map((row, idx) => {
             const open = openId === row.id;
             const prev = rows[idx - 1];
@@ -535,101 +535,91 @@ export default function RecruitmentClient() {
             return (
               <div key={row.id}>
                 {showRecruiter && (
-                  <p className="mb-2 mt-4 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan first:mt-0">
+                  <div className="border-b border-border-soft bg-bg-hover/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan">
                     {row.recruiter || "Sin reclutador"}
-                  </p>
+                  </div>
                 )}
                 <div
                   className={cn(
-                    "rounded-2xl border border-border-soft border-l-4 bg-bg-panel p-4 shadow-sm sm:p-5",
+                    "border-b border-border-soft/70 last:border-b-0",
                     situationBar(row.situation),
-                    open && "border-border"
+                    "border-l-2",
+                    open && "bg-bg-hover/20"
                   )}
                 >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                  <div className="flex items-center gap-2 px-3 py-1.5">
                     <button
                       type="button"
                       onClick={() => setOpenId(open ? null : row.id)}
-                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     >
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-bg-hover text-sm font-semibold text-cyan">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-hover text-[10px] font-semibold text-cyan">
                         {row.creatorName.slice(0, 2).toUpperCase() || "—"}
                       </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-base font-semibold">
-                          {row.creatorName.startsWith("@")
-                            ? row.creatorName
-                            : `@${row.creatorName}`}
-                        </span>
-                        <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
-                          <span>{formatDay(row.requestDate)}</span>
-                          {row.phone ? (
-                            <span className="inline-flex items-center gap-1">
-                              <Phone className="h-3 w-3" />
-                              {row.phone}
-                            </span>
-                          ) : (
-                            <span>Sin teléfono</span>
-                          )}
-                          <span>
-                            {done}/{RECRUITMENT_COLUMNS.length} campos
-                          </span>
-                        </span>
+                      <span className="w-[9.5rem] shrink-0 truncate text-sm font-medium">
+                        {row.creatorName.startsWith("@")
+                          ? row.creatorName
+                          : `@${row.creatorName}`}
+                      </span>
+                      <span className="hidden w-[5.25rem] shrink-0 text-xs text-text-muted sm:block">
+                        {formatDay(row.requestDate)}
+                      </span>
+                      <span className="hidden min-w-0 flex-1 truncate text-xs text-text-muted md:block">
+                        {row.phone || "Sin teléfono"}
+                      </span>
+                      <span className="hidden shrink-0 text-[10px] tabular-nums text-text-muted lg:block">
+                        {done}/{RECRUITMENT_COLUMNS.length}
                       </span>
                       <ChevronDown
                         className={cn(
-                          "ml-auto h-5 w-5 shrink-0 text-text-muted transition",
+                          "h-3.5 w-3.5 shrink-0 text-text-muted transition",
                           open && "rotate-180"
                         )}
                       />
                     </button>
-                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                      <select
-                        className={cn(
-                          inputClass,
-                          "h-10 min-w-[14rem] py-0 text-sm"
-                        )}
-                        value={row.situation}
-                        onChange={(e) =>
-                          autosave(row, { situation: e.target.value })
-                        }
-                      >
-                        {!row.situation && (
-                          <option value="">Situación</option>
-                        )}
-                        {situationOpts.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        title="Eliminar"
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border text-text-muted hover:border-danger hover:text-danger"
-                        onClick={() => void removeRow(row.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+                    <select
+                      className={cn(
+                        inputClass,
+                        "h-8 w-[11rem] shrink-0 px-2 py-0 text-xs"
+                      )}
+                      value={row.situation}
+                      onChange={(e) =>
+                        autosave(row, { situation: e.target.value })
+                      }
+                    >
+                      {!row.situation && <option value="">Situación</option>}
+                      {situationOpts.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      title="Eliminar"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-danger/15 hover:text-danger"
+                      onClick={() => void removeRow(row.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
 
                   {open && (
-                    <div className="mt-5 space-y-6 border-t border-border-soft pt-5">
-                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="space-y-4 border-t border-border-soft/70 px-3 py-3">
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         {[
                           { key: "creatorName", label: "Creador", type: "text" },
                           { key: "recruiter", label: "Reclutador", type: "text" },
                           { key: "requestDate", label: "Solicitud", type: "date" },
                           { key: "phone", label: "Teléfono", type: "text" },
                         ].map((field) => (
-                          <label key={field.key} className="block space-y-1.5">
-                            <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+                          <label key={field.key} className="block space-y-1">
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
                               {field.label}
                             </span>
                             <input
                               type={field.type}
-                              className={inputClass}
+                              className={cn(inputClass, "h-9 py-0 text-sm")}
                               value={cellValue(row, field.key)}
                               onChange={(e) =>
                                 autosave(
@@ -650,21 +640,21 @@ export default function RecruitmentClient() {
                           <section key={group.id}>
                             <p
                               className={cn(
-                                "mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]",
+                                "mb-2 text-[10px] font-semibold uppercase tracking-[0.14em]",
                                 group.className.split(" ").slice(-1)[0]
                               )}
                             >
                               {group.label}
                             </p>
-                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                               {cols.map((col) => (
-                                <label key={col.key} className="block space-y-1.5">
-                                  <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+                                <label key={col.key} className="block space-y-1">
+                                  <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
                                     {col.label}
                                   </span>
                                   <input
                                     type={col.type === "date" ? "date" : "text"}
-                                    className={inputClass}
+                                    className={cn(inputClass, "h-9 py-0 text-sm")}
                                     value={cellValue(row, col.key)}
                                     onChange={(e) =>
                                       autosave(
@@ -680,7 +670,9 @@ export default function RecruitmentClient() {
                         );
                       })}
                       {saveMap[row.id] && (
-                        <p className="text-xs text-text-muted">{saveMap[row.id]}</p>
+                        <p className="text-[11px] text-text-muted">
+                          {saveMap[row.id]}
+                        </p>
                       )}
                     </div>
                   )}
