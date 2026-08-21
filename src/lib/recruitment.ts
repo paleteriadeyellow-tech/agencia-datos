@@ -454,7 +454,32 @@ export function cellText(value: unknown) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return toDateInput(value);
   }
-  return String(value).trim();
+  if (typeof value === "object") {
+    const rec = value as { t?: unknown; w?: unknown; r?: { t?: unknown }[] };
+    if (typeof rec.w === "string" && rec.w.trim()) return rec.w.trim();
+    if (typeof rec.t === "string" && rec.t.trim()) return rec.t.trim();
+    if (Array.isArray(rec.r)) {
+      return rec.r
+        .map((p) => String(p?.t ?? ""))
+        .join("")
+        .trim();
+    }
+  }
+  return String(value).replace(/\u00a0/g, " ").trim();
+}
+
+/** Encabezados de Google Sheets: saltos de línea, paréntesis, acentos. */
+export function normalizeRecruitmentHeader(value: unknown) {
+  return cellText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .toLowerCase()
+    .replace(/[_./\\|]+/g, " ")
+    .replace(/[()[\]{}]/g, " ")
+    .replace(/[^a-z0-9% ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function toDateInput(d: Date) {
@@ -493,38 +518,34 @@ export function parseExcelDate(value: unknown): string | null {
   return toDateInput(parsed);
 }
 
+function isAvoided(nh: string, avoid?: string[]) {
+  return (avoid ?? []).some((a) => {
+    const na = normalizeRecruitmentHeader(a);
+    return Boolean(na && nh.includes(na));
+  });
+}
+
+function headerMatches(nh: string, alias: string) {
+  const na = normalizeRecruitmentHeader(alias);
+  if (!nh || !na) return false;
+  if (nh === na) return true;
+  if (na.length >= 5 && nh.includes(na)) return true;
+  if (nh.length >= 8 && na.includes(nh)) return true;
+  return false;
+}
+
 function findUnusedColumn(
   headers: string[],
   aliases: string[],
   used: Set<number>,
   avoid?: string[]
 ) {
-  const exactFirst = headers.findIndex((h, i) => {
-    if (used.has(i)) return false;
-    const nh = normalizeHeaderKey(h);
-    return aliases.some((a) => normalizeHeaderKey(a) === nh);
-  });
-  if (exactFirst >= 0) {
-    const nh = normalizeHeaderKey(headers[exactFirst]);
-    const blocked = (avoid ?? []).some((a) =>
-      nh.includes(normalizeHeaderKey(a))
+  const norms = headers.map((h) => normalizeRecruitmentHeader(h));
+  for (const alias of aliases) {
+    const i = norms.findIndex(
+      (nh, idx) => !used.has(idx) && headerMatches(nh, alias) && !isAvoided(nh, avoid)
     );
-    if (!blocked) return exactFirst;
-  }
-  for (let idx = 0; idx < headers.length; idx++) {
-    if (used.has(idx)) continue;
-    const nh = normalizeHeaderKey(headers[idx]);
-    if (!nh) continue;
-    if ((avoid ?? []).some((a) => nh.includes(normalizeHeaderKey(a)))) continue;
-    if (aliases.some((a) => nh === normalizeHeaderKey(a))) return idx;
-    if (
-      aliases.some((a) => {
-        const na = normalizeHeaderKey(a);
-        return na.length >= 8 && nh.includes(na);
-      })
-    ) {
-      return idx;
-    }
+    if (i >= 0) return i;
   }
   return -1;
 }
@@ -542,47 +563,91 @@ export function mapRecruitmentHeaders(headers: string[]) {
   return indexes;
 }
 
+function mergeHeaderRows(a: unknown[], b?: unknown[]) {
+  const len = Math.max(a.length, b?.length ?? 0);
+  return Array.from({ length: len }, (_, i) => {
+    const top = cellText(a[i]);
+    const bot = cellText(b?.[i]);
+    if (
+      top &&
+      bot &&
+      normalizeRecruitmentHeader(top) !== normalizeRecruitmentHeader(bot)
+    ) {
+      return `${top} ${bot}`;
+    }
+    return top || bot;
+  });
+}
+
+function headerScore(mapped: Record<string, number>) {
+  return (
+    (mapped.creatorName != null ? 8 : 0) +
+    (mapped.recruiter != null ? 5 : 0) +
+    (mapped.situation != null ? 3 : 0) +
+    (mapped.requestDate != null ? 2 : 0) +
+    Object.keys(mapped).length
+  );
+}
+
 export function detectHeaderRow(sheetRows: unknown[][]) {
   let best = 0;
   let bestScore = -1;
-  const max = Math.min(8, sheetRows.length);
+  let bestHeaders: string[] = [];
+  let span = 1;
+  const max = Math.min(25, sheetRows.length);
   for (let i = 0; i < max; i++) {
-    const headers = (sheetRows[i] ?? []).map((h) => String(h ?? ""));
-    const mapped = mapRecruitmentHeaders(headers);
-    const score =
-      (mapped.creatorName >= 0 ? 5 : 0) +
-      (mapped.recruiter >= 0 ? 3 : 0) +
-      (mapped.situation >= 0 ? 2 : 0) +
-      Object.keys(mapped).length;
-    if (score > bestScore) {
-      bestScore = score;
+    const single = (sheetRows[i] ?? []).map((h) => cellText(h));
+    const merged = mergeHeaderRows(sheetRows[i] ?? [], sheetRows[i + 1]);
+    const singleScore = headerScore(mapRecruitmentHeaders(single));
+    if (singleScore > bestScore) {
+      bestScore = singleScore;
       best = i;
+      bestHeaders = single;
+      span = 1;
+    }
+    const mergedScore = headerScore(mapRecruitmentHeaders(merged));
+    if (mergedScore > bestScore) {
+      bestScore = mergedScore;
+      best = i;
+      bestHeaders = merged;
+      span = 2;
     }
   }
-  return bestScore >= 5 ? best : 0;
+  return { index: best, score: bestScore, headers: bestHeaders, span };
 }
 
 function isHeaderLike(text: string) {
-  const n = normalizeHeaderKey(text);
+  const n = normalizeRecruitmentHeader(text);
   return (
     n === "creador" ||
     n === "reclutador" ||
     n === "solicitud" ||
     n === "situacion" ||
-    n === "telefono"
+    n === "telefono" ||
+    n.includes("reclutamiento y seguimiento")
   );
 }
 
 export function parseRecruitmentSheet(sheetRows: unknown[][]) {
-  if (!sheetRows.length) return { rows: [] as RecruitmentParsedRow[], mapped: 0 };
-  const headerRowIdx = detectHeaderRow(sheetRows);
-  const headers = (sheetRows[headerRowIdx] ?? []).map((h) => String(h ?? ""));
+  if (!sheetRows.length) {
+    return {
+      rows: [] as RecruitmentParsedRow[],
+      mapped: 0,
+      headers: [] as string[],
+    };
+  }
+  const detected = detectHeaderRow(sheetRows);
+  const headers =
+    detected.headers.length > 0
+      ? detected.headers
+      : (sheetRows[detected.index] ?? []).map((h) => cellText(h));
   const indexes = mapRecruitmentHeaders(headers);
   const mapped = Object.keys(indexes).length;
   const rows: RecruitmentParsedRow[] = [];
   let lastRecruiter = "";
+  const start = detected.index + detected.span;
 
-  for (let r = headerRowIdx + 1; r < sheetRows.length; r++) {
+  for (let r = start; r < sheetRows.length; r++) {
     const raw = sheetRows[r] ?? [];
     const get = (key: string) => {
       const i = indexes[key];
@@ -616,7 +681,7 @@ export function parseRecruitmentSheet(sheetRows: unknown[][]) {
     });
   }
 
-  return { rows, mapped, indexes, headers };
+  return { rows, mapped, indexes, headers, score: detected.score };
 }
 
 export function situationTone(situation: string) {

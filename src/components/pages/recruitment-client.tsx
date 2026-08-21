@@ -248,19 +248,51 @@ export default function RecruitmentClient() {
     setHint("");
     try {
       const XLSX = await import("xlsx");
-      const buf = await file.arrayBuffer();
-      const book = XLSX.read(buf, { type: "array", cellDates: true });
-      const sheet = book.Sheets[book.SheetNames[0]!];
-      if (!sheet) throw new Error("empty");
-      const sheetRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-        header: 1,
-        defval: "",
-        raw: true,
-      });
-      const parsed = parseRecruitmentSheet(sheetRows);
-      if (parsed.mapped < 3) {
+      const name = file.name.toLowerCase();
+      const isCsv = name.endsWith(".csv") || name.endsWith(".tsv");
+      let book: import("xlsx").WorkBook;
+      if (isCsv) {
+        const text = await file.text();
+        const semi = (text.split(";").length || 0) > (text.split(",").length || 0);
+        book = XLSX.read(text, {
+          type: "string",
+          raw: false,
+          cellDates: true,
+          FS: name.endsWith(".tsv") ? "\t" : semi ? ";" : ",",
+        });
+      } else {
+        const buf = await file.arrayBuffer();
+        book = XLSX.read(buf, { type: "array", cellDates: true, raw: false });
+      }
+
+      let parsed = parseRecruitmentSheet([]);
+      for (const sheetName of book.SheetNames) {
+        const sheet = book.Sheets[sheetName];
+        if (!sheet) continue;
+        const sheetRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+          header: 1,
+          defval: "",
+          raw: false,
+          blankrows: false,
+        });
+        const next = parseRecruitmentSheet(sheetRows);
+        if (
+          next.mapped > parsed.mapped ||
+          (next.mapped === parsed.mapped && next.rows.length > parsed.rows.length)
+        ) {
+          parsed = next;
+        }
+      }
+
+      const sample = (parsed.headers ?? [])
+        .filter(Boolean)
+        .slice(0, 8)
+        .join(" · ");
+      if (parsed.mapped < 2) {
         setHint(
-          "No se reconocieron las columnas. Usa el Excel de reclutamiento (Reclutador, Solicitud, Creador…)."
+          sample
+            ? `No se reconocieron las columnas. Encabezados vistos: ${sample}`
+            : "No se reconocieron las columnas. Descarga Microsoft Excel (.xlsx) y no CSV."
         );
         return;
       }
@@ -290,7 +322,7 @@ export default function RecruitmentClient() {
       invalidatePanel(PANEL.recruitment);
     } catch (e) {
       setHint(
-        e instanceof Error ? e.message : "No se pudo leer el archivo XLSX."
+        e instanceof Error ? e.message : "No se pudo leer el archivo."
       );
     } finally {
       setBusy(false);
@@ -420,7 +452,7 @@ export default function RecruitmentClient() {
           <input
             ref={fileRef}
             type="file"
-            accept=".xlsx,.xls"
+            accept=".xlsx,.xls,.csv,.tsv"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
