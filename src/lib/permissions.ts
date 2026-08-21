@@ -2,6 +2,7 @@
 export const MANAGER_ALLOWED_PATHS = [
   "/dashboard",
   "/creadores",
+  "/reclutamiento",
   "/control-diamantes",
   "/metricas",
   "/envio-kpi",

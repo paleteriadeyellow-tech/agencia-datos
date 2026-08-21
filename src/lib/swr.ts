@@ -62,6 +62,7 @@ export const PANEL = {
   kpi: "/api/panel/kpi",
   hub: "/api/panel/hub",
   exportMes: "/api/panel/export",
+  recruitment: "/api/panel/recruitment",
 } as const;
 
 export function panelWarmUrls(period = currentMonth()) {

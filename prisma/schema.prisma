@@ -292,6 +292,32 @@ model WaTemplate {
   @@index([agencySlug])
 }
 
+model RecruitmentLead {
+  id              String    @id @default(cuid())
+  agencySlug      String    @default("streamersfederation")
+  recruiter       String    @default("")
+  managerId       String?
+  requestDate     DateTime?
+  year            Int?
+  month           Int?
+  creatorName     String
+  situation       String    @default("")
+  phone           String    @default("")
+  comment         String    @default("")
+  comment2        String    @default("")
+  recontact       String    @default("")
+  integrationDate DateTime?
+  steps           Json      @default("{}")
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([agencySlug, year])
+  @@index([agencySlug, month])
+  @@index([agencySlug, managerId])
+  @@index([agencySlug, recruiter])
+}
+
 model CreatorPortalToken {
   id         String   @id @default(cuid())
   agencySlug String   @default("streamersfederation")

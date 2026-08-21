@@ -11,6 +11,7 @@ import {
   FileText,
   Gift,
   UserCog,
+  UserPlus,
   Gem,
   Smartphone,
   Send,
@@ -31,6 +32,7 @@ import { useViewAs } from "@/components/view-as";
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/creadores", label: "Creadores", icon: Users },
+  { href: "/reclutamiento", label: "Reclutamiento y seguimiento", icon: UserPlus },
   { href: "/control-diamantes", label: "Control de diamantes", icon: Gem },
   { href: "/metricas", label: "App livecoins", icon: Smartphone },
   { href: "/envio-kpi", label: "Envío de KPI", icon: Send },
