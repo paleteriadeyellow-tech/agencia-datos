@@ -10,9 +10,10 @@ import { applyViewAs, getScope } from "@/lib/creator-scope";
 import { parseViewAsId, VIEW_AS_COOKIE } from "@/lib/view-as";
 import { TopBar } from "@/components/top-bar";
 import { CreatorForm } from "@/components/creator-form";
+import { CreatorOps } from "@/components/creator-ops";
 import { StatusBadge } from "@/components/status-badge";
 import { Panel } from "@/components/ui";
-import { formatDate, formatNumber } from "@/lib/utils";
+import { currentMonth, formatDate, formatNumber } from "@/lib/utils";
 
 export default async function CreatorDetailPage({
   params,
@@ -53,13 +54,27 @@ export default async function CreatorDetailPage({
     }
   }
 
-  const managers = canEdit
-    ? await prisma.user.findMany({
-        where: { agencySlug: agency },
-        select: { id: true, name: true },
-        orderBy: { name: "asc" },
-      })
-    : [];
+  const period = currentMonth();
+  const [managers, notes, goal, portal] = await Promise.all([
+    canEdit
+      ? prisma.user.findMany({
+          where: { agencySlug: agency },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
+    prisma.creatorNote.findMany({
+      where: { creatorId: id },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+    }),
+    prisma.creatorGoal.findUnique({
+      where: { creatorId_period: { creatorId: id, period } },
+    }),
+    prisma.creatorPortalToken.findUnique({
+      where: { creatorId: id },
+    }),
+  ]);
 
   const monthDiamonds = creator.metrics.reduce((a, m) => a + m.diamonds, 0);
 
@@ -141,6 +156,23 @@ export default async function CreatorDetailPage({
           </ul>
         </Panel>
       </div>
+
+      <CreatorOps
+        creatorId={creator.id}
+        agency={agency}
+        period={period}
+        initialNotes={notes.map((n) => ({
+          id: n.id,
+          body: n.body,
+          authorName: n.authorName,
+          createdAt: n.createdAt.toISOString(),
+        }))}
+        initialGoal={{
+          targetDiamonds: goal?.targetDiamonds ?? 0,
+          targetHours: goal?.targetHours ?? 0,
+        }}
+        initialToken={portal?.token ?? null}
+      />
 
       {canEdit && (
         <>

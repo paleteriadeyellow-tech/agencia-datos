@@ -206,7 +206,9 @@ export function CreatorForm({
           defaultValue={initial?.managerId ?? ""}
           className={inputClass}
         >
-          <option value="">Sin asignar</option>
+          <option value="">
+            {initial?.id ? "Sin asignar" : "Auto (menos roster)"}
+          </option>
           {managers.map((m) => (
             <option key={m.id} value={m.id}>
               {m.name}

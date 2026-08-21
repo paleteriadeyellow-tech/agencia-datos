@@ -21,6 +21,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  if (rest.startsWith("/p/")) {
+    return NextResponse.next();
+  }
+
   if (rest === "/register" || rest.startsWith("/register/")) {
     return NextResponse.redirect(new URL(`/a/${agency}/login`, req.url));
   }

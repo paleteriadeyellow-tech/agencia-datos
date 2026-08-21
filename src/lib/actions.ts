@@ -142,6 +142,18 @@ export async function createCreator(formData: FormData) {
       where: { id: managerId, agencySlug },
     });
     if (!mgr) return { error: "Manager no válido para esta agencia.", ok: undefined, id: undefined };
+  } else if (isAdmin(session.user.role)) {
+    const managers = await prisma.user.findMany({
+      where: { agencySlug, role: "manager" },
+      select: {
+        id: true,
+        _count: { select: { creators: { where: { agencySlug, status: "activo" } } } },
+      },
+    });
+    if (managers.length) {
+      managers.sort((a, b) => a._count.creators - b._count.creators);
+      managerId = managers[0]!.id;
+    }
   }
 
   const phone = formatPhoneInputValue(phoneRaw, country) || phoneRaw;

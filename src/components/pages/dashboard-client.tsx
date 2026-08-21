@@ -14,6 +14,7 @@ import { TopBar } from "@/components/top-bar";
 import { KpiCard } from "@/components/kpi-card";
 import { StatusBadge } from "@/components/status-badge";
 import { DiamondGoalCard, type DiamondGoal } from "@/components/diamond-goal-card";
+import { OverviewExtras, type HubData } from "@/components/overview-extras";
 import { Button, LinkButton, Panel, inputClass } from "@/components/ui";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { formatDate, formatNumber } from "@/lib/utils";
@@ -80,6 +81,12 @@ export default function DashboardClient() {
     error?: Error;
     mutate: () => void;
   };
+
+  const { data: hub } = usePanelData(`${PANEL.hub}?period=${period}`, {
+    refreshInterval: 20000,
+    revalidateOnFocus: true,
+    dedupingInterval: 8000,
+  }) as { data?: HubData };
 
   return (
     <div>
@@ -180,6 +187,8 @@ export default function DashboardClient() {
               onSaved={() => mutate()}
             />
           )}
+
+          {hub && <OverviewExtras hub={hub} period={period} />}
 
           <div className="mt-6 grid gap-6 xl:grid-cols-3">
             <Panel className="xl:col-span-2">

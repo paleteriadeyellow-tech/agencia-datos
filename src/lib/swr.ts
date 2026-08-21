@@ -70,6 +70,8 @@ export const PANEL = {
   livecoins: "/api/panel/livecoins",
   bonos: "/api/panel/bonos",
   kpi: "/api/panel/kpi",
+  hub: "/api/panel/hub",
+  exportMes: "/api/panel/export",
 } as const;
 
 function warm(url: string) {

@@ -50,6 +50,9 @@ model Creator {
   settlements      Settlement[]
   contracts        Contract[]
   diamondLogs      DiamondControl[]
+  goals            CreatorGoal[]
+  noteLog          CreatorNote[]
+  portalToken      CreatorPortalToken?
 
   @@index([agencySlug])
   @@index([agencySlug, status])
@@ -237,4 +240,65 @@ model KpiRecord {
 
   @@index([agencySlug, period])
   @@index([agencySlug, period, nombre])
+}
+
+model CreatorGoal {
+  id             String   @id @default(cuid())
+  agencySlug     String   @default("streamersfederation")
+  creatorId      String
+  creator        Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  period         String
+  targetDiamonds Int      @default(0)
+  targetHours    Float    @default(0)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([creatorId, period])
+  @@index([agencySlug, period])
+}
+
+model CreatorNote {
+  id         String   @id @default(cuid())
+  creatorId  String
+  creator    Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  authorId   String?
+  authorName String   @default("")
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([creatorId, createdAt])
+}
+
+model DiamondImportLog {
+  id         String   @id @default(cuid())
+  agencySlug String   @default("streamersfederation")
+  period     String
+  userId     String?
+  userName   String   @default("")
+  filename   String?
+  upserted   Int      @default(0)
+  skipped    Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([agencySlug, period])
+}
+
+model WaTemplate {
+  id         String   @id @default(cuid())
+  agencySlug String   @default("streamersfederation")
+  name       String
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([agencySlug])
+}
+
+model CreatorPortalToken {
+  id         String   @id @default(cuid())
+  agencySlug String   @default("streamersfederation")
+  creatorId  String   @unique
+  creator    Creator  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  token      String   @unique @default(cuid())
+  createdAt  DateTime @default(now())
+
+  @@index([agencySlug])
 }

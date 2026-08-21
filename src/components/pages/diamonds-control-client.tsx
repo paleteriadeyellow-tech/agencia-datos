@@ -6,7 +6,7 @@ import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { Button, Field, Panel, inputClass } from "@/components/ui";
-import { formatNumber, cn } from "@/lib/utils";
+import { formatNumber, cn, formatDateTime } from "@/lib/utils";
 import {
   MESES_NOMBRE,
   periodKey,
@@ -47,6 +47,10 @@ export default function DiamondsControlClient() {
   const { data, error, mutate: reload } = useSWR(url, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 10000,
+  });
+  const { data: hub } = useSWR(`${PANEL.hub}?period=${period}`, fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 15000,
   });
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -247,7 +251,7 @@ export default function DiamondsControlClient() {
       const { res, json } = await fetchJsonWithTimeout(PANEL.diamonds, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ period, rows: importRows }),
+        body: JSON.stringify({ period, rows: importRows, filename: file.name }),
       });
       if (!res.ok) {
         setMsg(String(json.error || "Error al importar"));
@@ -260,7 +264,7 @@ export default function DiamondsControlClient() {
           preview
       );
       await reload(undefined, { revalidate: true });
-      invalidatePanel(PANEL.creators, PANEL.dashboard, PANEL.ops);
+      invalidatePanel(PANEL.creators, PANEL.dashboard, PANEL.ops, PANEL.hub);
     } catch (e) {
       setMsg(
         e instanceof Error ? e.message : "No se pudo leer el archivo XLSX."
@@ -331,6 +335,30 @@ export default function DiamondsControlClient() {
           </div>
         </Panel>
       </div>
+
+      {Array.isArray(hub?.importLogs) && hub.importLogs.length > 0 && (
+        <Panel className="mb-5">
+          <p className="mb-2 text-sm font-medium">Historial de importaciones</p>
+          <ul className="space-y-1.5 text-sm">
+            {hub.importLogs.map(
+              (l: {
+                id: string;
+                userName: string;
+                filename: string | null;
+                upserted: number;
+                skipped: number;
+                createdAt: string;
+              }) => (
+                <li key={l.id} className="text-text-muted">
+                  {formatDateTime(l.createdAt)} · {l.userName}
+                  {l.filename ? ` · ${l.filename}` : ""} · {l.upserted} filas
+                  {l.skipped ? ` · ${l.skipped} omitidas` : ""}
+                </li>
+              )
+            )}
+          </ul>
+        </Panel>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input

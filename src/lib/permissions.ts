@@ -8,6 +8,8 @@ export const MANAGER_ALLOWED_PATHS = [
   "/mensajes-wa",
   "/tareas",
   "/campanas",
+  "/calendario",
+  "/reporte",
 ] as const;
 
 export const ADMIN_ONLY_PATHS = [

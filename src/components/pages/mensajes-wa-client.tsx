@@ -8,6 +8,7 @@ import { PanelLoadError } from "@/components/panel-load-error";
 import { PANEL, usePanelData } from "@/lib/swr";
 import { whatsappUrl } from "@/lib/phone";
 import { cn, formatNumber } from "@/lib/utils";
+import { DEFAULT_WA_TEMPLATES, fillWaTemplate } from "@/lib/wa-template";
 
 type CreatorRow = {
   id: string;
@@ -58,6 +59,12 @@ export default function MensajesWaClient() {
     error?: Error;
     mutate: () => void;
   };
+  const { data: hub } = usePanelData(PANEL.hub) as {
+    data?: { templates: { id: string; name: string; body: string }[] };
+  };
+
+  const [tplName, setTplName] = useState("");
+  const [tplBody, setTplBody] = useState("");
 
   useEffect(() => {
     setDrafts(loadDrafts());
@@ -100,6 +107,42 @@ export default function MensajesWaClient() {
       else next[id] = value;
       return next;
     });
+  }
+
+  function applyTemplate(body: string) {
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const c of list) {
+        next[c.id] = fillWaTemplate(body, {
+          nombre: c.name,
+          diamantes: formatNumber(c.diamondsMonth ?? c.diamonds ?? 0),
+          horas: "—",
+          dias: "—",
+          meta: "—",
+          faltan: "—",
+          nicho: "",
+        });
+      }
+      return next;
+    });
+    setHint("Plantilla aplicada a los creadores visibles.");
+  }
+
+  async function saveTemplate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tplName.trim() || !tplBody.trim()) return;
+    await fetch(PANEL.hub, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "template",
+        name: tplName,
+        body: tplBody,
+      }),
+    });
+    setTplName("");
+    setTplBody("");
+    setHint("Plantilla guardada.");
   }
 
   function openWa(c: CreatorRow) {
@@ -159,6 +202,55 @@ export default function MensajesWaClient() {
           {formatNumber(list.length)} creadores
         </p>
       </div>
+
+      <Panel className="mb-4">
+        <p className="mb-2 text-sm font-medium">Plantillas</p>
+        <p className="mb-3 text-xs text-text-muted">
+          Variables: {"{nombre} {diamantes} {horas} {dias} {meta} {faltan}"}
+        </p>
+        <div className="mb-3 flex flex-wrap gap-2">
+          {DEFAULT_WA_TEMPLATES.map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              className="rounded-full border border-border px-3 py-1 text-xs hover:border-accent"
+              onClick={() => applyTemplate(t.body)}
+            >
+              {t.name}
+            </button>
+          ))}
+          {(hub?.templates ?? []).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className="rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-xs text-cyan"
+              onClick={() => applyTemplate(t.body)}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+        <form
+          onSubmit={(e) => void saveTemplate(e)}
+          className="grid gap-2 md:grid-cols-[160px_1fr_auto]"
+        >
+          <input
+            className={inputClass}
+            placeholder="Nombre"
+            value={tplName}
+            onChange={(e) => setTplName(e.target.value)}
+          />
+          <input
+            className={inputClass}
+            placeholder="Hola {nombre}, vas {diamantes}…"
+            value={tplBody}
+            onChange={(e) => setTplBody(e.target.value)}
+          />
+          <Button type="submit" variant="secondary">
+            Guardar
+          </Button>
+        </form>
+      </Panel>
 
       {hint && (
         <p className="mb-3 text-xs text-cyan">{hint}</p>

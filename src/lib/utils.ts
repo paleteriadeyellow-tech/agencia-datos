@@ -48,6 +48,41 @@ export function monthRange(month: string) {
   return { start, end };
 }
 
+export function prevPeriod(period: string) {
+  const [y, m] = period.split("-").map(Number);
+  const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function periodMeta(period: string, now = new Date()) {
+  const [y, m] = period.split("-").map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const isCurrent =
+    now.getFullYear() === y && now.getMonth() + 1 === m;
+  const dayElapsed = isCurrent
+    ? Math.min(daysInMonth, Math.max(1, now.getDate()))
+    : daysInMonth;
+  const daysLeft = Math.max(0, daysInMonth - dayElapsed);
+  return { y, m, daysInMonth, isCurrent, dayElapsed, daysLeft };
+}
+
+export function pctChange(current: number, previous: number) {
+  if (previous <= 0) return current > 0 ? 100 : 0;
+  return ((current - previous) / previous) * 100;
+}
+
+export function weekBounds(from = new Date()) {
+  const start = new Date(from);
+  const day = start.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diff);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  end.setMilliseconds(-1);
+  return { start, end };
+}
+
 export const NICHES = [
   "Gaming",
   "Bailes",

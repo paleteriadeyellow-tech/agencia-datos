@@ -227,6 +227,22 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const filename =
+        typeof (body as { filename?: unknown }).filename === "string"
+          ? String((body as { filename: string }).filename).slice(0, 180)
+          : null;
+      await prisma.diamondImportLog.create({
+        data: {
+          agencySlug,
+          period,
+          userId: typeof auth.token?.id === "string" ? auth.token.id : null,
+          userName: String(auth.token?.name ?? "Usuario"),
+          filename,
+          upserted: toCreate.length + toUpdate.length,
+          skipped,
+        },
+      });
+
       return NextResponse.json({
         ok: true,
         upserted: toCreate.length + toUpdate.length,
