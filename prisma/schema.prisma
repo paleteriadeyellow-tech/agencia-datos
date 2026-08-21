@@ -73,6 +73,19 @@ model DiamondControl {
   @@index([agencySlug, period])
 }
 
+model MonthlyDiamondGoal {
+  id         String   @id @default(cuid())
+  agencySlug String   @default("streamersfederation")
+  period     String // YYYY-MM
+  target     Int      @default(0)
+  updatedBy  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([agencySlug, period])
+  @@index([agencySlug])
+}
+
 model Metric {
   id          String   @id @default(cuid())
   creatorId   String

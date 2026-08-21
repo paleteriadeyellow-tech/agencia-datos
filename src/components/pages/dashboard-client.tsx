@@ -13,6 +13,7 @@ import {
 import { TopBar } from "@/components/top-bar";
 import { KpiCard } from "@/components/kpi-card";
 import { StatusBadge } from "@/components/status-badge";
+import { DiamondGoalCard, type DiamondGoal } from "@/components/diamond-goal-card";
 import { Button, LinkButton, Panel, inputClass } from "@/components/ui";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { formatDate, formatNumber } from "@/lib/utils";
@@ -32,6 +33,7 @@ type Dash = {
     hours: number;
     diamondUsers: number;
   };
+  diamondGoal: DiamondGoal;
   topCreators: {
     rank: number;
     id: string;
@@ -66,7 +68,13 @@ export default function DashboardClient() {
   }, []);
 
   const { data, error, mutate } = usePanelData(
-    `${PANEL.dashboard}?period=${period}`
+    `${PANEL.dashboard}?period=${period}`,
+    {
+      refreshInterval: 8000,
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      dedupingInterval: 4000,
+    }
   ) as {
     data?: Dash;
     error?: Error;
@@ -123,10 +131,13 @@ export default function DashboardClient() {
       {error ? (
         <PanelLoadError onRetry={() => mutate()} />
       ) : !data ? (
-        <div className="grid animate-pulse gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="glass-panel h-28 rounded-2xl" />
-          ))}
+        <div className="space-y-4">
+          <div className="grid animate-pulse gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="glass-panel h-28 rounded-2xl" />
+            ))}
+          </div>
+          <div className="glass-panel h-36 animate-pulse rounded-2xl" />
         </div>
       ) : (
         <>
@@ -159,6 +170,16 @@ export default function DashboardClient() {
               tone="warning"
             />
           </div>
+
+          {data.diamondGoal && (
+            <DiamondGoalCard
+              key={period}
+              goal={data.diamondGoal}
+              period={period}
+              periodLabel={`${MESES_NOMBRE[mes]} ${anio}`}
+              onSaved={() => mutate()}
+            />
+          )}
 
           <div className="mt-6 grid gap-6 xl:grid-cols-3">
             <Panel className="xl:col-span-2">

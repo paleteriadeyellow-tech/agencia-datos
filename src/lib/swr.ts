@@ -1,4 +1,4 @@
-import useSWR, { mutate } from "swr";
+import useSWR, { mutate, type SWRConfiguration } from "swr";
 
 async function fetcher(url: string) {
   const res = await fetch(url);
@@ -6,13 +6,14 @@ async function fetcher(url: string) {
   return res.json();
 }
 
-export function usePanelData(url: string | null) {
+export function usePanelData(url: string | null, options?: SWRConfiguration) {
   return useSWR(url, fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 60000,
     errorRetryCount: 1,
     keepPreviousData: true,
+    ...options,
   });
 }
 
