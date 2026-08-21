@@ -66,10 +66,12 @@ export const PANEL = {
 } as const;
 
 export function panelWarmUrls(period = currentMonth()) {
+  const year = period.slice(0, 4);
   return [
     `${PANEL.dashboard}?period=${period}`,
     `${PANEL.hub}?period=${period}`,
     PANEL.creators,
+    `${PANEL.recruitment}?year=${year}&month=all`,
     PANEL.managers,
     PANEL.livecoins,
     PANEL.metrics,

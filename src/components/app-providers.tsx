@@ -12,6 +12,7 @@ import { useAgency } from "@/lib/use-agency";
 const ALL_ROUTES = [
   "/dashboard",
   "/creadores",
+  "/reclutamiento",
   "/control-diamantes",
   "/metricas",
   "/envio-kpi",

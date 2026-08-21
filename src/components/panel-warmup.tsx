@@ -9,6 +9,9 @@ export function PanelWarmup() {
   usePanelData(`${PANEL.dashboard}?period=${period}`);
   usePanelData(`${PANEL.hub}?period=${period}`);
   usePanelData(PANEL.creators);
+  usePanelData(
+    `${PANEL.recruitment}?year=${period.slice(0, 4)}&month=all`
+  );
   usePanelData(PANEL.managers);
   usePanelData(PANEL.livecoins);
   usePanelData(PANEL.metrics);
