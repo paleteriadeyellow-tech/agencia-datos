@@ -144,6 +144,20 @@ export default function OnboardingClient() {
     });
   }
 
+  const viewingCurrent = year === currentYear && month === currentMonthNum;
+  const periodLabel =
+    year !== "all" && month !== "all"
+      ? `${MESES_NOMBRE[Number(month)]} ${year}`
+      : year !== "all"
+        ? `Archivo ${year}`
+        : "Archivo";
+
+  function targetPeriod() {
+    const y = year === "all" ? currentYear : year;
+    const m = month === "all" ? currentMonthNum : month;
+    return { y, m };
+  }
+
   function addRow(e: React.FormEvent) {
     e.preventDefault();
     const creatorName = draftName.trim();
@@ -151,26 +165,29 @@ export default function OnboardingClient() {
       setHint("Escribe el usuario del creador.");
       return;
     }
+    const { y: targetYear, m: targetMonth } = targetPeriod();
     const tempId = `tmp-${Date.now()}`;
     const optimistic: Row = {
       id: tempId,
       creatorName,
       phone: draftPhone.trim(),
       situation: draftSituation,
-      integrationMonth: MESES_NOMBRE[Number(month)] ?? "",
-      year: Number(year),
-      month: Number(month),
+      integrationMonth: MESES_NOMBRE[Number(targetMonth)] ?? "",
+      year: Number(targetYear),
+      month: Number(targetMonth),
       managerId: session?.user?.id ?? null,
       managerName: session?.user?.name ?? "",
       checks: {},
     };
-    writeList(year, month, (list) => [optimistic, ...list]);
+    writeList(targetYear, targetMonth, (list) => [optimistic, ...list]);
+    setYear(targetYear);
+    setMonth(targetMonth);
     setOpenAdd(false);
     setOpenId(tempId);
     setDraftName("");
     setDraftPhone("");
     setDraftSituation("capacitación");
-    setHint(`Agregado: ${creatorName}`);
+    setHint(`Agregado: ${creatorName} · ${MESES_NOMBRE[Number(targetMonth)]} ${targetYear}`);
 
     void fetch(PANEL.onboarding, {
       method: "POST",
@@ -181,24 +198,28 @@ export default function OnboardingClient() {
         phone: optimistic.phone,
         situation: optimistic.situation,
         integrationMonth: optimistic.integrationMonth,
-        year: Number(year),
-        month: Number(month),
+        year: Number(targetYear),
+        month: Number(targetMonth),
       }),
     })
       .then(async (res) => {
         const json = (await res.json()) as { error?: string; row?: Row };
         if (!res.ok || !json.row) {
-          writeList(year, month, (list) => list.filter((r) => r.id !== tempId));
+          writeList(targetYear, targetMonth, (list) =>
+            list.filter((r) => r.id !== tempId)
+          );
           setHint(json.error || "No se pudo agregar");
           return;
         }
-        writeList(year, month, (list) =>
+        writeList(targetYear, targetMonth, (list) =>
           list.map((r) => (r.id === tempId ? { ...optimistic, ...json.row } : r))
         );
         setOpenId(json.row.id);
       })
       .catch(() => {
-        writeList(year, month, (list) => list.filter((r) => r.id !== tempId));
+        writeList(targetYear, targetMonth, (list) =>
+          list.filter((r) => r.id !== tempId)
+        );
         setHint("No se pudo agregar");
       });
   }
@@ -225,7 +246,11 @@ export default function OnboardingClient() {
     <div>
       <TopBar
         title="Control de usuarios"
-        subtitle="Checklist de integración · palomita en cada paso"
+        subtitle={
+          viewingCurrent
+            ? `${periodLabel} · mes en curso`
+            : `${periodLabel} · archivo`
+        }
       />
 
       {error ? (
@@ -239,11 +264,15 @@ export default function OnboardingClient() {
                 value={year}
                 onChange={(e) => setYear(e.target.value)}
               >
-                {years.map((y) => (
-                  <option key={y} value={y}>
-                    {String(y) === currentYear ? `${y} · actual` : y}
-                  </option>
-                ))}
+                <option value={currentYear}>{currentYear} · actual</option>
+                <option value="all">Todos</option>
+                {years.map((y) =>
+                  String(y) === currentYear ? null : (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  )
+                )}
               </select>
             </Field>
             <Field label="Mes">
@@ -252,13 +281,17 @@ export default function OnboardingClient() {
                 value={month}
                 onChange={(e) => setMonth(e.target.value)}
               >
-                {MESES_NOMBRE.slice(1).map((name, i) => (
-                  <option key={name} value={i + 1}>
-                    {String(i + 1) === currentMonthNum && year === currentYear
-                      ? `${name} · mes actual`
-                      : name}
-                  </option>
-                ))}
+                <option value={currentMonthNum}>
+                  {MESES_NOMBRE[Number(currentMonthNum)]} · mes actual
+                </option>
+                <option value="all">Archivo · todos los meses</option>
+                {MESES_NOMBRE.slice(1).map((name, i) =>
+                  String(i + 1) === currentMonthNum ? null : (
+                    <option key={name} value={i + 1}>
+                      {name} · archivo
+                    </option>
+                  )
+                )}
               </select>
             </Field>
             <Field label="Buscar">
@@ -269,23 +302,52 @@ export default function OnboardingClient() {
                 onChange={(e) => setQ(e.target.value)}
               />
             </Field>
-            <div className="flex items-end gap-2">
-              <Button type="button" variant="secondary" onClick={goCurrent}>
-                Mes actual
-              </Button>
-              <Button type="button" onClick={() => setOpenAdd(true)}>
+            <div className="flex items-end">
+              <Button type="button" className="w-full" onClick={() => setOpenAdd(true)}>
                 <Plus className="h-4 w-4" />
                 Agregar
               </Button>
             </div>
           </div>
 
+          <p className="mb-3 text-xs text-text-muted">
+            {rows.length} usuarios
+            {viewingCurrent
+              ? ` · ${MESES_NOMBRE[Number(currentMonthNum)]} ${currentYear}`
+              : " · archivo"}
+            {" · "}
+            {viewingCurrent ? (
+              <button
+                type="button"
+                className="text-cyan hover:underline"
+                onClick={() => {
+                  setYear(currentYear);
+                  setMonth("all");
+                }}
+              >
+                Ver archivo
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="text-cyan hover:underline"
+                onClick={goCurrent}
+              >
+                Volver al mes actual
+              </button>
+            )}
+          </p>
+
           {hint && <p className="mb-3 text-xs text-cyan">{hint}</p>}
 
           {!rows.length ? (
             <EmptyState
-              title="Nadie en este mes"
-              description="Agrega un creador para ver todos los pasos y marcarlos con palomita."
+              title="Nadie en este periodo"
+              description={
+                viewingCurrent
+                  ? "No hay usuarios de este mes. Revisa el archivo o agrega uno."
+                  : "No hay registros en este archivo. Cambia mes o año, o vuelve al mes actual."
+              }
               action={
                 <Button type="button" onClick={() => setOpenAdd(true)}>
                   <Plus className="h-4 w-4" />
@@ -478,7 +540,11 @@ export default function OnboardingClient() {
         open={openAdd}
         onClose={() => setOpenAdd(false)}
         title="Agregar usuario"
-        subtitle={`Se guarda en ${MESES_NOMBRE[Number(month)]} ${year}. Al agregarlo salen todos los pasos para ir marcando.`}
+        subtitle={`Se guarda en ${
+          year === "all" || month === "all"
+            ? `${MESES_NOMBRE[Number(currentMonthNum)]} ${currentYear}`
+            : `${MESES_NOMBRE[Number(month)]} ${year}`
+        }. Al agregarlo salen todos los pasos para ir marcando.`}
       >
         <form onSubmit={addRow} className="space-y-4">
           <Field label="Creador">
