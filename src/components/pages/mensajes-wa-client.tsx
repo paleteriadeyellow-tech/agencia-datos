@@ -62,6 +62,7 @@ export default function MensajesWaClient() {
   const [ready, setReady] = useState(false);
   const [hint, setHint] = useState("");
   const { viewAsId } = useViewAs();
+  const period = currentMonth();
 
   const { data, error, mutate } = usePanelData(PANEL.creators) as {
     data?: { creators: CreatorRow[] };
@@ -90,7 +91,6 @@ export default function MensajesWaClient() {
   const [activeTpl, setActiveTpl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const period = currentMonth();
 
   useEffect(() => {
     setDrafts(loadDrafts());

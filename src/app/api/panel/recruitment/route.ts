@@ -174,7 +174,7 @@ const rowSchema = z.object({
   recontact: z.string().optional(),
   integrationDate: z.string().nullable().optional(),
   managerId: z.string().nullable().optional(),
-  steps: z.record(z.string()).optional(),
+  steps: z.record(z.string(), z.string()).optional(),
 });
 
 const postSchema = z.object({
