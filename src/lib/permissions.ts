@@ -13,6 +13,7 @@ export const MANAGER_ALLOWED_PATHS = [
   "/programacion",
   "/control-usuarios",
   "/llamadas",
+  "/graduacion-batallas",
   "/reporte",
 ] as const;
 

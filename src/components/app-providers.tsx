@@ -23,6 +23,7 @@ const ALL_ROUTES = [
   "/programacion",
   "/control-usuarios",
   "/llamadas",
+  "/graduacion-batallas",
   "/finanzas",
   "/bonos",
   "/contratos",

@@ -377,6 +377,24 @@ model OneOnOneCall {
   @@index([agencySlug, year, month])
 }
 
+model BattleGraduation {
+  id          String   @id @default(cuid())
+  agencySlug  String   @default("streamersfederation")
+  year        Int
+  month       Int
+  columnKey   String
+  creatorName String
+  note        String   @default("")
+  color       String   @default("none")
+  done        Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  managerName String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([agencySlug, year, month])
+}
+
 model CreatorPortalToken {
   id         String   @id @default(cuid())
   agencySlug String   @default("streamersfederation")
