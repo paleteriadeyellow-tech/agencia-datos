@@ -7,8 +7,7 @@ import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Field, inputClass } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
-import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
-import { mutate as cacheMutate } from "swr";
+import { PANEL, persistPanelCache, mutatePanel, usePanelData } from "@/lib/swr";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
 import {
   CALL_SLOTS,
@@ -113,7 +112,7 @@ export default function CallsClient() {
 
   const writeSlots = useCallback(
     (updater: (slots: SlotRow[]) => SlotRow[]) => {
-      void cacheMutate(
+      void mutatePanel(
         url,
         (current: Payload | undefined) => {
           const base: Payload = current ?? {

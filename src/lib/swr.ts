@@ -4,13 +4,28 @@ import { useMemo } from "react";
 import useSWR, { mutate, useSWRConfig, type SWRConfiguration } from "swr";
 import { currentMonth } from "@/lib/utils";
 import { mondayOf, ymd } from "@/lib/weekly-schedule";
+import { useAgency } from "@/lib/use-agency";
 
-const SESSION_PREFIX = "panel-swr-v1:";
+const SESSION_PREFIX = "panel-swr-v2:";
+
+let boundAgency = "";
+
+export function bindPanelAgency(slug: string) {
+  boundAgency = slug;
+}
+
+export function panelSWRKey(url: string, agency = boundAgency) {
+  return [agency || "x", url] as const;
+}
+
+function storageKey(url: string) {
+  return `${SESSION_PREFIX}${boundAgency || "x"}:${url}`;
+}
 
 function readSession(url: string) {
   if (typeof window === "undefined") return undefined;
   try {
-    const raw = sessionStorage.getItem(SESSION_PREFIX + url);
+    const raw = sessionStorage.getItem(storageKey(url));
     if (!raw) return undefined;
     return JSON.parse(raw);
   } catch {
@@ -21,7 +36,7 @@ function readSession(url: string) {
 function writeSession(url: string, data: unknown) {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(SESSION_PREFIX + url, JSON.stringify(data));
+    sessionStorage.setItem(storageKey(url), JSON.stringify(data));
   } catch {
     /* quota */
   }
@@ -48,6 +63,7 @@ export async function panelFetcher(url: string) {
 
 function urlFromKey(key: unknown): string | null {
   if (typeof key === "string") return key;
+  if (Array.isArray(key) && typeof key[1] === "string") return key[1];
   if (Array.isArray(key) && typeof key[0] === "string") return key[0];
   return null;
 }
@@ -58,20 +74,26 @@ export const PANEL_SWR_DEFAULTS: SWRConfiguration = {
   revalidateOnReconnect: true,
   revalidateIfStale: false,
   keepPreviousData: true,
-  dedupingInterval: 60_000,
+  dedupingInterval: 30_000,
   errorRetryCount: 2,
   errorRetryInterval: 1200,
 };
 
 export function usePanelData(url: string | null, options?: SWRConfiguration) {
+  const { slug } = useAgency();
+  bindPanelAgency(slug);
   const { cache } = useSWRConfig();
-  const memory = url ? cache.get(url)?.data : undefined;
+  const key = url ? panelSWRKey(url, slug) : null;
+  const memory = key
+    ? (cache as { get: (k: unknown) => { data?: unknown } | undefined }).get(key)
+        ?.data
+    : undefined;
   const fallback = useMemo(() => {
     if (!url || memory != null) return undefined;
     return readSession(url);
-  }, [url, memory]);
+  }, [url, memory, slug]);
 
-  return useSWR(url, panelFetcher, {
+  return useSWR(key, () => panelFetcher(url!), {
     ...PANEL_SWR_DEFAULTS,
     fallbackData: memory ?? fallback,
     revalidateOnMount: memory == null && fallback == null,
@@ -81,6 +103,14 @@ export function usePanelData(url: string | null, options?: SWRConfiguration) {
 
 export function persistPanelCache(url: string, data: unknown) {
   writeSession(url, data);
+}
+
+export function mutatePanel(
+  url: string,
+  data?: unknown | Promise<unknown> | ((current: unknown) => unknown),
+  opts?: { revalidate?: boolean }
+) {
+  return mutate(panelSWRKey(url), data as never, opts);
 }
 
 export function invalidatePanel(...keys: string[]) {
@@ -128,6 +158,7 @@ export function panelWarmUrls(period = currentMonth()) {
     `${PANEL.dashboard}?period=${period}`,
     `${PANEL.hub}?period=${period}`,
     PANEL.creators,
+    `${PANEL.diamonds}?period=${period}`,
     `${PANEL.recruitment}?year=${year}&month=${Number(period.slice(5, 7))}`,
     `${PANEL.programming}?week=${ymd(mondayOf())}`,
     `${PANEL.onboarding}?year=${year}&month=${Number(period.slice(5, 7))}`,
@@ -139,7 +170,6 @@ export function panelWarmUrls(period = currentMonth()) {
     PANEL.livecoins,
     PANEL.metrics,
     PANEL.ops,
-    `${PANEL.diamonds}?period=${period}`,
     `${PANEL.tasks}?period=${period}`,
     `${PANEL.bonos}?period=${period}`,
     `${PANEL.kpi}?period=${period}`,
@@ -149,22 +179,21 @@ export function panelWarmUrls(period = currentMonth()) {
 function warm(url: string) {
   void panelFetcher(url)
     .then((data) => {
-      void mutate(url, data, { revalidate: false });
+      void mutate(panelSWRKey(url), data, { revalidate: false });
     })
     .catch(() => {
       /* no envenenar la caché */
     });
 }
 
-/** Precarga las APIs del panel para que cada pestaña abra al instante. */
+/** Precarga suave: no satura la base al cambiar de agencia. */
 export function prefetchPanel() {
   if (typeof window === "undefined") return;
 
   const urls = panelWarmUrls();
-  urls.slice(0, 2).forEach(warm);
   window.setTimeout(() => {
-    urls.slice(2).forEach((url, i) => {
-      window.setTimeout(() => warm(url), i * 180);
+    urls.slice(2, 6).forEach((url, i) => {
+      window.setTimeout(() => warm(url), i * 400);
     });
-  }, 250);
+  }, 1200);
 }

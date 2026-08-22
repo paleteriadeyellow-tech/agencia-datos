@@ -4,46 +4,32 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SWRConfig } from "swr";
 import { QuickCreateProvider } from "@/components/quick-create";
-import { PANEL_SWR_DEFAULTS, prefetchPanel } from "@/lib/swr";
+import { PANEL_SWR_DEFAULTS, bindPanelAgency, prefetchPanel } from "@/lib/swr";
 import { ViewAsProvider } from "@/components/view-as";
 import { PanelWarmup } from "@/components/panel-warmup";
 import { useAgency } from "@/lib/use-agency";
 
-const ALL_ROUTES = [
+const PREFETCH_ROUTES = [
   "/dashboard",
   "/creadores",
   "/control-diamantes",
-  "/metricas",
-  "/envio-kpi",
-  "/mensajes-wa",
-  "/tareas",
-  "/campanas",
-  "/calendario",
-  "/reclutamiento",
-  "/programacion",
-  "/control-usuarios",
-  "/llamadas",
-  "/graduacion-batallas",
-  "/sugerencia-video",
-  "/batallas-oficiales",
-  "/finanzas",
-  "/bonos",
-  "/contratos",
-  "/managers",
 ];
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { path } = useAgency();
+  const { slug, path } = useAgency();
+  bindPanelAgency(slug);
 
   useEffect(() => {
-    ALL_ROUTES.forEach((href) => router.prefetch(path(href)));
+    PREFETCH_ROUTES.forEach((href) => router.prefetch(path(href)));
   }, [router, path, pathname]);
 
   useEffect(() => {
-    prefetchPanel();
-  }, []);
+    bindPanelAgency(slug);
+    const t = window.setTimeout(() => prefetchPanel(), 400);
+    return () => window.clearTimeout(t);
+  }, [slug]);
 
   return (
     <SWRConfig value={PANEL_SWR_DEFAULTS}>

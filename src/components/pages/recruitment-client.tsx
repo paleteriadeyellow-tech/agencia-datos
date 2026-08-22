@@ -10,8 +10,7 @@ import { Modal } from "@/components/modal";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
-import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
-import { mutate as cacheMutate } from "swr";
+import { PANEL, persistPanelCache, mutatePanel, usePanelData } from "@/lib/swr";
 import { useViewAs } from "@/components/view-as";
 import { isAdmin } from "@/lib/permissions";
 import {
@@ -229,7 +228,7 @@ export default function RecruitmentClient() {
       updater: (rows: Lead[]) => Lead[]
     ) => {
       const key = `${PANEL.recruitment}?year=${targetYear}&month=${targetMonth}`;
-      void cacheMutate(
+      void mutatePanel(
         key,
         (current: Payload | undefined) => {
           const base = current ?? {

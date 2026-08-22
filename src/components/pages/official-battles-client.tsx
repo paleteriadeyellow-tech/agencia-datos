@@ -8,8 +8,7 @@ import { Button, Panel, inputClass } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
-import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
-import { mutate as cacheMutate } from "swr";
+import { PANEL, persistPanelCache, mutatePanel, usePanelData } from "@/lib/swr";
 import { CreatorSuggestInput } from "@/components/creator-suggest";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { useCreatorsRoster, type RosterCreator } from "@/lib/use-creators-roster";
@@ -198,7 +197,7 @@ export default function OfficialBattlesClient() {
   const writeList = useCallback(
     (targetYear: string, targetMonth: string, updater: (rows: Row[]) => Row[]) => {
       const key = `${PANEL.officialBattles}?year=${targetYear}&month=${targetMonth}`;
-      void cacheMutate(
+      void mutatePanel(
         key,
         (current: Payload | undefined) => {
           const base: Payload = current ?? {

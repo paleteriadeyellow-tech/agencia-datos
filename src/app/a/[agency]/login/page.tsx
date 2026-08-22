@@ -7,6 +7,8 @@ import { useState } from "react";
 import { Radio } from "lucide-react";
 import { Button, Field, inputClass } from "@/components/ui";
 import { useAgency } from "@/lib/use-agency";
+import { writeViewAsCookie } from "@/lib/view-as";
+import { bindPanelAgency } from "@/lib/swr";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,6 +32,8 @@ export default function LoginPage() {
       setError("Email o contraseña incorrectos.");
       return;
     }
+    writeViewAsCookie(null);
+    bindPanelAgency(slug);
     router.push(path("/dashboard"));
     router.refresh();
   }

@@ -9,8 +9,7 @@ import { Button, EmptyState, Field, Panel, inputClass } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
-import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
-import { mutate as cacheMutate } from "swr";
+import { PANEL, persistPanelCache, mutatePanel, usePanelData } from "@/lib/swr";
 import {
   BOOST_OPTIONS,
   CONTENT_IDEAS,
@@ -128,7 +127,7 @@ export default function VideoSuggestionsClient() {
   const writeList = useCallback(
     (targetYear: string, targetMonth: string, updater: (rows: Row[]) => Row[]) => {
       const key = `${PANEL.videoSuggestions}?year=${targetYear}&month=${targetMonth}`;
-      void cacheMutate(
+      void mutatePanel(
         key,
         (current: Payload | undefined) => {
           const base: Payload = current ?? {

@@ -29,7 +29,8 @@ import {
   ArrowLeftRight,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
+import { writeViewAsCookie } from "@/lib/view-as";
 import { cn } from "@/lib/utils";
 import { filterNavByRole } from "@/lib/permissions";
 import { useAgency } from "@/lib/use-agency";
@@ -70,7 +71,7 @@ export function Sidebar() {
   const visibleNav = useMemo(() => filterNavByRole(nav, role), [role]);
 
   useEffect(() => {
-    visibleNav.forEach((item) => router.prefetch(path(item.href)));
+    visibleNav.slice(0, 4).forEach((item) => router.prefetch(path(item.href)));
   }, [router, path, visibleNav]);
 
   const content = (
@@ -129,6 +130,10 @@ export function Sidebar() {
       <div className="space-y-2 border-t border-border-soft p-4">
         <Link
           href="/"
+          onClick={() => {
+            writeViewAsCookie(null);
+            void signOut({ redirect: false });
+          }}
           className="flex items-center gap-2 text-xs text-text-muted transition hover:text-accent"
         >
           <ArrowLeftRight className="h-3.5 w-3.5" />

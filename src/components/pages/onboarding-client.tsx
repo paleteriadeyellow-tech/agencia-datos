@@ -10,8 +10,7 @@ import { Modal } from "@/components/modal";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
-import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
-import { mutate as cacheMutate } from "swr";
+import { PANEL, persistPanelCache, mutatePanel, usePanelData } from "@/lib/swr";
 import {
   CHECK_KEYS,
   ONBOARDING_CHECKS,
@@ -82,7 +81,7 @@ export default function OnboardingClient() {
   const writeList = useCallback(
     (targetYear: string, targetMonth: string, updater: (rows: Row[]) => Row[]) => {
       const key = `${PANEL.onboarding}?year=${targetYear}&month=${targetMonth}`;
-      void cacheMutate(
+      void mutatePanel(
         key,
         (current: Payload | undefined) => {
           const base: Payload = current ?? { rows: [], years: payload?.years ?? [] };
