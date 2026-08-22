@@ -254,34 +254,33 @@ export default function BattlesClient() {
             ))}
           </datalist>
 
-          <div className="overflow-x-auto pb-4">
-            <div className="flex min-w-[1480px] gap-2">
+          <div className="grid w-full grid-cols-2 gap-1.5 sm:grid-cols-5 xl:grid-cols-10">
               {BATTLE_COLUMNS.map((col) => {
                 const cards = byColumn[col.id] ?? [];
                 return (
                   <section
                     key={col.id}
-                    className="flex w-[142px] shrink-0 flex-col rounded-xl border border-sky-500/20 bg-sky-500/5"
+                    className="flex min-w-0 flex-col rounded-xl border border-sky-500/20 bg-sky-500/5"
                   >
-                    <header className="rounded-t-xl bg-sky-600/40 px-2 py-2 text-center">
-                      <h2 className="text-[10px] font-bold uppercase leading-tight tracking-wide text-white">
+                    <header className="rounded-t-xl bg-sky-600/40 px-1 py-1.5 text-center">
+                      <h2 className="text-[9px] font-bold uppercase leading-tight tracking-wide text-white">
                         {col.label}
                       </h2>
                       <p className="mt-0.5 text-[10px] text-sky-100/80">
                         {cards.length}
                       </p>
                     </header>
-                    <div className="flex flex-1 flex-col gap-1.5 p-1.5">
+                    <div className="flex flex-1 flex-col gap-1 p-1">
                       {cards.map((card) => (
                         <article
                           key={card.id}
                           className={cn(
-                            "rounded-lg border px-1.5 py-1.5",
+                            "rounded-md border px-1 py-1",
                             battleColorClass(card.color),
                             card.done && "opacity-70"
                           )}
                         >
-                          <div className="flex items-start gap-1">
+                          <div className="flex items-start gap-0.5">
                             <button
                               type="button"
                               title={card.done ? "Quitar palomita" : "Marcar listo"}
@@ -289,18 +288,18 @@ export default function BattlesClient() {
                                 patchCard(card.id, { done: !card.done })
                               }
                               className={cn(
-                                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                                "mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border",
                                 card.done
                                   ? "border-success bg-success text-white"
                                   : "border-border-soft"
                               )}
                             >
                               {card.done ? (
-                                <Check className="h-3 w-3" strokeWidth={3} />
+                                <Check className="h-2.5 w-2.5" strokeWidth={3} />
                               ) : null}
                             </button>
                             <input
-                              className="min-w-0 flex-1 bg-transparent text-[11px] font-medium outline-none"
+                              className="min-w-0 flex-1 bg-transparent text-[10px] font-medium outline-none"
                               value={card.creatorName}
                               onChange={(e) =>
                                 patchCard(card.id, { creatorName: e.target.value })
@@ -315,14 +314,14 @@ export default function BattlesClient() {
                             </button>
                           </div>
                           <input
-                            className="mt-1 w-full bg-transparent text-[10px] text-text-muted outline-none"
+                            className="mt-0.5 w-full bg-transparent text-[9px] text-text-muted outline-none"
                             placeholder="nota / horario"
                             value={card.note}
                             onChange={(e) =>
                               patchCard(card.id, { note: e.target.value })
                             }
                           />
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                          <div className="mt-1 flex flex-wrap items-center gap-0.5">
                             {BATTLE_COLORS.map((c) => (
                               <button
                                 key={c.id}
@@ -330,7 +329,7 @@ export default function BattlesClient() {
                                 title={c.label}
                                 onClick={() => patchCard(card.id, { color: c.id })}
                                 className={cn(
-                                  "h-2.5 w-2.5 rounded-full border",
+                                  "h-2 w-2 rounded-full border",
                                   c.className,
                                   card.color === c.id && "ring-1 ring-white"
                                 )}
@@ -338,7 +337,7 @@ export default function BattlesClient() {
                             ))}
                           </div>
                           <select
-                            className="mt-1 w-full bg-transparent text-[10px] text-text-muted outline-none"
+                            className="mt-0.5 w-full truncate bg-transparent text-[9px] text-text-muted outline-none"
                             value={card.columnKey}
                             onChange={(e) =>
                               patchCard(card.id, { columnKey: e.target.value })
@@ -359,11 +358,11 @@ export default function BattlesClient() {
                         }}
                         className="mt-auto"
                       >
-                        <div className="flex items-center gap-1 rounded-lg border border-dashed border-border-soft px-1.5 py-1">
-                          <Plus className="h-3 w-3 text-text-muted" />
+                        <div className="flex items-center gap-1 rounded-md border border-dashed border-border-soft px-1 py-1">
+                          <Plus className="h-3 w-3 shrink-0 text-text-muted" />
                           <input
                             list="battle-creators"
-                            className="min-w-0 flex-1 bg-transparent text-[11px] outline-none placeholder:text-text-muted/50"
+                            className="min-w-0 flex-1 bg-transparent text-[10px] outline-none placeholder:text-text-muted/50"
                             placeholder="Agregar…"
                             value={drafts[col.id] ?? ""}
                             onChange={(e) =>
@@ -376,7 +375,6 @@ export default function BattlesClient() {
                   </section>
                 );
               })}
-            </div>
           </div>
         </>
       )}
