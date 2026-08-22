@@ -14,6 +14,7 @@ export const MANAGER_ALLOWED_PATHS = [
   "/control-usuarios",
   "/llamadas",
   "/graduacion-batallas",
+  "/sugerencia-video",
   "/reporte",
 ] as const;
 

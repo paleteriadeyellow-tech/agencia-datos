@@ -408,6 +408,31 @@ model BattleGraduation {
   @@index([agencySlug, year, month])
 }
 
+model VideoSuggestion {
+  id                String   @id @default(cuid())
+  agencySlug        String   @default("streamersfederation")
+  date              DateTime
+  year              Int
+  month             Int
+  contentType       String   @default("VIDEO")
+  contentIdea       String   @default("")
+  objective         String   @default("")
+  suggestedBy       String   @default("")
+  videoUrl          String   @default("")
+  boostRequest      String   @default("NO")
+  managerToCreate   String   @default("")
+  managerToCreateId String?
+  replicateMode     String   @default("SOLO MANAGERS")
+  replicateCreators String   @default("")
+  videoCreated      String   @default("AUN NO")
+  script            String   @default("")
+  createdById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([agencySlug, year, month])
+}
+
 model CreatorPortalToken {
   id         String   @id @default(cuid())
   agencySlug String   @default("streamersfederation")
