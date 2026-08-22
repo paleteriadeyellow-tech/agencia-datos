@@ -64,3 +64,25 @@ export function battleLevel(id: string) {
 export function boosterTone(id: string) {
   return BOOSTER_OPTIONS.find((b) => b.id === id) ?? BOOSTER_OPTIONS[0]!;
 }
+
+export function todayIso() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+}
+
+export function isoDate(value: Date | string | null | undefined) {
+  if (!value) return todayIso();
+  if (typeof value === "string") return value.slice(0, 10);
+  return value.toISOString().slice(0, 10);
+}
+
+export function dateParts(iso: string) {
+  const [y, m] = iso.slice(0, 10).split("-");
+  const year = Number(y);
+  const month = Number(m);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    const n = new Date();
+    return { year: n.getFullYear(), month: n.getMonth() + 1 };
+  }
+  return { year, month };
+}

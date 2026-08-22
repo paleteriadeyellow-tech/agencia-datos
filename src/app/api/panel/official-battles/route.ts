@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
-import { dateParts, isoDate, todayIso } from "@/lib/video-suggestions";
+import { dateParts, isoDate, todayIso } from "@/lib/official-battles";
 
 export const dynamic = "force-dynamic";
 
