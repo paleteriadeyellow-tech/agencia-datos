@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Check, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Field, inputClass } from "@/components/ui";
@@ -11,9 +11,7 @@ import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
 import { mutate as cacheMutate } from "swr";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
 import {
-  BATTLE_COLORS,
   BATTLE_COLUMNS,
-  battleColorClass,
 } from "@/lib/battles";
 
 type Card = {
@@ -242,9 +240,8 @@ export default function BattlesClient() {
           </div>
 
           <p className="mb-3 text-[11px] leading-relaxed text-text-muted">
-            Novatos: más de 20 mil diamantes mensuales. En cada columna hay varias
-            filas de Agregar; llena una, da Enter o sal del recuadro, y sigue abajo
-            con la siguiente. Toca + filas si necesitas más.
+            En cada columna hay varias filas de Agregar. Escribe el nombre, da Enter
+            o sal del recuadro, y sigue abajo. Toca + filas si necesitas más.
             {!viewingCurrent && (
               <>
                 {" "}
@@ -286,81 +283,23 @@ export default function BattlesClient() {
                       {cards.map((card) => (
                         <article
                           key={card.id}
-                          className={cn(
-                            "rounded-md border px-1 py-1",
-                            battleColorClass(card.color),
-                            card.done && "opacity-70"
-                          )}
+                          className="group flex items-center gap-0.5 rounded-md border border-border-soft bg-bg-panel px-1 py-1"
                         >
-                          <div className="flex items-start gap-0.5">
-                            <button
-                              type="button"
-                              title={card.done ? "Quitar palomita" : "Marcar listo"}
-                              onClick={() =>
-                                patchCard(card.id, { done: !card.done })
-                              }
-                              className={cn(
-                                "mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border",
-                                card.done
-                                  ? "border-success bg-success text-white"
-                                  : "border-border-soft"
-                              )}
-                            >
-                              {card.done ? (
-                                <Check className="h-2.5 w-2.5" strokeWidth={3} />
-                              ) : null}
-                            </button>
-                            <input
-                              className="min-w-0 flex-1 bg-transparent text-[10px] font-medium outline-none"
-                              value={card.creatorName}
-                              onChange={(e) =>
-                                patchCard(card.id, { creatorName: e.target.value })
-                              }
-                            />
-                            <button
-                              type="button"
-                              className="text-text-muted hover:text-danger"
-                              onClick={() => removeCard(card.id)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
                           <input
-                            className="mt-0.5 w-full bg-transparent text-[9px] text-text-muted outline-none"
-                            placeholder="nota / horario"
-                            value={card.note}
+                            className="min-w-0 flex-1 bg-transparent text-center text-[11px] font-medium outline-none"
+                            value={card.creatorName}
                             onChange={(e) =>
-                              patchCard(card.id, { note: e.target.value })
+                              patchCard(card.id, { creatorName: e.target.value })
                             }
                           />
-                          <div className="mt-1 flex flex-wrap items-center gap-0.5">
-                            {BATTLE_COLORS.map((c) => (
-                              <button
-                                key={c.id}
-                                type="button"
-                                title={c.label}
-                                onClick={() => patchCard(card.id, { color: c.id })}
-                                className={cn(
-                                  "h-2 w-2 rounded-full border",
-                                  c.className,
-                                  card.color === c.id && "ring-1 ring-white"
-                                )}
-                              />
-                            ))}
-                          </div>
-                          <select
-                            className="mt-0.5 w-full truncate bg-transparent text-[9px] text-text-muted outline-none"
-                            value={card.columnKey}
-                            onChange={(e) =>
-                              patchCard(card.id, { columnKey: e.target.value })
-                            }
+                          <button
+                            type="button"
+                            title="Quitar"
+                            className="hidden shrink-0 text-text-muted hover:text-danger group-hover:block"
+                            onClick={() => removeCard(card.id)}
                           >
-                            {BATTLE_COLUMNS.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.label}
-                              </option>
-                            ))}
-                          </select>
+                            <Trash2 className="h-3 w-3" />
+                          </button>
                         </article>
                       ))}
                       {padSlots(drafts[col.id]).map((value, idx) => (
