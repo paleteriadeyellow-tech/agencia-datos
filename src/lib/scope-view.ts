@@ -1,7 +1,10 @@
 import { pctChange } from "@/lib/utils";
 
-export function nickKey(value: string) {
-  return value.replace(/^@/, "").trim().toLowerCase();
+export function nickKey(value: string | null | undefined) {
+  return String(value ?? "")
+    .replace(/^@/, "")
+    .trim()
+    .toLowerCase();
 }
 
 export function filterByManagerId<T extends { managerId?: string | null }>(
@@ -267,21 +270,41 @@ export function scopeDashboardData<T extends ScopedDashboard>(
   data: T,
   viewAsId: string | null | undefined
 ): T {
+  const diamondGoal = data.diamondGoal ?? {
+    target: 0,
+    myTarget: 0,
+    agencyTotal: 0,
+    myTotal: 0,
+    canEdit: false,
+    updatedAt: null,
+    managers: [],
+  };
+  const topCreators = data.topCreators ?? [];
+  const pendingTasks = data.pendingTasks ?? [];
+  const inactiveCreators = data.inactiveCreators ?? [];
+
   if (!viewAsId) {
     return {
       ...data,
-      diamondGoal: { ...data.diamondGoal, isManagerView: false },
-      topCreators: data.topCreators.slice(0, 5).map((row, i) => ({
+      diamondGoal: { ...diamondGoal, isManagerView: false },
+      topCreators: topCreators.slice(0, 5).map((row, i) => ({
         ...row,
         rank: i + 1,
       })),
-      pendingTasks: data.pendingTasks.slice(0, 6),
-      inactiveCreators: data.inactiveCreators.slice(0, 5),
+      pendingTasks: pendingTasks.slice(0, 6),
+      inactiveCreators: inactiveCreators.slice(0, 5),
     };
   }
 
   const kpis = data.kpisByManager?.[viewAsId] ?? {
-    ...data.kpis,
+    ...(data.kpis ?? {
+      totalCreators: 0,
+      activeCreators: 0,
+      newCreators: 0,
+      diamonds: 0,
+      hours: 0,
+      diamondUsers: 0,
+    }),
     totalCreators: 0,
     activeCreators: 0,
     newCreators: 0,
@@ -289,26 +312,26 @@ export function scopeDashboardData<T extends ScopedDashboard>(
     hours: 0,
     diamondUsers: 0,
   };
-  const viewedManager = data.diamondGoal.managers.find((m) => m.id === viewAsId);
+  const viewedManager = diamondGoal.managers.find((m) => m.id === viewAsId);
   const myTotal = viewedManager?.diamonds ?? kpis.diamonds;
 
   return {
     ...data,
     kpis,
     diamondGoal: {
-      ...data.diamondGoal,
+      ...diamondGoal,
       myTotal,
       myTarget: viewedManager?.target ?? 0,
       isManagerView: true,
     },
-    topCreators: data.topCreators
+    topCreators: topCreators
       .filter((row) => row.managerId === viewAsId)
       .slice(0, 5)
       .map((row, i) => ({ ...row, rank: i + 1 })),
-    pendingTasks: data.pendingTasks
+    pendingTasks: pendingTasks
       .filter((t) => t.managerId === viewAsId || !t.creatorId)
       .slice(0, 6),
-    inactiveCreators: data.inactiveCreators
+    inactiveCreators: inactiveCreators
       .filter((c) => c.managerId === viewAsId)
       .slice(0, 5),
   };

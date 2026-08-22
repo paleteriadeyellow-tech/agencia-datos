@@ -533,8 +533,11 @@ export default function OfficialBattlesClient() {
         }
       />
 
-      {error ? (
-        <PanelLoadError onRetry={() => void mutate()} />
+      {error && !payload ? (
+        <PanelLoadError
+          message={error instanceof Error ? error.message : undefined}
+          onRetry={() => void mutate()}
+        />
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">

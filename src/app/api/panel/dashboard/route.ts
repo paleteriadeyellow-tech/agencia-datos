@@ -8,7 +8,7 @@ import {
   diamondWhere,
   userIdFromToken,
 } from "@/lib/creator-scope";
-import { prisma } from "@/lib/prisma";
+import { isMissingSchema, prisma } from "@/lib/prisma";
 import { currentMonth, monthRange } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,7 @@ function parsePeriod(raw: string | null) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
+  try {
   const { agencySlug, scope, isAdmin: isAdminUser, token } = auth;
   const currentUserId = userIdFromToken(token) ?? null;
   const scopeFilter = creatorWhere(scope, agencySlug);
@@ -31,6 +32,16 @@ export async function GET(req: NextRequest) {
   const fourteenDaysAgo = new Date();
   fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 
+  const managerGoalRows = await prisma.managerMonthlyGoal
+    .findMany({
+      where: { agencySlug, period },
+      select: { managerId: true, target: true },
+    })
+    .catch((e) => {
+      if (isMissingSchema(e)) return [];
+      throw e;
+    });
+
   const [
     totalCreators,
     activeCreators,
@@ -38,7 +49,6 @@ export async function GET(req: NextRequest) {
     diamondAgg,
     agencyDiamondAgg,
     goalRow,
-    managerGoalRows,
     topDiamondRows,
     pendingTasks,
     activeWithLatest,
@@ -60,10 +70,6 @@ export async function GET(req: NextRequest) {
     prisma.monthlyDiamondGoal.findUnique({
       where: { agencySlug_period: { agencySlug, period } },
       select: { target: true, updatedAt: true },
-    }),
-    prisma.managerMonthlyGoal.findMany({
-      where: { agencySlug, period },
-      select: { managerId: true, target: true },
     }),
     prisma.diamondControl.findMany({
       where: { period, ...myDiamondWhere },
@@ -285,6 +291,13 @@ export async function GET(req: NextRequest) {
     })),
     inactiveCreators,
   });
+  } catch (e) {
+    console.error("dashboard GET", e);
+    return NextResponse.json(
+      { error: "No se pudo cargar el overview. Reintenta." },
+      { status: 500 }
+    );
+  }
 }
 
 const patchSchema = z
@@ -377,7 +390,17 @@ export async function PATCH(req: NextRequest) {
           update: { target: m.target },
         })
       );
-    if (ops.length) await prisma.$transaction(ops);
+    if (ops.length) {
+      try {
+        await prisma.$transaction(ops);
+      } catch (e) {
+        if (!isMissingSchema(e)) throw e;
+        return NextResponse.json(
+          { error: "Falta actualizar la base. Corre prisma db push." },
+          { status: 500 }
+        );
+      }
+    }
   }
 
   if (target !== undefined) {

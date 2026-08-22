@@ -31,7 +31,16 @@ export async function panelFetcher(url: string) {
   const res = await fetch(url, {
     headers: { "x-skip-view-as": "1" },
   });
-  if (!res.ok) throw new Error("Error al cargar");
+  if (!res.ok) {
+    let message = "Error al cargar";
+    try {
+      const json = (await res.json()) as { error?: string };
+      if (json?.error) message = json.error;
+    } catch {
+      /* html 500 */
+    }
+    throw new Error(message);
+  }
   const json = await res.json();
   writeSession(url, json);
   return json;
@@ -46,11 +55,12 @@ function urlFromKey(key: unknown): string | null {
 export const PANEL_SWR_DEFAULTS: SWRConfiguration = {
   fetcher: panelFetcher,
   revalidateOnFocus: false,
-  revalidateOnReconnect: false,
+  revalidateOnReconnect: true,
   revalidateIfStale: false,
   keepPreviousData: true,
   dedupingInterval: 60_000,
-  errorRetryCount: 1,
+  errorRetryCount: 2,
+  errorRetryInterval: 1200,
 };
 
 export function usePanelData(url: string | null, options?: SWRConfiguration) {
@@ -64,7 +74,7 @@ export function usePanelData(url: string | null, options?: SWRConfiguration) {
   return useSWR(url, panelFetcher, {
     ...PANEL_SWR_DEFAULTS,
     fallbackData: memory ?? fallback,
-    revalidateOnMount: Boolean(fallback) && memory == null,
+    revalidateOnMount: memory == null && fallback == null,
     ...options,
   });
 }
@@ -151,10 +161,10 @@ export function prefetchPanel() {
   if (typeof window === "undefined") return;
 
   const urls = panelWarmUrls();
-  urls.slice(0, 4).forEach(warm);
+  urls.slice(0, 2).forEach(warm);
   window.setTimeout(() => {
-    urls.slice(4).forEach((url, i) => {
-      window.setTimeout(() => warm(url), i * 40);
+    urls.slice(2).forEach((url, i) => {
+      window.setTimeout(() => warm(url), i * 180);
     });
-  }, 40);
+  }, 250);
 }

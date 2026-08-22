@@ -9,9 +9,13 @@ export function PanelLoadError({
   message?: string;
   onRetry?: () => void;
 }) {
+  const text =
+    message && message !== "Error al cargar"
+      ? message
+      : "No se pudo cargar esta página.";
   return (
     <Panel className="border-danger/30 py-10 text-center">
-      <p className="text-sm text-danger">{message}</p>
+      <p className="text-sm text-danger">{text}</p>
       {onRetry && (
         <Button type="button" variant="secondary" className="mt-4" onClick={onRetry}>
           Reintentar

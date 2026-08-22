@@ -140,8 +140,11 @@ export default function DashboardClient() {
         </div>
       </div>
 
-      {error ? (
-        <PanelLoadError onRetry={() => mutate()} />
+      {error && !view ? (
+        <PanelLoadError
+          message={error.message}
+          onRetry={() => mutate()}
+        />
       ) : !view ? (
         <div className="space-y-5">
           <div className="grid animate-pulse gap-5 sm:grid-cols-2 xl:grid-cols-4">

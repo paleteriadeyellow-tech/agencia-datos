@@ -307,8 +307,11 @@ export default function VideoSuggestionsClient() {
         }
       />
 
-      {error ? (
-        <PanelLoadError onRetry={() => void mutate()} />
+      {error && !payload ? (
+        <PanelLoadError
+          message={error instanceof Error ? error.message : undefined}
+          onRetry={() => void mutate()}
+        />
       ) : (
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
-import { prisma } from "@/lib/prisma";
+import { isMissingSchema, prisma } from "@/lib/prisma";
 import { dateParts, isoDate, todayIso } from "@/lib/video-suggestions";
 
 export const dynamic = "force-dynamic";
@@ -78,38 +78,60 @@ export async function GET(req: NextRequest) {
       : {}),
   };
 
-  const [rows, yearRows, managers] = await Promise.all([
-    prisma.videoSuggestion.findMany({
-      where,
-      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    }),
-    prisma.videoSuggestion.findMany({
-      where: { agencySlug },
-      select: { year: true },
-      distinct: ["year"],
-    }),
-    prisma.user.findMany({
-      where: { agencySlug },
-      select: { id: true, name: true, role: true },
-      orderBy: { name: "asc" },
-    }),
-  ]);
+  try {
+    const [rows, yearRows, managers] = await Promise.all([
+      prisma.videoSuggestion.findMany({
+        where,
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      }),
+      prisma.videoSuggestion.findMany({
+        where: { agencySlug },
+        select: { year: true },
+        distinct: ["year"],
+      }),
+      prisma.user.findMany({
+        where: { agencySlug },
+        select: { id: true, name: true, role: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
 
-  const years = [
-    ...new Set(
-      yearRows
-        .map((r) => r.year)
-        .filter((y): y is number => typeof y === "number")
-    ),
-  ].sort((a, b) => b - a);
+    const years = [
+      ...new Set(
+        yearRows
+          .map((r) => r.year)
+          .filter((y): y is number => typeof y === "number")
+      ),
+    ].sort((a, b) => b - a);
 
-  return NextResponse.json({
-    year,
-    month,
-    rows: rows.map(serialize),
-    years,
-    managers: managers.map((m) => ({ id: m.id, name: m.name, role: m.role })),
-  });
+    return NextResponse.json({
+      year,
+      month,
+      rows: rows.map(serialize),
+      years,
+      managers: managers.map((m) => ({ id: m.id, name: m.name, role: m.role })),
+    });
+  } catch (e) {
+    if (isMissingSchema(e)) {
+      const managers = await prisma.user.findMany({
+        where: { agencySlug },
+        select: { id: true, name: true, role: true },
+        orderBy: { name: "asc" },
+      });
+      return NextResponse.json({
+        year,
+        month,
+        rows: [],
+        years: [],
+        managers: managers.map((m) => ({ id: m.id, name: m.name, role: m.role })),
+      });
+    }
+    console.error("video-suggestions GET", e);
+    return NextResponse.json(
+      { error: "No se pudieron cargar las sugerencias. Reintenta." },
+      { status: 500 }
+    );
+  }
 }
 
 const postSchema = z.object({

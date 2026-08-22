@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
-import { prisma } from "@/lib/prisma";
+import { isMissingSchema, prisma } from "@/lib/prisma";
 import { dateParts, isoDate, todayIso } from "@/lib/official-battles";
 
 export const dynamic = "force-dynamic";
@@ -70,32 +70,43 @@ export async function GET(req: NextRequest) {
       : {}),
   };
 
-  const [rows, yearRows] = await Promise.all([
-    prisma.officialBattle.findMany({
-      where,
-      orderBy: [{ sortOrder: "asc" }, { date: "asc" }, { createdAt: "asc" }],
-    }),
-    prisma.officialBattle.findMany({
-      where: { agencySlug },
-      select: { year: true },
-      distinct: ["year"],
-    }),
-  ]);
+  try {
+    const [rows, yearRows] = await Promise.all([
+      prisma.officialBattle.findMany({
+        where,
+        orderBy: [{ sortOrder: "asc" }, { date: "asc" }, { createdAt: "asc" }],
+      }),
+      prisma.officialBattle.findMany({
+        where: { agencySlug },
+        select: { year: true },
+        distinct: ["year"],
+      }),
+    ]);
 
-  const years = [
-    ...new Set(
-      yearRows
-        .map((r) => r.year)
-        .filter((y): y is number => typeof y === "number")
-    ),
-  ].sort((a, b) => b - a);
+    const years = [
+      ...new Set(
+        yearRows
+          .map((r) => r.year)
+          .filter((y): y is number => typeof y === "number")
+      ),
+    ].sort((a, b) => b - a);
 
-  return NextResponse.json({
-    year,
-    month,
-    rows: rows.map(serialize),
-    years,
-  });
+    return NextResponse.json({
+      year,
+      month,
+      rows: rows.map(serialize),
+      years,
+    });
+  } catch (e) {
+    if (isMissingSchema(e)) {
+      return NextResponse.json({ year, month, rows: [], years: [] });
+    }
+    console.error("official-battles GET", e);
+    return NextResponse.json(
+      { error: "No se pudieron cargar las batallas. Reintenta." },
+      { status: 500 }
+    );
+  }
 }
 
 const postSchema = z.object({
