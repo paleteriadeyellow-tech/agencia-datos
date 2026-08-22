@@ -36,6 +36,14 @@ type Payload = {
   years: number[];
 };
 
+const EMPTY_SLOTS = 8;
+
+function padSlots(list: string[] | undefined) {
+  const next = [...(list ?? [])];
+  while (next.length < EMPTY_SLOTS) next.push("");
+  return next;
+}
+
 export default function BattlesClient() {
   const now = new Date();
   const currentYear = String(now.getFullYear());
@@ -43,7 +51,7 @@ export default function BattlesClient() {
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonthNum);
   const [hint, setHint] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string[]>>({});
   const timers = useRef<Record<string, number>>({});
   const { creators: roster } = useCreatorsRoster();
 
@@ -109,16 +117,16 @@ export default function BattlesClient() {
     [writeList, mutate]
   );
 
-  function addCard(columnKey: string) {
-    const creatorName = (drafts[columnKey] ?? "").trim();
-    if (!creatorName) return;
-    const tempId = `tmp-${Date.now()}`;
+  function addCard(columnKey: string, creatorName: string, slotIndex: number) {
+    const name = creatorName.trim();
+    if (!name) return;
+    const tempId = `tmp-${Date.now()}-${slotIndex}`;
     const optimistic: Card = {
       id: tempId,
       year: Number(year),
       month: Number(month),
       columnKey,
-      creatorName,
+      creatorName: name,
       note: "",
       color: "none",
       done: false,
@@ -126,14 +134,18 @@ export default function BattlesClient() {
       managerName: "",
     };
     writeList((list) => [...list, optimistic]);
-    setDrafts((d) => ({ ...d, [columnKey]: "" }));
+    setDrafts((d) => {
+      const list = padSlots(d[columnKey]);
+      list[slotIndex] = "";
+      return { ...d, [columnKey]: list };
+    });
     void fetch(PANEL.battles, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "create",
         columnKey,
-        creatorName,
+        creatorName: name,
         year: Number(year),
         month: Number(month),
       }),
@@ -230,9 +242,9 @@ export default function BattlesClient() {
           </div>
 
           <p className="mb-3 text-[11px] leading-relaxed text-text-muted">
-            Novatos: más de 20 mil diamantes mensuales. Toca el color o la palomita
-            para marcar el estado. Escribe un usuario y Enter para agregarlo a la
-            columna.
+            Novatos: más de 20 mil diamantes mensuales. En cada columna hay varias
+            filas de Agregar; llena una, da Enter o sal del recuadro, y sigue abajo
+            con la siguiente. Toca + filas si necesitas más.
             {!viewingCurrent && (
               <>
                 {" "}
@@ -351,26 +363,48 @@ export default function BattlesClient() {
                           </select>
                         </article>
                       ))}
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          addCard(col.id);
-                        }}
-                        className="mt-auto"
-                      >
-                        <div className="flex items-center gap-1 rounded-md border border-dashed border-border-soft px-1 py-1">
+                      {padSlots(drafts[col.id]).map((value, idx) => (
+                        <div
+                          key={`${col.id}-slot-${idx}`}
+                          className="flex items-center gap-1 rounded-md border border-dashed border-border-soft px-1 py-1"
+                        >
                           <Plus className="h-3 w-3 shrink-0 text-text-muted" />
                           <input
                             list="battle-creators"
                             className="min-w-0 flex-1 bg-transparent text-[10px] outline-none placeholder:text-text-muted/50"
                             placeholder="Agregar…"
-                            value={drafts[col.id] ?? ""}
+                            value={value}
                             onChange={(e) =>
-                              setDrafts((d) => ({ ...d, [col.id]: e.target.value }))
+                              setDrafts((d) => {
+                                const list = padSlots(d[col.id]);
+                                list[idx] = e.target.value;
+                                return { ...d, [col.id]: list };
+                              })
                             }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                addCard(col.id, value, idx);
+                              }
+                            }}
+                            onBlur={() => {
+                              if (value.trim()) addCard(col.id, value, idx);
+                            }}
                           />
                         </div>
-                      </form>
+                      ))}
+                      <button
+                        type="button"
+                        className="rounded-md px-1 py-1 text-[9px] text-cyan hover:bg-sky-500/10"
+                        onClick={() =>
+                          setDrafts((d) => ({
+                            ...d,
+                            [col.id]: [...padSlots(d[col.id]), "", "", "", ""],
+                          }))
+                        }
+                      >
+                        + más filas
+                      </button>
                     </div>
                   </section>
                 );
