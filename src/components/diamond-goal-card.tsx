@@ -17,13 +17,13 @@ import { useViewAs } from "@/components/view-as";
 
 export type DiamondGoal = {
   target: number;
-  myTarget?: number;
+  myTarget: number;
   agencyTotal: number;
   myTotal: number;
   canEdit: boolean;
   isManagerView?: boolean;
   updatedAt: string | null;
-  managers: { id: string; name: string; diamonds: number; target?: number }[];
+  managers: { id: string; name: string; diamonds: number; target: number }[];
 };
 
 const MANAGER_TONES = [
