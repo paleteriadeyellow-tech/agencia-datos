@@ -86,3 +86,20 @@ export function dateParts(iso: string) {
   }
   return { year, month };
 }
+
+export function formatDay(iso: string) {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+export function formatTime(value: string) {
+  const raw = value.trim();
+  if (!raw) return "—";
+  const [h, min] = raw.split(":");
+  const hour = Number(h);
+  if (!Number.isFinite(hour) || !min) return raw;
+  const suffix = hour >= 12 ? "p. m." : "a. m.";
+  const h12 = hour % 12 || 12;
+  return `${h12}:${min} ${suffix}`;
+}

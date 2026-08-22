@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Panel, inputClass } from "@/components/ui";
@@ -20,6 +20,8 @@ import {
   LEVEL_LEGEND,
   battleLevel,
   dateParts,
+  formatDay,
+  formatTime,
   todayIso,
 } from "@/lib/official-battles";
 
@@ -42,8 +44,6 @@ type Payload = {
   rows: Row[];
   years: number[];
 };
-
-const cellClass = cn(inputClass, "h-8 min-w-0 px-2 py-0 text-xs bg-bg/70");
 
 function PillMenu({
   value,
@@ -115,6 +115,7 @@ export default function OfficialBattlesClient() {
   const [hint, setHint] = useState("");
   const [openAdd, setOpenAdd] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     date: todayIso(),
     time: "",
@@ -281,6 +282,7 @@ export default function OfficialBattlesClient() {
     setYear(targetYear);
     setMonth(targetMonth);
     setOpenAdd(false);
+    setOpenId(tempId);
     setAdding(true);
 
     try {
@@ -312,6 +314,7 @@ export default function OfficialBattlesClient() {
       writeList(targetYear, targetMonth, (list) =>
         list.map((r) => (r.id === tempId ? { ...optimistic, ...json.row } : r))
       );
+      setOpenId(json.row.id);
     } catch {
       writeList(targetYear, targetMonth, (list) =>
         list.filter((r) => r.id !== tempId)
@@ -324,6 +327,7 @@ export default function OfficialBattlesClient() {
 
   function removeRow(id: string) {
     writeList(year, month, (list) => list.filter((r) => r.id !== id));
+    if (openId === id) setOpenId(null);
     if (!id.startsWith("tmp-")) {
       void fetch(`${PANEL.officialBattles}?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
@@ -336,113 +340,151 @@ export default function OfficialBattlesClient() {
 
   function renderRow(row: Row) {
     const level = battleLevel(row.level);
+    const open = openId === row.id;
     return (
-      <tr key={row.id} className={cn("border-b border-white/5", level.row)}>
-        <td className="px-2 py-1.5">
-          <PillMenu
-            value={row.level}
-            options={BATTLE_LEVELS.map((l) => ({
-              id: l.id,
-              label: l.label,
-              className: l.pill,
-            }))}
-            onChange={(id) => saveFields(row, { level: id })}
+      <div key={row.id} className={cn("border-b border-white/5 last:border-b-0", level.row)}>
+        <div
+          className="flex cursor-pointer items-center gap-2 px-3 py-2"
+          onClick={() => setOpenId(open ? null : row.id)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <PillMenu
+              value={row.level}
+              options={BATTLE_LEVELS.map((l) => ({
+                id: l.id,
+                label: l.label,
+                className: l.pill,
+              }))}
+              onChange={(id) => saveFields(row, { level: id })}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">
+              {row.creatorA || "Creador A"}
+              <span className="mx-1.5 text-text-muted">vs</span>
+              {row.creatorB || "Creador B"}
+            </p>
+            <p className="truncate text-[11px] text-text-muted">
+              {formatDay(row.date)} · {formatTime(row.time)}
+              {row.agencyA || row.agencyB
+                ? ` · ${row.agencyA || "—"} / ${row.agencyB || "—"}`
+                : ""}
+            </p>
+          </div>
+          <div onClick={(e) => e.stopPropagation()}>
+            <PillMenu
+              value={row.boosters}
+              options={BOOSTER_OPTIONS.map((b) => ({
+                id: b.id,
+                label: b.label,
+                className: b.className,
+              }))}
+              onChange={(id) => saveFields(row, { boosters: id })}
+            />
+          </div>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 text-text-muted transition",
+              open && "rotate-180"
+            )}
           />
-        </td>
-        <td className="px-2 py-1.5">
-          <CreatorSuggestInput
-            hideLabel
-            label="Creador A"
-            placeholder="@creador"
-            value={row.creatorA}
-            creators={suggestList}
-            excludeNicks={
-              row.creatorB ? new Set([nickKey(row.creatorB)]) : undefined
-            }
-            inputClassName={cn(cellClass, "min-w-[8.5rem]")}
-            onChange={(v) => saveFields(row, { creatorA: v })}
-            onPick={(c) =>
-              saveFields(row, {
-                creatorA: c.nick,
-                agencyA: row.agencyA || shortName,
-              })
-            }
-          />
-        </td>
-        <td className="px-2 py-1.5">
-          <input
-            className={cn(cellClass, "min-w-[7rem]")}
-            placeholder="Agencia"
-            value={row.agencyA}
-            onChange={(e) => saveFields(row, { agencyA: e.target.value })}
-          />
-        </td>
-        <td className="px-2 py-1.5">
-          <input
-            type="time"
-            className={cn(cellClass, "min-w-[7.5rem]")}
-            value={row.time}
-            onChange={(e) => saveFields(row, { time: e.target.value })}
-          />
-        </td>
-        <td className="px-2 py-1.5">
-          <input
-            type="date"
-            className={cn(cellClass, "min-w-[9rem]")}
-            value={row.date}
-            onChange={(e) => saveFields(row, { date: e.target.value })}
-          />
-        </td>
-        <td className="px-2 py-1.5">
-          <CreatorSuggestInput
-            hideLabel
-            label="Creador B"
-            placeholder="@rival"
-            value={row.creatorB}
-            creators={suggestList}
-            excludeNicks={
-              row.creatorA ? new Set([nickKey(row.creatorA)]) : undefined
-            }
-            inputClassName={cn(cellClass, "min-w-[8.5rem]")}
-            onChange={(v) => saveFields(row, { creatorB: v })}
-            onPick={(c) =>
-              saveFields(row, {
-                creatorB: c.nick,
-                agencyB: row.agencyB || shortName,
-              })
-            }
-          />
-        </td>
-        <td className="px-2 py-1.5">
-          <input
-            className={cn(cellClass, "min-w-[7rem]")}
-            placeholder="Agencia"
-            value={row.agencyB}
-            onChange={(e) => saveFields(row, { agencyB: e.target.value })}
-          />
-        </td>
-        <td className="px-2 py-1.5">
-          <PillMenu
-            value={row.boosters}
-            options={BOOSTER_OPTIONS.map((b) => ({
-              id: b.id,
-              label: b.label,
-              className: b.className,
-            }))}
-            onChange={(id) => saveFields(row, { boosters: id })}
-          />
-        </td>
-        <td className="px-2 py-1.5">
           <button
             type="button"
             title="Eliminar"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-danger/15 hover:text-danger"
-            onClick={() => removeRow(row.id)}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-danger/15 hover:text-danger"
+            onClick={(e) => {
+              e.stopPropagation();
+              removeRow(row.id);
+            }}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
-        </td>
-      </tr>
+        </div>
+
+        {open && (
+          <div
+            className="grid gap-3 border-t border-white/10 px-3 py-3 sm:grid-cols-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CreatorSuggestInput
+              label="Creador A"
+              placeholder="@creador"
+              value={row.creatorA}
+              creators={suggestList}
+              excludeNicks={
+                row.creatorB ? new Set([nickKey(row.creatorB)]) : undefined
+              }
+              onChange={(v) => saveFields(row, { creatorA: v })}
+              onPick={(c) =>
+                saveFields(row, {
+                  creatorA: c.nick,
+                  agencyA: row.agencyA || shortName,
+                })
+              }
+            />
+            <label className="block space-y-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                Agencia A
+              </span>
+              <input
+                className={cn(inputClass, "h-10 py-0")}
+                placeholder="Agencia"
+                value={row.agencyA}
+                onChange={(e) => saveFields(row, { agencyA: e.target.value })}
+              />
+            </label>
+            <CreatorSuggestInput
+              label="Creador B"
+              placeholder="@rival"
+              value={row.creatorB}
+              creators={suggestList}
+              excludeNicks={
+                row.creatorA ? new Set([nickKey(row.creatorA)]) : undefined
+              }
+              onChange={(v) => saveFields(row, { creatorB: v })}
+              onPick={(c) =>
+                saveFields(row, {
+                  creatorB: c.nick,
+                  agencyB: row.agencyB || shortName,
+                })
+              }
+            />
+            <label className="block space-y-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                Agencia B
+              </span>
+              <input
+                className={cn(inputClass, "h-10 py-0")}
+                placeholder="Agencia"
+                value={row.agencyB}
+                onChange={(e) => saveFields(row, { agencyB: e.target.value })}
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                Fecha
+              </span>
+              <input
+                type="date"
+                className={cn(inputClass, "h-10 py-0")}
+                value={row.date}
+                onChange={(e) => saveFields(row, { date: e.target.value })}
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                Hora
+              </span>
+              <input
+                type="time"
+                className={cn(inputClass, "h-10 py-0")}
+                value={row.time}
+                onChange={(e) => saveFields(row, { time: e.target.value })}
+              />
+            </label>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -561,41 +603,21 @@ export default function OfficialBattlesClient() {
                   <div className="border-b border-cyan/25 bg-cyan/15 px-4 py-2 text-center text-[11px] font-semibold text-cyan">
                     Zona horaria GMT-6 · Ciudad de México (único horario válido)
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead>
-                        <tr className="bg-cyan/20 text-[10px] uppercase tracking-wide text-cyan">
-                          <th className="px-3 py-2.5 font-semibold">Nivel</th>
-                          <th className="px-3 py-2.5 font-semibold">Creador A</th>
-                          <th className="px-3 py-2.5 font-semibold">Agencia</th>
-                          <th className="px-3 py-2.5 font-semibold">Hora</th>
-                          <th className="px-3 py-2.5 font-semibold">Fecha</th>
-                          <th className="px-3 py-2.5 font-semibold">Creador B</th>
-                          <th className="px-3 py-2.5 font-semibold">Agencia</th>
-                          <th className="px-3 py-2.5 font-semibold">Potenciadores</th>
-                          <th className="px-3 py-2.5" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {grouped.map((g) => (
-                          <Fragment key={g.level.id}>
-                            <tr>
-                              <td
-                                colSpan={9}
-                                className={cn(
-                                  "border-y px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em]",
-                                  g.level.bar,
-                                  g.level.pill.split(" ").slice(-1)[0]
-                                )}
-                              >
-                                {g.level.label} · {g.rows.length}
-                              </td>
-                            </tr>
-                            {g.rows.map(renderRow)}
-                          </Fragment>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div>
+                    {grouped.map((g) => (
+                      <div key={g.level.id}>
+                        <div
+                          className={cn(
+                            "border-y px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em]",
+                            g.level.bar,
+                            g.level.pill.split(" ").slice(-1)[0]
+                          )}
+                        >
+                          {g.level.label} · {g.rows.length}
+                        </div>
+                        {g.rows.map(renderRow)}
+                      </div>
+                    ))}
                   </div>
                 </>
               )}
