@@ -433,6 +433,27 @@ model VideoSuggestion {
   @@index([agencySlug, year, month])
 }
 
+model OfficialBattle {
+  id          String   @id @default(cuid())
+  agencySlug  String   @default("streamersfederation")
+  year        Int
+  month       Int
+  date        DateTime
+  time        String   @default("")
+  level       String   @default("Inicial")
+  creatorA    String   @default("")
+  agencyA     String   @default("")
+  creatorB    String   @default("")
+  agencyB     String   @default("")
+  boosters    String   @default("NO")
+  sortOrder   Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([agencySlug, year, month])
+}
+
 model CreatorPortalToken {
   id         String   @id @default(cuid())
   agencySlug String   @default("streamersfederation")

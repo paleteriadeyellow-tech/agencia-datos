@@ -25,6 +25,7 @@ const ALL_ROUTES = [
   "/llamadas",
   "/graduacion-batallas",
   "/sugerencia-video",
+  "/batallas-oficiales",
   "/finanzas",
   "/bonos",
   "/contratos",

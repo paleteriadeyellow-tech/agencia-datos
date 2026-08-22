@@ -109,6 +109,7 @@ export const PANEL = {
   calls: "/api/panel/calls",
   battles: "/api/panel/battles",
   videoSuggestions: "/api/panel/video-suggestions",
+  officialBattles: "/api/panel/official-battles",
 } as const;
 
 export function panelWarmUrls(period = currentMonth()) {
@@ -123,6 +124,7 @@ export function panelWarmUrls(period = currentMonth()) {
     `${PANEL.calls}?week=${ymd(mondayOf())}`,
     `${PANEL.battles}?year=${year}&month=${Number(period.slice(5, 7))}`,
     `${PANEL.videoSuggestions}?year=${year}&month=${Number(period.slice(5, 7))}`,
+    `${PANEL.officialBattles}?year=${year}&month=${Number(period.slice(5, 7))}`,
     PANEL.managers,
     PANEL.livecoins,
     PANEL.metrics,

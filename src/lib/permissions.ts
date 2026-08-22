@@ -15,6 +15,7 @@ export const MANAGER_ALLOWED_PATHS = [
   "/llamadas",
   "/graduacion-batallas",
   "/sugerencia-video",
+  "/batallas-oficiales",
   "/reporte",
 ] as const;
 
