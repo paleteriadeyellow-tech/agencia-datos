@@ -17,12 +17,13 @@ import { useViewAs } from "@/components/view-as";
 
 export type DiamondGoal = {
   target: number;
+  myTarget?: number;
   agencyTotal: number;
   myTotal: number;
   canEdit: boolean;
   isManagerView?: boolean;
   updatedAt: string | null;
-  managers: { id: string; name: string; diamonds: number }[];
+  managers: { id: string; name: string; diamonds: number; target?: number }[];
 };
 
 const MANAGER_TONES = [
@@ -152,6 +153,17 @@ function StatChip({
   );
 }
 
+function managerDraftsFrom(
+  managers: DiamondGoal["managers"]
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const m of managers) {
+    if (m.id === "unassigned") continue;
+    next[m.id] = (m.target ?? 0) > 0 ? formatNumber(m.target ?? 0) : "";
+  }
+  return next;
+}
+
 export function DiamondGoalCard({
   goal,
   periodLabel,
@@ -167,28 +179,45 @@ export function DiamondGoalCard({
   const [draft, setDraft] = useState(
     goal.target > 0 ? formatNumber(goal.target) : ""
   );
+  const [managerDrafts, setManagerDrafts] = useState<Record<string, string>>(
+    () => managerDraftsFrom(goal.managers ?? [])
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { setViewAs } = useViewAs();
   const showTeam = Boolean(goal.isManagerView);
+  const myTarget = goal.myTarget ?? 0;
 
   const parsedTarget = parseDiamondInput(draft);
   const agencyPct = pctOf(goal.agencyTotal, goal.target);
-  const myPctOfGoal = pctOf(goal.myTotal, goal.target);
+  const myPctOfGoal = pctOf(goal.myTotal, myTarget > 0 ? myTarget : goal.target);
   const myPctOfTotal =
     goal.agencyTotal > 0
       ? Math.min(100, (goal.myTotal / goal.agencyTotal) * 100)
       : 0;
   const remaining = Math.max(0, goal.target - goal.agencyTotal);
   const over = Math.max(0, goal.agencyTotal - goal.target);
+  const myRemaining = Math.max(0, myTarget - goal.myTotal);
+  const myOver = Math.max(0, goal.myTotal - myTarget);
   const reached = agencyPct >= 100;
+  const myReached = myTarget > 0 && myPctOfGoal >= 100;
 
   const managers = useMemo(() => goal.managers ?? [], [goal.managers]);
   const ranked = useMemo(
-    () =>
-      [...managers].sort((a, b) => b.diamonds - a.diamonds),
+    () => [...managers].sort((a, b) => b.diamonds - a.diamonds),
     [managers]
   );
+  const assignable = useMemo(
+    () => ranked.filter((m) => m.id !== "unassigned"),
+    [ranked]
+  );
+
+  function openEditor() {
+    setDraft(goal.target > 0 ? formatNumber(goal.target) : "");
+    setManagerDrafts(managerDraftsFrom(managers));
+    setError(null);
+    setEditing(true);
+  }
 
   async function save() {
     setSaving(true);
@@ -197,7 +226,14 @@ export function DiamondGoalCard({
       const res = await fetch("/api/panel/dashboard", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ period, target: parsedTarget }),
+        body: JSON.stringify({
+          period,
+          target: parsedTarget,
+          managerTargets: assignable.map((m) => ({
+            id: m.id,
+            target: parseDiamondInput(managerDrafts[m.id] ?? ""),
+          })),
+        }),
       });
       if (!res.ok) {
         setError("No se pudo guardar la meta.");
@@ -251,11 +287,7 @@ export function DiamondGoalCard({
               type="button"
               variant="secondary"
               className="border-cyan/20 bg-bg/40 hover:border-cyan/40"
-              onClick={() => {
-                setDraft(goal.target > 0 ? formatNumber(goal.target) : "");
-                setError(null);
-                setEditing(true);
-              }}
+              onClick={openEditor}
             >
               <Pencil className="h-4 w-4" />
               {goal.target > 0 ? "Editar meta" : "Definir meta"}
@@ -271,7 +303,7 @@ export function DiamondGoalCard({
               void save();
             }}
           >
-            <Field label="Meta mensual (diamantes)">
+            <Field label="Meta de la agencia (diamantes)">
               <input
                 className={inputClass}
                 inputMode="numeric"
@@ -302,210 +334,313 @@ export function DiamondGoalCard({
                 Cancelar
               </Button>
             </div>
+            {assignable.length > 0 && (
+              <div className="sm:col-span-2">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                  Meta de cada manager
+                </p>
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {assignable.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex items-center gap-3 rounded-xl border border-border-soft bg-bg/40 px-3 py-2"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {m.name}
+                      </span>
+                      <input
+                        className={cn(inputClass, "w-[9.5rem] text-right")}
+                        inputMode="numeric"
+                        placeholder="Sin meta"
+                        value={managerDrafts[m.id] ?? ""}
+                        onChange={(e) =>
+                          setManagerDrafts((prev) => ({
+                            ...prev,
+                            [m.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {error && (
               <p className="text-sm text-danger sm:col-span-2">{error}</p>
             )}
           </form>
         )}
 
-        {goal.target <= 0 ? (
+        {goal.target <= 0 && !(showTeam && myTarget > 0) && (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border px-6 py-12 text-center">
             <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan/10 text-cyan">
               <Gem className="h-6 w-6" />
             </div>
             <p className="font-[family-name:var(--font-syne)] text-lg font-semibold">
-              Sin meta este mes
+              Sin meta de agencia este mes
             </p>
             <p className="mt-1 max-w-md text-sm text-text-muted">
               {goal.canEdit
-                ? "Define una meta para que los managers vean el avance en tiempo real y cuánto aporta cada equipo."
+                ? "Define la meta de la agencia y asigna una a cada manager."
                 : "El admin aún no definió una meta de diamantes para este mes."}
             </p>
           </div>
-        ) : (
-          <>
-            <div
-              className={cn(
-                "grid items-center gap-6",
-                showTeam ? "lg:grid-cols-2" : "lg:grid-cols-[auto_1fr]"
-              )}
-            >
-              <div className="flex justify-center lg:justify-start">
-                <Ring
-                  value={agencyPct}
-                  tone={reached ? "success" : "cyan"}
-                  label="agencia"
-                />
-              </div>
+        )}
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <StatChip
-                  label="Llevamos"
-                  value={formatNumber(goal.agencyTotal)}
-                  hint="diamantes del mes"
-                  tone="cyan"
-                />
-                <StatChip
-                  label="Meta"
-                  value={formatNumber(goal.target)}
-                  hint={periodLabel}
-                />
-                <StatChip
-                  label={over > 0 ? "Sobre la meta" : "Faltan"}
-                  value={formatNumber(over > 0 ? over : remaining)}
-                  hint={over > 0 ? "ya rebasaron el objetivo" : "para cerrar el mes"}
-                  tone={over > 0 ? "success" : "warning"}
-                />
-              </div>
+        {goal.target > 0 && (
+          <div
+            className={cn(
+              "grid items-center gap-6",
+              showTeam ? "lg:grid-cols-2" : "lg:grid-cols-[auto_1fr]"
+            )}
+          >
+            <div className="flex justify-center lg:justify-start">
+              <Ring
+                value={agencyPct}
+                tone={reached ? "success" : "cyan"}
+                label="agencia"
+              />
             </div>
 
-            {showTeam && (
-              <div className="mt-5 overflow-hidden rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/10 via-bg/40 to-transparent p-4 sm:p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 text-accent">
-                      <Users className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
-                        Aporte del equipo
-                      </p>
-                      <p className="mt-1 font-[family-name:var(--font-syne)] text-3xl font-bold tabular-nums tracking-tight">
-                        {formatNumber(goal.myTotal)}
-                      </p>
-                      <p className="mt-1 text-sm text-text-muted">
-                        {myPctOfGoal.toFixed(1)}% de la meta · {myPctOfTotal.toFixed(1)}%
-                        del total actual
-                      </p>
-                    </div>
-                  </div>
-                  <div className="min-w-[180px] flex-1">
-                    <div className="mb-2 flex items-center justify-between text-xs text-text-muted">
-                      <span>Tu equipo vs meta</span>
-                      <span className="font-semibold text-accent">
-                        {myPctOfGoal.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="h-3 overflow-hidden rounded-full bg-bg-hover">
-                      <div
-                        className="h-full rounded-full bg-accent shadow-[0_0_16px_rgba(254,44,85,0.45)] transition-[width] duration-700"
-                        style={{ width: `${myPctOfGoal}%` }}
-                      />
-                    </div>
-                  </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <StatChip
+                label="Llevamos"
+                value={formatNumber(goal.agencyTotal)}
+                hint="diamantes del mes"
+                tone="cyan"
+              />
+              <StatChip
+                label="Meta"
+                value={formatNumber(goal.target)}
+                hint={periodLabel}
+              />
+              <StatChip
+                label={over > 0 ? "Sobre la meta" : "Faltan"}
+                value={formatNumber(over > 0 ? over : remaining)}
+                hint={over > 0 ? "ya rebasaron el objetivo" : "para cerrar el mes"}
+                tone={over > 0 ? "success" : "warning"}
+              />
+            </div>
+          </div>
+        )}
+
+        {showTeam && (goal.target > 0 || myTarget > 0) && (
+          <div
+            className={cn(
+              "overflow-hidden rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/10 via-bg/40 to-transparent p-4 sm:p-5",
+              goal.target > 0 ? "mt-5" : ""
+            )}
+          >
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 text-accent">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                    Tu meta
+                  </p>
+                  <p className="mt-1 font-[family-name:var(--font-syne)] text-3xl font-bold tabular-nums tracking-tight">
+                    {formatNumber(goal.myTotal)}
+                  </p>
+                  <p className="mt-1 text-sm text-text-muted">
+                    {myTarget > 0
+                      ? `${myPctOfGoal.toFixed(1)}% de tu meta · ${myPctOfTotal.toFixed(1)}% del total de agencia`
+                      : `${myPctOfTotal.toFixed(1)}% del total de agencia · aún no te asignaron meta`}
+                  </p>
                 </div>
               </div>
-            )}
+              {myReached && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-success">
+                  <Sparkles className="h-3 w-3" /> Meta alcanzada
+                </span>
+              )}
+            </div>
 
-            {!showTeam && ranked.length > 0 && (
-              <div className="mt-6">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <p className="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
-                    <Trophy className="h-3.5 w-3.5 text-warning" />
-                    Aporte por manager
-                  </p>
-                  <p className="text-xs text-text-muted">
-                    Clic para ver su vista
-                  </p>
+            {myTarget > 0 ? (
+              <>
+                <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                  <StatChip
+                    label="Llevas"
+                    value={formatNumber(goal.myTotal)}
+                    hint="diamantes de tu equipo"
+                    tone="accent"
+                  />
+                  <StatChip
+                    label="Tu meta"
+                    value={formatNumber(myTarget)}
+                    hint={periodLabel}
+                  />
+                  <StatChip
+                    label={myOver > 0 ? "Sobre tu meta" : "Te faltan"}
+                    value={formatNumber(myOver > 0 ? myOver : myRemaining)}
+                    hint={
+                      myOver > 0
+                        ? "ya rebasaste tu objetivo"
+                        : "para llegar a tu meta"
+                    }
+                    tone={myOver > 0 ? "success" : "warning"}
+                  />
                 </div>
-
-                <div className="mb-4 h-3.5 overflow-hidden rounded-full bg-bg-hover ring-1 ring-white/5">
-                  <div className="flex h-full w-full">
-                    {ranked.map((m, i) => {
-                      const share = pctOf(m.diamonds, goal.target);
-                      if (share <= 0) return null;
-                      const tone = MANAGER_TONES[i % MANAGER_TONES.length];
-                      return (
-                        <div
-                          key={m.id}
-                          className={cn("h-full first:rounded-l-full last:rounded-r-full", tone.bar)}
-                          style={{ width: `${share}%` }}
-                          title={`${m.name}: ${formatNumber(m.diamonds)}`}
-                        />
-                      );
-                    })}
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-xs text-text-muted">
+                    <span>Tu equipo vs tu meta</span>
+                    <span className="font-semibold text-accent">
+                      {myPctOfGoal.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="h-3 overflow-hidden rounded-full bg-bg-hover">
+                    <div
+                      className="h-full rounded-full bg-accent shadow-[0_0_16px_rgba(254,44,85,0.45)] transition-[width] duration-700"
+                      style={{ width: `${myPctOfGoal}%` }}
+                    />
                   </div>
                 </div>
+              </>
+            ) : (
+              <p className="text-sm text-text-muted">
+                Cuando el admin te asigne una meta, aquí verás cuánto te falta.
+              </p>
+            )}
+          </div>
+        )}
 
-                <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {!showTeam && ranked.length > 0 && (
+          <div className={cn(goal.target > 0 ? "mt-6" : "mt-5")}>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                <Trophy className="h-3.5 w-3.5 text-warning" />
+                Aporte por manager
+              </p>
+              <p className="text-xs text-text-muted">
+                Clic para ver su vista
+              </p>
+            </div>
+
+            {goal.target > 0 && (
+              <div className="mb-4 h-3.5 overflow-hidden rounded-full bg-bg-hover ring-1 ring-white/5">
+                <div className="flex h-full w-full">
                   {ranked.map((m, i) => {
-                    const pct = pctOf(m.diamonds, goal.target);
-                    const shareOfTotal =
-                      goal.agencyTotal > 0
-                        ? Math.min(100, (m.diamonds / goal.agencyTotal) * 100)
-                        : 0;
-                    const canOpen = m.id !== "unassigned";
+                    const share = pctOf(m.diamonds, goal.target);
+                    if (share <= 0) return null;
                     const tone = MANAGER_TONES[i % MANAGER_TONES.length];
-                    const rank = i + 1;
-
                     return (
-                      <li key={m.id}>
-                        <button
-                          type="button"
-                          disabled={!canOpen}
-                          onClick={() => canOpen && setViewAs(m.id, m.name)}
-                          className={cn(
-                            "group relative w-full overflow-hidden rounded-2xl border border-border-soft bg-bg/55 p-4 text-left transition",
-                            canOpen &&
-                              "hover:border-cyan/35 hover:bg-bg-hover/60 hover:shadow-[0_0_0_1px_rgba(37,244,238,0.12)]"
-                          )}
-                        >
-                          <div className="mb-3 flex items-center gap-3">
-                            <div className="relative">
-                              <div
-                                className={cn(
-                                  "flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-bold ring-1",
-                                  tone.avatar
-                                )}
-                              >
-                                {initials(m.name)}
-                              </div>
-                              <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-border-soft bg-bg-panel text-[10px] font-bold text-text-muted">
-                                {rank}
-                              </span>
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate font-semibold">{m.name}</p>
-                              <p className="text-xs text-text-muted">
-                                {shareOfTotal.toFixed(1)}% del total actual
-                              </p>
-                            </div>
-                            {canOpen && (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-border-soft bg-bg-panel px-2 py-1 text-[10px] uppercase tracking-wide text-text-muted opacity-0 transition group-hover:opacity-100">
-                                <Eye className="h-3 w-3" /> Ver
-                              </span>
-                            )}
-                          </div>
-                          <p className="font-[family-name:var(--font-syne)] text-2xl font-bold tabular-nums tracking-tight">
-                            {formatNumber(m.diamonds)}
-                          </p>
-                          <div className="mt-2 flex items-center justify-between text-xs">
-                            <span className={cn("rounded-full px-2 py-0.5 font-semibold", tone.chip)}>
-                              {pct.toFixed(1)}% de la meta
-                            </span>
-                            {rank === 1 && m.diamonds > 0 && (
-                              <span className="inline-flex items-center gap-1 text-warning">
-                                <TrendingUp className="h-3 w-3" /> Top
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-hover">
-                            <div
-                              className={cn(
-                                "h-full rounded-full transition-[width] duration-700",
-                                tone.bar
-                              )}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </button>
-                      </li>
+                      <div
+                        key={m.id}
+                        className={cn("h-full first:rounded-l-full last:rounded-r-full", tone.bar)}
+                        style={{ width: `${share}%` }}
+                        title={`${m.name}: ${formatNumber(m.diamonds)}`}
+                      />
                     );
                   })}
-                </ul>
+                </div>
               </div>
             )}
-          </>
+
+            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {ranked.map((m, i) => {
+                const personalTarget = m.target ?? 0;
+                const pct = pctOf(
+                  m.diamonds,
+                  personalTarget > 0 ? personalTarget : goal.target
+                );
+                const shareOfTotal =
+                  goal.agencyTotal > 0
+                    ? Math.min(100, (m.diamonds / goal.agencyTotal) * 100)
+                    : 0;
+                const left = Math.max(0, personalTarget - m.diamonds);
+                const ahead = Math.max(0, m.diamonds - personalTarget);
+                const canOpen = m.id !== "unassigned";
+                const tone = MANAGER_TONES[i % MANAGER_TONES.length];
+                const rank = i + 1;
+
+                return (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      disabled={!canOpen}
+                      onClick={() => canOpen && setViewAs(m.id, m.name)}
+                      className={cn(
+                        "group relative w-full overflow-hidden rounded-2xl border border-border-soft bg-bg/55 p-4 text-left transition",
+                        canOpen &&
+                          "hover:border-cyan/35 hover:bg-bg-hover/60 hover:shadow-[0_0_0_1px_rgba(37,244,238,0.12)]"
+                      )}
+                    >
+                      <div className="mb-3 flex items-center gap-3">
+                        <div className="relative">
+                          <div
+                            className={cn(
+                              "flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-bold ring-1",
+                              tone.avatar
+                            )}
+                          >
+                            {initials(m.name)}
+                          </div>
+                          <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-border-soft bg-bg-panel text-[10px] font-bold text-text-muted">
+                            {rank}
+                          </span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold">{m.name}</p>
+                          <p className="text-xs text-text-muted">
+                            {shareOfTotal.toFixed(1)}% del total actual
+                          </p>
+                        </div>
+                        {canOpen && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-border-soft bg-bg-panel px-2 py-1 text-[10px] uppercase tracking-wide text-text-muted opacity-0 transition group-hover:opacity-100">
+                            <Eye className="h-3 w-3" /> Ver
+                          </span>
+                        )}
+                      </div>
+                      <p className="font-[family-name:var(--font-syne)] text-2xl font-bold tabular-nums tracking-tight">
+                        {formatNumber(m.diamonds)}
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <p className="text-text-muted">
+                          Meta{" "}
+                          <span className="font-semibold text-text">
+                            {personalTarget > 0
+                              ? formatNumber(personalTarget)
+                              : "—"}
+                          </span>
+                        </p>
+                        <p className="text-right text-text-muted">
+                          {personalTarget <= 0
+                            ? "Sin meta"
+                            : ahead > 0
+                              ? `+${formatNumber(ahead)}`
+                              : `Faltan ${formatNumber(left)}`}
+                        </p>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-xs">
+                        <span className={cn("rounded-full px-2 py-0.5 font-semibold", tone.chip)}>
+                          {personalTarget > 0
+                            ? `${pct.toFixed(1)}% de su meta`
+                            : goal.target > 0
+                              ? `${pct.toFixed(1)}% de la agencia`
+                              : "Sin meta"}
+                        </span>
+                        {rank === 1 && m.diamonds > 0 && (
+                          <span className="inline-flex items-center gap-1 text-warning">
+                            <TrendingUp className="h-3 w-3" /> Top
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-hover">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-[width] duration-700",
+                            tone.bar
+                          )}
+                          style={{ width: `${personalTarget > 0 || goal.target > 0 ? pct : 0}%` }}
+                        />
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
       </div>
     </section>

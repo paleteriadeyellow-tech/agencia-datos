@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
-import { cleanNick, creatorWhere, diamondWhere } from "@/lib/creator-scope";
+import {
+  cleanNick,
+  creatorWhere,
+  diamondWhere,
+  userIdFromToken,
+} from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 import { currentMonth, monthRange } from "@/lib/utils";
 
@@ -16,7 +21,8 @@ function parsePeriod(raw: string | null) {
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug, scope, isAdmin: isAdminUser } = auth;
+  const { agencySlug, scope, isAdmin: isAdminUser, token } = auth;
+  const currentUserId = userIdFromToken(token) ?? null;
   const scopeFilter = creatorWhere(scope, agencySlug);
   const myDiamondWhere = await diamondWhere(scope, agencySlug);
 
@@ -32,6 +38,7 @@ export async function GET(req: NextRequest) {
     diamondAgg,
     agencyDiamondAgg,
     goalRow,
+    managerGoalRows,
     topDiamondRows,
     pendingTasks,
     activeWithLatest,
@@ -53,6 +60,10 @@ export async function GET(req: NextRequest) {
     prisma.monthlyDiamondGoal.findUnique({
       where: { agencySlug_period: { agencySlug, period } },
       select: { target: true, updatedAt: true },
+    }),
+    prisma.managerMonthlyGoal.findMany({
+      where: { agencySlug, period },
+      select: { managerId: true, target: true },
     }),
     prisma.diamondControl.findMany({
       where: { period, ...myDiamondWhere },
@@ -94,10 +105,15 @@ export async function GET(req: NextRequest) {
   const myTotal = diamondAgg._sum.diamonds ?? 0;
   const target = goalRow?.target ?? 0;
 
+  const managerTargetById = new Map(
+    managerGoalRows.map((g) => [g.managerId, g.target])
+  );
+
   let managerContributions: {
     id: string;
     name: string;
     diamonds: number;
+    target: number;
   }[] = [];
   const kpisByManager: Record<
     string,
@@ -144,10 +160,18 @@ export async function GET(req: NextRequest) {
     ]);
 
     const nickToManager = new Map<string, { id: string; name: string }>();
-    const totals = new Map<string, { id: string; name: string; diamonds: number }>();
+    const totals = new Map<
+      string,
+      { id: string; name: string; diamonds: number; target: number }
+    >();
 
     for (const m of managerUsers) {
-      totals.set(m.id, { id: m.id, name: m.name, diamonds: 0 });
+      totals.set(m.id, {
+        id: m.id,
+        name: m.name,
+        diamonds: 0,
+        target: managerTargetById.get(m.id) ?? 0,
+      });
       kpisByManager[m.id] = {
         totalCreators: m.creators.length,
         activeCreators: m.creators.filter((c) => c.status === "activo").length,
@@ -180,6 +204,7 @@ export async function GET(req: NextRequest) {
         id: mgr.id,
         name: mgr.name,
         diamonds: 0,
+        target: managerTargetById.get(mgr.id) ?? 0,
       };
       prev.diamonds += row.diamonds;
       totals.set(mgr.id, prev);
@@ -199,6 +224,7 @@ export async function GET(req: NextRequest) {
         id: "unassigned",
         name: "Sin manager",
         diamonds: unassigned,
+        target: 0,
       });
     }
   }
@@ -227,6 +253,9 @@ export async function GET(req: NextRequest) {
     kpisByManager,
     diamondGoal: {
       target,
+      myTarget: currentUserId
+        ? (managerTargetById.get(currentUserId) ?? 0)
+        : 0,
       agencyTotal,
       myTotal,
       canEdit: Boolean(isAdminUser),
@@ -258,10 +287,28 @@ export async function GET(req: NextRequest) {
   });
 }
 
-const patchSchema = z.object({
-  period: z.string().regex(/^\d{4}-\d{2}$/),
-  target: z.number().int().min(0).max(1_000_000_000),
-});
+const patchSchema = z
+  .object({
+    period: z.string().regex(/^\d{4}-\d{2}$/),
+    target: z.number().int().min(0).max(1_000_000_000).optional(),
+    managerId: z.string().min(1).optional(),
+    managerTarget: z.number().int().min(0).max(1_000_000_000).optional(),
+    managerTargets: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          target: z.number().int().min(0).max(1_000_000_000),
+        })
+      )
+      .optional(),
+  })
+  .refine(
+    (d) =>
+      d.target !== undefined ||
+      d.managerTarget !== undefined ||
+      (d.managerTargets && d.managerTargets.length > 0),
+    { message: "Nada que guardar" }
+  );
 
 export async function PATCH(req: NextRequest) {
   const auth = await requireApiAuth(req);
@@ -284,7 +331,8 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
   }
 
-  const { period, target } = parsed.data;
+  const { period, target, managerId, managerTarget, managerTargets } =
+    parsed.data;
   const updatedBy =
     typeof token.id === "string"
       ? token.id
@@ -292,12 +340,55 @@ export async function PATCH(req: NextRequest) {
         ? token.sub
         : null;
 
-  const row = await prisma.monthlyDiamondGoal.upsert({
-    where: { agencySlug_period: { agencySlug, period } },
-    create: { agencySlug, period, target, updatedBy },
-    update: { target, updatedBy },
-    select: { target: true, updatedAt: true, period: true },
-  });
+  const toSave: { id: string; target: number }[] = [
+    ...(managerTargets ?? []),
+    ...(managerId && managerTarget !== undefined
+      ? [{ id: managerId, target: managerTarget }]
+      : []),
+  ].filter((m) => m.id !== "unassigned");
 
-  return NextResponse.json({ ok: true, ...row });
+  if (toSave.length > 0) {
+    const validManagers = await prisma.user.findMany({
+      where: {
+        agencySlug,
+        role: "manager",
+        id: { in: toSave.map((m) => m.id) },
+      },
+      select: { id: true },
+    });
+    const allowed = new Set(validManagers.map((m) => m.id));
+    const ops = toSave
+      .filter((m) => allowed.has(m.id))
+      .map((m) =>
+        prisma.managerMonthlyGoal.upsert({
+          where: {
+            agencySlug_period_managerId: {
+              agencySlug,
+              period,
+              managerId: m.id,
+            },
+          },
+          create: {
+            agencySlug,
+            period,
+            managerId: m.id,
+            target: m.target,
+          },
+          update: { target: m.target },
+        })
+      );
+    if (ops.length) await prisma.$transaction(ops);
+  }
+
+  if (target !== undefined) {
+    const row = await prisma.monthlyDiamondGoal.upsert({
+      where: { agencySlug_period: { agencySlug, period } },
+      create: { agencySlug, period, target, updatedBy },
+      update: { target, updatedBy },
+      select: { target: true, updatedAt: true, period: true },
+    });
+    return NextResponse.json({ ok: true, ...row });
+  }
+
+  return NextResponse.json({ ok: true, period });
 }

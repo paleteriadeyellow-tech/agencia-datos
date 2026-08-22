@@ -232,12 +232,13 @@ export type ScopedDashboard = {
   kpisByManager?: Record<string, DashboardKpis>;
   diamondGoal: {
     target: number;
+    myTarget: number;
     agencyTotal: number;
     myTotal: number;
     canEdit: boolean;
     isManagerView?: boolean;
     updatedAt: string | null;
-    managers: { id: string; name: string; diamonds: number }[];
+    managers: { id: string; name: string; diamonds: number; target: number }[];
   };
   topCreators: {
     rank: number;
@@ -288,9 +289,8 @@ export function scopeDashboardData<T extends ScopedDashboard>(
     hours: 0,
     diamondUsers: 0,
   };
-  const myTotal =
-    data.diamondGoal.managers.find((m) => m.id === viewAsId)?.diamonds ??
-    kpis.diamonds;
+  const viewedManager = data.diamondGoal.managers.find((m) => m.id === viewAsId);
+  const myTotal = viewedManager?.diamonds ?? kpis.diamonds;
 
   return {
     ...data,
@@ -298,6 +298,7 @@ export function scopeDashboardData<T extends ScopedDashboard>(
     diamondGoal: {
       ...data.diamondGoal,
       myTotal,
+      myTarget: viewedManager?.target ?? 0,
       isManagerView: true,
     },
     topCreators: data.topCreators

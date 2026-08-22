@@ -89,6 +89,19 @@ model MonthlyDiamondGoal {
   @@index([agencySlug])
 }
 
+model ManagerMonthlyGoal {
+  id         String   @id @default(cuid())
+  agencySlug String   @default("streamersfederation")
+  period     String
+  managerId  String
+  target     Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([agencySlug, period, managerId])
+  @@index([agencySlug, period])
+}
+
 model Metric {
   id          String   @id @default(cuid())
   creatorId   String
