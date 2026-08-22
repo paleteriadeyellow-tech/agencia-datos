@@ -4,7 +4,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Plus, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
-import { Button, EmptyState, Field, Panel, inputClass } from "@/components/ui";
+import { Button, Field, Panel, inputClass } from "@/components/ui";
+import { Modal } from "@/components/modal";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
 import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
@@ -105,6 +106,18 @@ export default function OfficialBattlesClient() {
   const [month, setMonth] = useState(currentMonthNum);
   const [q, setQ] = useState("");
   const [hint, setHint] = useState("");
+  const [openAdd, setOpenAdd] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState({
+    date: todayIso(),
+    time: "",
+    level: "Inicial",
+    creatorA: "",
+    agencyA: "",
+    creatorB: "",
+    agencyB: "",
+    boosters: "NO",
+  });
   const timers = useRef<Record<string, number>>({});
 
   const url = `${PANEL.officialBattles}?year=${year}&month=${month}`;
@@ -215,8 +228,29 @@ export default function OfficialBattlesClient() {
         ? `Archivo ${year}`
         : "Archivo";
 
-  function addRow() {
-    const date = todayIso();
+  function openCreate() {
+    setDraft({
+      date: todayIso(),
+      time: "",
+      level: "Inicial",
+      creatorA: "",
+      agencyA: "",
+      creatorB: "",
+      agencyB: "",
+      boosters: "NO",
+    });
+    setHint("");
+    setOpenAdd(true);
+  }
+
+  async function submitAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const creatorA = draft.creatorA.trim();
+    if (!creatorA) {
+      setHint("Escribe el creador A.");
+      return;
+    }
+    const date = draft.date || todayIso();
     const parts = dateParts(date);
     const targetYear = String(parts.year);
     const targetMonth = String(parts.month);
@@ -226,56 +260,59 @@ export default function OfficialBattlesClient() {
       date,
       year: parts.year,
       month: parts.month,
-      time: "",
-      level: "Inicial",
-      creatorA: "",
-      agencyA: "",
-      creatorB: "",
-      agencyB: "",
-      boosters: "NO",
+      time: draft.time,
+      level: draft.level,
+      creatorA,
+      agencyA: draft.agencyA.trim(),
+      creatorB: draft.creatorB.trim(),
+      agencyB: draft.agencyB.trim(),
+      boosters: draft.boosters,
       sortOrder: rowsAll.length + 1,
     };
+
     writeList(targetYear, targetMonth, (list) => [...list, optimistic]);
     setYear(targetYear);
     setMonth(targetMonth);
-    setHint("Fila agregada. Completa creadores, hora y rango.");
+    setOpenAdd(false);
+    setAdding(true);
 
-    void fetch(PANEL.officialBattles, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "create",
-        date: optimistic.date,
-        year: optimistic.year,
-        month: optimistic.month,
-        time: optimistic.time,
-        level: optimistic.level,
-        creatorA: optimistic.creatorA,
-        agencyA: optimistic.agencyA,
-        creatorB: optimistic.creatorB,
-        agencyB: optimistic.agencyB,
-        boosters: optimistic.boosters,
-      }),
-    })
-      .then(async (res) => {
-        const json = (await res.json()) as { error?: string; row?: Row };
-        if (!res.ok || !json.row) {
-          writeList(targetYear, targetMonth, (list) =>
-            list.filter((r) => r.id !== tempId)
-          );
-          setHint(json.error || "No se pudo agregar");
-          return;
-        }
-        writeList(targetYear, targetMonth, (list) =>
-          list.map((r) => (r.id === tempId ? { ...optimistic, ...json.row } : r))
-        );
-      })
-      .catch(() => {
+    try {
+      const res = await fetch(PANEL.officialBattles, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          date: optimistic.date,
+          year: optimistic.year,
+          month: optimistic.month,
+          time: optimistic.time,
+          level: optimistic.level,
+          creatorA: optimistic.creatorA,
+          agencyA: optimistic.agencyA,
+          creatorB: optimistic.creatorB,
+          agencyB: optimistic.agencyB,
+          boosters: optimistic.boosters,
+        }),
+      });
+      const json = (await res.json()) as { error?: string; row?: Row };
+      if (!res.ok || !json.row) {
         writeList(targetYear, targetMonth, (list) =>
           list.filter((r) => r.id !== tempId)
         );
-        setHint("No se pudo agregar");
-      });
+        setHint(json.error || "No se pudo agregar");
+        return;
+      }
+      writeList(targetYear, targetMonth, (list) =>
+        list.map((r) => (r.id === tempId ? { ...optimistic, ...json.row } : r))
+      );
+    } catch {
+      writeList(targetYear, targetMonth, (list) =>
+        list.filter((r) => r.id !== tempId)
+      );
+      setHint("No se pudo agregar");
+    } finally {
+      setAdding(false);
+    }
   }
 
   function removeRow(id: string) {
@@ -439,7 +476,7 @@ export default function OfficialBattlesClient() {
               />
             </Field>
             <div className="flex items-end">
-              <Button type="button" className="w-full" onClick={addRow}>
+              <Button type="button" className="w-full" onClick={openCreate}>
                 <Plus className="h-4 w-4" />
                 Agregar
               </Button>
@@ -478,19 +515,28 @@ export default function OfficialBattlesClient() {
           </p>
           {hint && <p className="mb-3 text-xs text-cyan">{hint}</p>}
 
-          {!payload ? (
-            <Panel>
-              <div className="h-40 animate-pulse rounded-lg bg-bg-hover/40" />
-            </Panel>
-          ) : (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_17rem]">
-              {rows.length === 0 ? (
-                <EmptyState
-                  title="Sin batallas oficiales este periodo"
-                  description="Agrega una fila, elige el rango y completa creadores, hora y fecha."
-                />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_17rem] xl:items-start">
+            <Panel className="overflow-hidden p-0">
+              {!payload ? (
+                <div className="h-40 animate-pulse rounded-lg bg-bg-hover/40" />
+              ) : rows.length === 0 ? (
+                <>
+                  <div className="border-b border-cyan/25 bg-cyan/15 px-4 py-2 text-center text-[11px] font-semibold text-cyan">
+                    Zona horaria GMT-6 (Horario de la Ciudad de México, no se
+                    aceptará ningún otro horario como válido)
+                  </div>
+                  <div className="px-6 py-14 text-center">
+                    <p className="font-[family-name:var(--font-syne)] text-lg font-semibold">
+                      Aún no hay batallas
+                    </p>
+                    <p className="mt-1 text-sm text-text-muted">
+                      Pulsa Agregar y llena la ficha. Aquí se listan las que
+                      registres.
+                    </p>
+                  </div>
+                </>
               ) : (
-                <Panel className="overflow-hidden p-0">
+                <>
                   <div className="border-b border-cyan/25 bg-cyan/15 px-4 py-2 text-center text-[11px] font-semibold text-cyan">
                     Zona horaria GMT-6 (Horario de la Ciudad de México, no se
                     aceptará ningún otro horario como válido)
@@ -531,56 +577,199 @@ export default function OfficialBattlesClient() {
                       </tbody>
                     </table>
                   </div>
-                </Panel>
+                </>
               )}
+            </Panel>
+            <LevelLegend />
+          </div>
 
-              <aside className="h-fit overflow-hidden rounded-xl border border-border-soft bg-bg-panel">
-                <div className="border-b border-border-soft bg-bg-hover/50 px-4 py-3">
-                  <p className="text-[10px] font-bold uppercase leading-snug tracking-[0.12em] text-text-muted">
-                    Nivel de creador
+          <Modal
+            open={openAdd}
+            onClose={() => setOpenAdd(false)}
+            title="Nueva batalla oficial"
+            subtitle="Horario Ciudad de México (GMT-6)."
+          >
+            <form onSubmit={(e) => void submitAdd(e)} className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                    Nivel
                   </p>
-                  <p className="mt-1 text-[11px] text-text-muted">
-                    Diamantes obtenidos último mes
-                  </p>
+                  <div className="mt-1.5">
+                    <PillMenu
+                      value={draft.level}
+                      options={BATTLE_LEVELS.map((l) => ({
+                        id: l.id,
+                        label: l.label,
+                        className: l.pill,
+                      }))}
+                      onChange={(id) => setDraft((d) => ({ ...d, level: id }))}
+                    />
+                  </div>
                 </div>
-                <ul className="divide-y divide-border-soft/70">
-                  {LEVEL_LEGEND.map((item) => {
-                    const tone =
-                      BATTLE_LEVELS.find(
-                        (l) => l.label.toLowerCase() === item.label.toLowerCase()
-                      ) ??
-                      (item.label === "MEDIUM"
-                        ? BATTLE_LEVELS.find((l) => l.id === "Medio")
-                        : undefined);
-                    return (
-                      <li
-                        key={item.label}
-                        className="flex items-center justify-between gap-3 px-4 py-2.5"
-                      >
-                        <span
-                          className={cn(
-                            "rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase",
-                            tone?.pill ?? "bg-bg-hover text-text-muted"
-                          )}
-                        >
-                          {item.label}
-                        </span>
-                        <span className="text-xs tabular-nums text-text-muted">
-                          {item.range}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <p className="border-t border-border-soft px-4 py-3 text-[11px] leading-relaxed text-text-muted">
-                  Creadores que no hayan llegado al nivel inicial serán evaluados
-                  durante el mismo mes.
-                </p>
-              </aside>
-            </div>
-          )}
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                    Potenciadores
+                  </p>
+                  <div className="mt-1.5">
+                    <PillMenu
+                      value={draft.boosters}
+                      options={BOOSTER_OPTIONS.map((b) => ({
+                        id: b.id,
+                        label: b.label,
+                        className: b.className,
+                      }))}
+                      onChange={(id) => setDraft((d) => ({ ...d, boosters: id }))}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                    Fecha
+                  </span>
+                  <input
+                    type="date"
+                    required
+                    className={cn(inputClass, "h-10 py-0")}
+                    value={draft.date}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, date: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                    Hora
+                  </span>
+                  <input
+                    type="time"
+                    className={cn(inputClass, "h-10 py-0")}
+                    value={draft.time}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, time: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                    Creador A
+                  </span>
+                  <input
+                    required
+                    className={cn(inputClass, "h-10 py-0")}
+                    placeholder="@creador"
+                    value={draft.creatorA}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, creatorA: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                    Agencia A
+                  </span>
+                  <input
+                    className={cn(inputClass, "h-10 py-0")}
+                    placeholder="Agencia"
+                    value={draft.agencyA}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, agencyA: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                    Creador B
+                  </span>
+                  <input
+                    className={cn(inputClass, "h-10 py-0")}
+                    placeholder="@rival"
+                    value={draft.creatorB}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, creatorB: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                    Agencia B
+                  </span>
+                  <input
+                    className={cn(inputClass, "h-10 py-0")}
+                    placeholder="Agencia"
+                    value={draft.agencyB}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, agencyB: e.target.value }))
+                    }
+                  />
+                </label>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setOpenAdd(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={adding}>
+                  {adding ? "Guardando…" : "Guardar"}
+                </Button>
+              </div>
+            </form>
+          </Modal>
         </>
       )}
     </div>
+  );
+}
+
+function LevelLegend() {
+  return (
+    <aside className="h-fit overflow-hidden rounded-xl border border-border-soft bg-bg-panel xl:sticky xl:top-6">
+      <div className="border-b border-border-soft bg-bg-hover/50 px-4 py-3">
+        <p className="text-[10px] font-bold uppercase leading-snug tracking-[0.12em] text-text-muted">
+          Nivel de creador
+        </p>
+        <p className="mt-1 text-[11px] text-text-muted">
+          Diamantes obtenidos último mes
+        </p>
+      </div>
+      <ul className="divide-y divide-border-soft/70">
+        {LEVEL_LEGEND.map((item) => {
+          const tone =
+            BATTLE_LEVELS.find(
+              (l) => l.label.toLowerCase() === item.label.toLowerCase()
+            ) ??
+            (item.label === "MEDIUM"
+              ? BATTLE_LEVELS.find((l) => l.id === "Medio")
+              : undefined);
+          return (
+            <li
+              key={item.label}
+              className="flex items-center justify-between gap-3 px-4 py-2.5"
+            >
+              <span
+                className={cn(
+                  "rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase",
+                  tone?.pill ?? "bg-bg-hover text-text-muted"
+                )}
+              >
+                {item.label}
+              </span>
+              <span className="text-xs tabular-nums text-text-muted">
+                {item.range}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="border-t border-border-soft px-4 py-3 text-[11px] leading-relaxed text-text-muted">
+        Creadores que no hayan llegado al nivel inicial serán evaluados durante
+        el mismo mes.
+      </p>
+    </aside>
   );
 }
