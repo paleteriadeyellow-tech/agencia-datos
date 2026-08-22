@@ -11,17 +11,23 @@ import { MESES_NOMBRE } from "@/lib/bonos";
 import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
 import { mutate as cacheMutate } from "swr";
 import { CreatorSuggestInput } from "@/components/creator-suggest";
-import { useCreatorsRoster } from "@/lib/use-creators-roster";
+import { TikTokAvatar } from "@/components/tiktok-avatar";
+import { useCreatorsRoster, type RosterCreator } from "@/lib/use-creators-roster";
 import { useAgency } from "@/lib/use-agency";
 import { nickKey } from "@/lib/scope-view";
 import {
   BATTLE_LEVELS,
+  BATTLE_LIVE_MS,
   BOOSTER_OPTIONS,
   LEVEL_LEGEND,
+  MEXICO_OFFSET,
+  battleCountdown,
   battleLevel,
+  battleTimestamp,
   dateParts,
   formatDay,
   formatTime,
+  nowTimeMexico,
   todayIso,
 } from "@/lib/official-battles";
 
@@ -105,10 +111,11 @@ function PillMenu({
 
 export default function OfficialBattlesClient() {
   const { shortName } = useAgency();
-  const { suggestList } = useCreatorsRoster();
+  const { creators, suggestList } = useCreatorsRoster();
   const now = new Date();
   const currentYear = String(now.getFullYear());
   const currentMonthNum = String(now.getMonth() + 1);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonthNum);
   const [q, setQ] = useState("");
@@ -127,6 +134,11 @@ export default function OfficialBattlesClient() {
     boosters: "NO",
   });
   const timers = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const url = `${PANEL.officialBattles}?year=${year}&month=${month}`;
   const { data, error, mutate } = usePanelData(url);
@@ -165,6 +177,23 @@ export default function OfficialBattlesClient() {
       rows: rows.filter((r) => r.level === level.id),
     })).filter((g) => g.rows.length > 0);
   }, [rows]);
+
+  const nextBattle = useMemo(() => {
+    const scored = rowsAll.map((r) => {
+      const at = battleTimestamp(r.date, r.time);
+      const day = r.date.slice(0, 10);
+      const dayEnd = /^\d{4}-\d{2}-\d{2}$/.test(day)
+        ? new Date(`${day}T23:59:59${MEXICO_OFFSET}`).getTime()
+        : NaN;
+      return { r, at, sort: at ?? dayEnd };
+    }).filter((x) => Number.isFinite(x.sort));
+    scored.sort((a, b) => a.sort - b.sort);
+    return (
+      scored.find((x) =>
+        x.at != null ? x.at + BATTLE_LIVE_MS >= nowMs : x.sort >= nowMs
+      )?.r ?? null
+    );
+  }, [rowsAll, nowMs]);
 
   const writeList = useCallback(
     (targetYear: string, targetMonth: string, updater: (rows: Row[]) => Row[]) => {
@@ -239,7 +268,7 @@ export default function OfficialBattlesClient() {
   function openCreate() {
     setDraft({
       date: todayIso(),
-      time: "",
+      time: nowTimeMexico(),
       level: "Inicial",
       creatorA: "",
       agencyA: "",
@@ -344,10 +373,10 @@ export default function OfficialBattlesClient() {
     return (
       <div key={row.id} className={cn("border-b border-white/5 last:border-b-0", level.row)}>
         <div
-          className="flex cursor-pointer items-center gap-2 px-3 py-2"
+          className="flex cursor-pointer items-start gap-2 px-3 py-2.5"
           onClick={() => setOpenId(open ? null : row.id)}
         >
-          <div onClick={(e) => e.stopPropagation()}>
+          <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
             <PillMenu
               value={row.level}
               options={BATTLE_LEVELS.map((l) => ({
@@ -359,46 +388,51 @@ export default function OfficialBattlesClient() {
             />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">
-              {row.creatorA || "Creador A"}
-              <span className="mx-1.5 text-text-muted">vs</span>
-              {row.creatorB || "Creador B"}
-            </p>
-            <p className="truncate text-[11px] text-text-muted">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <CreatorFace nick={row.creatorA} creators={creators} />
+              <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                vs
+              </span>
+              <CreatorFace nick={row.creatorB} creators={creators} />
+            </div>
+            <p className="mt-1 truncate text-[11px] text-text-muted">
               {formatDay(row.date)} · {formatTime(row.time)}
               {row.agencyA || row.agencyB
                 ? ` · ${row.agencyA || "—"} / ${row.agencyB || "—"}`
                 : ""}
             </p>
           </div>
-          <div onClick={(e) => e.stopPropagation()}>
-            <PillMenu
-              value={row.boosters}
-              options={BOOSTER_OPTIONS.map((b) => ({
-                id: b.id,
-                label: b.label,
-                className: b.className,
-              }))}
-              onChange={(id) => saveFields(row, { boosters: id })}
-            />
-          </div>
-          <ChevronDown
-            className={cn(
-              "h-4 w-4 shrink-0 text-text-muted transition",
-              open && "rotate-180"
-            )}
-          />
-          <button
-            type="button"
-            title="Eliminar"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-danger/15 hover:text-danger"
-            onClick={(e) => {
-              e.stopPropagation();
-              removeRow(row.id);
-            }}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+            <div className="flex shrink-0 items-start gap-1 pt-0.5">
+              <RemainChip date={row.date} time={row.time} nowMs={nowMs} />
+              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <PillMenu
+                  value={row.boosters}
+                  options={BOOSTER_OPTIONS.map((b) => ({
+                    id: b.id,
+                    label: b.label,
+                    className: b.className,
+                  }))}
+                  onChange={(id) => saveFields(row, { boosters: id })}
+                />
+              </div>
+              <ChevronDown
+                className={cn(
+                  "mt-1.5 h-4 w-4 shrink-0 text-text-muted transition",
+                  open && "rotate-180"
+                )}
+              />
+              <button
+                type="button"
+                title="Eliminar"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-danger/15 hover:text-danger"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeRow(row.id);
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
         </div>
 
         {open && (
@@ -579,6 +613,15 @@ export default function OfficialBattlesClient() {
           </div>
           {hint && <p className="mb-2 text-xs text-cyan">{hint}</p>}
 
+          {nextBattle && (
+            <NextBattleHero
+              row={nextBattle}
+              creators={creators}
+              nowMs={nowMs}
+              className="mb-4"
+            />
+          )}
+
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_17rem] xl:items-start">
             <Panel className="overflow-hidden p-0">
               {!payload ? (
@@ -687,6 +730,7 @@ export default function OfficialBattlesClient() {
                   </span>
                   <input
                     type="time"
+                    required
                     className={cn(inputClass, "h-10 py-0")}
                     value={draft.time}
                     onChange={(e) =>
@@ -781,6 +825,166 @@ export default function OfficialBattlesClient() {
         </>
       )}
     </div>
+  );
+}
+
+function creatorInfo(nick: string, creators: RosterCreator[]) {
+  const k = nickKey(nick);
+  const found = k
+    ? creators.find((c) => nickKey(c.tiktokUser) === k || nickKey(c.name) === k)
+    : undefined;
+  const handle = (found?.tiktokUser || nick || "").replace(/^@/, "").trim();
+  const name = found?.name || handle || "Creador";
+  return { handle, name };
+}
+
+function CreatorFace({
+  nick,
+  creators,
+  size = 32,
+}: {
+  nick: string;
+  creators: RosterCreator[];
+  size?: number;
+}) {
+  const { handle, name } = creatorInfo(nick, creators);
+  if (!handle && !name) {
+    return (
+      <span className="text-sm text-text-muted">Creador</span>
+    );
+  }
+  return (
+    <span className="inline-flex min-w-0 max-w-[12.5rem] items-center gap-2">
+      <TikTokAvatar username={handle} name={name} size={size} />
+      <span className="min-w-0 truncate text-sm font-medium">
+        {handle ? `@${handle}` : name}
+      </span>
+    </span>
+  );
+}
+
+function RemainChip({
+  date,
+  time,
+  nowMs,
+}: {
+  date: string;
+  time: string;
+  nowMs: number;
+}) {
+  const c = battleCountdown(date, time, nowMs);
+  if (c.phase === "no-time") {
+    return (
+      <span className="mt-1.5 text-[11px] text-text-muted">Sin hora</span>
+    );
+  }
+  if (c.phase === "live") {
+    return (
+      <span className="mt-1.5 text-[11px] font-semibold uppercase tracking-wide text-accent">
+        En curso
+      </span>
+    );
+  }
+  if (c.phase === "ended") {
+    return (
+      <span className="mt-1.5 text-[11px] text-text-muted">Finalizó</span>
+    );
+  }
+  const clock = `${String(c.hours).padStart(2, "0")}:${String(c.minutes).padStart(2, "0")}:${String(c.seconds).padStart(2, "0")}`;
+  return (
+    <span
+      className="mt-1.5 shrink-0 text-xs font-semibold tabular-nums text-cyan"
+      title="Tiempo restante (GMT-6)"
+    >
+      {c.days > 0 ? `${c.days}d ` : ""}
+      {clock}
+    </span>
+  );
+}
+
+function DigitBox({ value, unit }: { value: number; unit: string }) {
+  return (
+    <div className="flex min-w-[3.1rem] flex-col items-center rounded-xl border border-cyan/25 bg-bg px-2 py-2">
+      <span className="font-[family-name:var(--font-syne)] text-xl font-bold tabular-nums sm:text-2xl">
+        {String(value).padStart(2, "0")}
+      </span>
+      <span className="mt-0.5 text-[10px] uppercase tracking-wider text-text-muted">
+        {unit}
+      </span>
+    </div>
+  );
+}
+
+function NextBattleHero({
+  row,
+  creators,
+  nowMs,
+  className,
+}: {
+  row: Row;
+  creators: RosterCreator[];
+  nowMs: number;
+  className?: string;
+}) {
+  const c = battleCountdown(row.date, row.time, nowMs);
+  const level = battleLevel(row.level);
+  return (
+    <Panel className={cn("overflow-hidden p-0", className)}>
+      <div className="border-b border-cyan/25 bg-cyan/15 px-4 py-2 text-center text-[11px] font-semibold text-cyan">
+        Zona horaria GMT-6 · Ciudad de México (único horario válido)
+      </div>
+      <div className="px-4 py-4 sm:px-6">
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-text-muted">
+          Próxima batalla
+        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-3 sm:gap-6">
+          <CreatorFace nick={row.creatorA} creators={creators} size={48} />
+          <span className="text-sm font-bold uppercase tracking-[0.2em] text-text-muted">
+            vs
+          </span>
+          <CreatorFace nick={row.creatorB} creators={creators} size={48} />
+        </div>
+        <p className="mt-2 text-center text-xs text-text-muted">
+          {formatDay(row.date)} · {formatTime(row.time)}
+          {row.agencyA || row.agencyB
+            ? ` · ${row.agencyA || "—"} / ${row.agencyB || "—"}`
+            : ""}
+        </p>
+        <div className="mt-4 flex flex-col items-center">
+          {c.phase === "upcoming" ? (
+            <>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan">
+                Falta
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <DigitBox value={c.days} unit="días" />
+                <DigitBox value={c.hours} unit="hrs" />
+                <DigitBox value={c.minutes} unit="min" />
+                <DigitBox value={c.seconds} unit="seg" />
+              </div>
+            </>
+          ) : c.phase === "live" ? (
+            <p className="font-[family-name:var(--font-syne)] text-lg font-semibold text-accent">
+              En curso
+            </p>
+          ) : c.phase === "ended" ? (
+            <p className="text-sm text-text-muted">Finalizó</p>
+          ) : (
+            <p className="text-sm text-text-muted">Pon la hora para ver el conteo</p>
+          )}
+        </div>
+        <div className="mt-3 flex justify-center">
+          <span
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-semibold",
+              level.pill
+            )}
+          >
+            {level.label}
+          </span>
+        </div>
+      </div>
+    </Panel>
   );
 }
 
