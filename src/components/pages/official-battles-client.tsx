@@ -4,13 +4,16 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Plus, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
-import { Button, Field, Panel, inputClass } from "@/components/ui";
+import { Button, Panel, inputClass } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { cn } from "@/lib/utils";
 import { MESES_NOMBRE } from "@/lib/bonos";
 import { PANEL, persistPanelCache, usePanelData } from "@/lib/swr";
 import { mutate as cacheMutate } from "swr";
-import { dateParts, todayIso } from "@/lib/video-suggestions";
+import { CreatorSuggestInput } from "@/components/creator-suggest";
+import { useCreatorsRoster } from "@/lib/use-creators-roster";
+import { useAgency } from "@/lib/use-agency";
+import { nickKey } from "@/lib/scope-view";
 import {
   BATTLE_LEVELS,
   BOOSTER_OPTIONS,
@@ -99,6 +102,8 @@ function PillMenu({
 }
 
 export default function OfficialBattlesClient() {
+  const { shortName } = useAgency();
+  const { suggestList } = useCreatorsRoster();
   const now = new Date();
   const currentYear = String(now.getFullYear());
   const currentMonthNum = String(now.getMonth() + 1);
@@ -343,11 +348,23 @@ export default function OfficialBattlesClient() {
           />
         </td>
         <td className="px-2 py-1.5">
-          <input
-            className={cn(cellClass, "min-w-[8rem]")}
-            placeholder="Creador A"
+          <CreatorSuggestInput
+            hideLabel
+            label="Creador A"
+            placeholder="@creador"
             value={row.creatorA}
-            onChange={(e) => saveFields(row, { creatorA: e.target.value })}
+            creators={suggestList}
+            excludeNicks={
+              row.creatorB ? new Set([nickKey(row.creatorB)]) : undefined
+            }
+            inputClassName={cn(cellClass, "min-w-[8.5rem]")}
+            onChange={(v) => saveFields(row, { creatorA: v })}
+            onPick={(c) =>
+              saveFields(row, {
+                creatorA: c.nick,
+                agencyA: row.agencyA || shortName,
+              })
+            }
           />
         </td>
         <td className="px-2 py-1.5">
@@ -375,11 +392,23 @@ export default function OfficialBattlesClient() {
           />
         </td>
         <td className="px-2 py-1.5">
-          <input
-            className={cn(cellClass, "min-w-[8rem]")}
-            placeholder="Creador B"
+          <CreatorSuggestInput
+            hideLabel
+            label="Creador B"
+            placeholder="@rival"
             value={row.creatorB}
-            onChange={(e) => saveFields(row, { creatorB: e.target.value })}
+            creators={suggestList}
+            excludeNicks={
+              row.creatorA ? new Set([nickKey(row.creatorA)]) : undefined
+            }
+            inputClassName={cn(cellClass, "min-w-[8.5rem]")}
+            onChange={(v) => saveFields(row, { creatorB: v })}
+            onPick={(c) =>
+              saveFields(row, {
+                creatorB: c.nick,
+                agencyB: row.agencyB || shortName,
+              })
+            }
           />
         </td>
         <td className="px-2 py-1.5">
@@ -421,7 +450,7 @@ export default function OfficialBattlesClient() {
         title="Batallas oficiales"
         subtitle={
           viewingCurrent
-            ? `${periodLabel} · horario Ciudad de México`
+            ? `${periodLabel} · GMT-6 Ciudad de México`
             : `${periodLabel} · archivo`
         }
       />
@@ -430,90 +459,81 @@ export default function OfficialBattlesClient() {
         <PanelLoadError onRetry={() => void mutate()} />
       ) : (
         <>
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Año">
-              <select
-                className={inputClass}
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-              >
-                <option value={currentYear}>{currentYear} · actual</option>
-                <option value="all">Todos</option>
-                {years.map((y) =>
-                  String(y) === currentYear ? null : (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  )
-                )}
-              </select>
-            </Field>
-            <Field label="Mes">
-              <select
-                className={inputClass}
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-              >
-                <option value={currentMonthNum}>
-                  {MESES_NOMBRE[Number(currentMonthNum)]} · mes actual
-                </option>
-                <option value="all">Archivo · todos los meses</option>
-                {MESES_NOMBRE.slice(1).map((name, i) =>
-                  String(i + 1) === currentMonthNum ? null : (
-                    <option key={name} value={i + 1}>
-                      {name} · archivo
-                    </option>
-                  )
-                )}
-              </select>
-            </Field>
-            <Field label="Buscar">
-              <input
-                className={inputClass}
-                placeholder="Creador, agencia o rango…"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </Field>
-            <div className="flex items-end">
-              <Button type="button" className="w-full" onClick={openCreate}>
-                <Plus className="h-4 w-4" />
-                Agregar
-              </Button>
-            </div>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <select
+              className={cn(inputClass, "h-9 w-[7.5rem] py-0 text-sm")}
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              aria-label="Año"
+            >
+              <option value={currentYear}>{currentYear}</option>
+              <option value="all">Todos</option>
+              {years.map((y) =>
+                String(y) === currentYear ? null : (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                )
+              )}
+            </select>
+            <select
+              className={cn(inputClass, "h-9 w-[11rem] py-0 text-sm")}
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              aria-label="Mes"
+            >
+              <option value={currentMonthNum}>
+                {MESES_NOMBRE[Number(currentMonthNum)]} · actual
+              </option>
+              <option value="all">Archivo · todos</option>
+              {MESES_NOMBRE.slice(1).map((name, i) =>
+                String(i + 1) === currentMonthNum ? null : (
+                  <option key={name} value={i + 1}>
+                    {name}
+                  </option>
+                )
+              )}
+            </select>
+            <input
+              className={cn(inputClass, "h-9 min-w-[10rem] flex-1 py-0 text-sm")}
+              placeholder="Buscar creador o agencia…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            <Button type="button" className="h-9 px-3" onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              Agregar
+            </Button>
+            <p className="w-full text-xs text-text-muted sm:w-auto">
+              {rows.length} batallas
+              {viewingCurrent ? "" : " · archivo"}
+              {" · "}
+              {viewingCurrent ? (
+                <button
+                  type="button"
+                  className="text-cyan hover:underline"
+                  onClick={() => {
+                    setYear(currentYear);
+                    setMonth("all");
+                  }}
+                >
+                  Ver archivo
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="text-cyan hover:underline"
+                  onClick={() => {
+                    setYear(currentYear);
+                    setMonth(currentMonthNum);
+                  }}
+                >
+                  Mes actual
+                </button>
+              )}
+            </p>
           </div>
-
-          <p className="mb-3 text-xs text-text-muted">
-            {rows.length} batallas
-            {viewingCurrent
-              ? ` · ${MESES_NOMBRE[Number(currentMonthNum)]} ${currentYear}`
-              : " · archivo"}
-            {" · "}
-            {viewingCurrent ? (
-              <button
-                type="button"
-                className="text-cyan hover:underline"
-                onClick={() => {
-                  setYear(currentYear);
-                  setMonth("all");
-                }}
-              >
-                Ver archivo
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="text-cyan hover:underline"
-                onClick={() => {
-                  setYear(currentYear);
-                  setMonth(currentMonthNum);
-                }}
-              >
-                Volver al mes actual
-              </button>
-            )}
-          </p>
-          {hint && <p className="mb-3 text-xs text-cyan">{hint}</p>}
+          {hint && <p className="mb-2 text-xs text-cyan">{hint}</p>}
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_17rem] xl:items-start">
             <Panel className="overflow-hidden p-0">
@@ -522,10 +542,9 @@ export default function OfficialBattlesClient() {
               ) : rows.length === 0 ? (
                 <>
                   <div className="border-b border-cyan/25 bg-cyan/15 px-4 py-2 text-center text-[11px] font-semibold text-cyan">
-                    Zona horaria GMT-6 (Horario de la Ciudad de México, no se
-                    aceptará ningún otro horario como válido)
+                    Zona horaria GMT-6 · Ciudad de México (único horario válido)
                   </div>
-                  <div className="px-6 py-14 text-center">
+                  <div className="px-6 py-8 text-center">
                     <p className="font-[family-name:var(--font-syne)] text-lg font-semibold">
                       Aún no hay batallas
                     </p>
@@ -538,11 +557,10 @@ export default function OfficialBattlesClient() {
               ) : (
                 <>
                   <div className="border-b border-cyan/25 bg-cyan/15 px-4 py-2 text-center text-[11px] font-semibold text-cyan">
-                    Zona horaria GMT-6 (Horario de la Ciudad de México, no se
-                    aceptará ningún otro horario como válido)
+                    Zona horaria GMT-6 · Ciudad de México (único horario válido)
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[980px] text-left text-sm">
+                    <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="bg-cyan/20 text-[10px] uppercase tracking-wide text-cyan">
                           <th className="px-3 py-2.5 font-semibold">Nivel</th>
@@ -652,17 +670,25 @@ export default function OfficialBattlesClient() {
                     }
                   />
                 </label>
-                <label className="block space-y-1">
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
-                    Creador A
-                  </span>
-                  <input
-                    required
-                    className={cn(inputClass, "h-10 py-0")}
+                <label className="block sm:col-span-2">
+                  <CreatorSuggestInput
+                    label="Creador A"
                     placeholder="@creador"
+                    required
                     value={draft.creatorA}
-                    onChange={(e) =>
-                      setDraft((d) => ({ ...d, creatorA: e.target.value }))
+                    creators={suggestList}
+                    excludeNicks={
+                      draft.creatorB
+                        ? new Set([nickKey(draft.creatorB)])
+                        : undefined
+                    }
+                    onChange={(v) => setDraft((d) => ({ ...d, creatorA: v }))}
+                    onPick={(c) =>
+                      setDraft((d) => ({
+                        ...d,
+                        creatorA: c.nick,
+                        agencyA: d.agencyA || shortName,
+                      }))
                     }
                   />
                 </label>
@@ -679,16 +705,24 @@ export default function OfficialBattlesClient() {
                     }
                   />
                 </label>
-                <label className="block space-y-1">
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
-                    Creador B
-                  </span>
-                  <input
-                    className={cn(inputClass, "h-10 py-0")}
+                <label className="block sm:col-span-2">
+                  <CreatorSuggestInput
+                    label="Creador B"
                     placeholder="@rival"
                     value={draft.creatorB}
-                    onChange={(e) =>
-                      setDraft((d) => ({ ...d, creatorB: e.target.value }))
+                    creators={suggestList}
+                    excludeNicks={
+                      draft.creatorA
+                        ? new Set([nickKey(draft.creatorA)])
+                        : undefined
+                    }
+                    onChange={(v) => setDraft((d) => ({ ...d, creatorB: v }))}
+                    onPick={(c) =>
+                      setDraft((d) => ({
+                        ...d,
+                        creatorB: c.nick,
+                        agencyB: d.agencyB || shortName,
+                      }))
                     }
                   />
                 </label>

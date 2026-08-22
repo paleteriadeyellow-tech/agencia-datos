@@ -36,6 +36,8 @@ export function CreatorSuggestInput({
   excludeNicks,
   clearOnPick = false,
   keepOpenOnPick = false,
+  hideLabel,
+  inputClassName,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -48,6 +50,8 @@ export function CreatorSuggestInput({
   excludeNicks?: Set<string>;
   clearOnPick?: boolean;
   keepOpenOnPick?: boolean;
+  hideLabel?: boolean;
+  inputClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<MenuPos | null>(null);
@@ -168,9 +172,7 @@ export function CreatorSuggestInput({
 
   const showMenu = open && suggestions.length > 0 && mounted && !!pos;
 
-  return (
-    <div ref={wrapRef} className={cn("relative", className)}>
-      <Field label={label}>
+  const input = (
         <input
           ref={inputRef}
           value={value}
@@ -181,12 +183,11 @@ export function CreatorSuggestInput({
           onFocus={openMenu}
           onClick={openMenu}
           onMouseDown={(e) => {
-            // Si ya tiene foco, igual forzar menú al clic
             if (document.activeElement === e.currentTarget) {
               openMenu();
             }
           }}
-          className={inputClass}
+          className={cn(inputClass, inputClassName)}
           placeholder={placeholder}
           required={required}
           autoComplete="off"
@@ -196,7 +197,15 @@ export function CreatorSuggestInput({
           aria-expanded={open}
           aria-autocomplete="list"
         />
-      </Field>
+  );
+
+  return (
+    <div ref={wrapRef} className={cn("relative", className)}>
+      {hideLabel ? (
+        input
+      ) : (
+        <Field label={label}>{input}</Field>
+      )}
       {showMenu &&
         createPortal(
           <div
