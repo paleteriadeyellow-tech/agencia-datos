@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { getToken, type JWT } from "next-auth/jwt";
 import { isAgencySlug, type AgencySlug } from "@/lib/agencies";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/permissions";
@@ -9,6 +9,10 @@ import {
   userIdFromToken,
   type ManagerScope,
 } from "@/lib/creator-scope";
+import {
+  desktopClaimsToJwt,
+  verifyDesktopToken,
+} from "@/lib/desktop-auth";
 import { parseViewAsId, VIEW_AS_COOKIE } from "@/lib/view-as";
 
 function viewAsIdFromRequest(req: NextRequest) {
@@ -17,11 +21,23 @@ function viewAsIdFromRequest(req: NextRequest) {
   );
 }
 
-export async function requireApiAuth(req: NextRequest) {
-  const token = await getToken({
+async function resolveToken(req: NextRequest): Promise<JWT | null> {
+  const auth = req.headers.get("authorization");
+  if (auth?.toLowerCase().startsWith("bearer ")) {
+    const raw = auth.slice(7).trim();
+    if (raw) {
+      const claims = await verifyDesktopToken(raw);
+      if (claims) return desktopClaimsToJwt(claims);
+    }
+  }
+  return getToken({
     req,
     secret: process.env.NEXTAUTH_SECRET,
   });
+}
+
+export async function requireApiAuth(req: NextRequest) {
+  const token = await resolveToken(req);
   if (!token?.id) {
     return {
       error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
