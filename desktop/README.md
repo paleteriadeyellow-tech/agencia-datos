@@ -1,37 +1,44 @@
-# Agencia Panel — Desktop (Electron)
+# Agencia Panel — Desktop
 
-App de **escritorio nativa** (no es la web metida en un `.exe`).  
-Usa la **misma base de datos / APIs** del panel Next.js.
+Abre el **panel web completo** en una ventana de escritorio  
+(mismas pestañas, mismos datos, mismo login).
 
-## Requisitos
+## Arranque
 
-1. Backend corriendo (`agencia datos`):
-   ```bash
-   npm run dev
-   ```
-   Por defecto en `http://127.0.0.1:3000`
+### Opción A — Local (recomendado mientras desarrollas)
 
-2. En esta carpeta `desktop/`:
-   ```bash
-   npm install
-   copy .env.example .env
-   npm run dev
-   ```
+1. Backend:
+```bash
+cd "agencia datos"
+npm run dev
+```
 
-## Login
+2. App PC:
+```bash
+cd "agencia datos/desktop"
+npm run dev
+```
 
-- Agencia + email + contraseña (igual que la web)
-- Token desktop (`Bearer`) → `/api/panel/creators` respeta admin/manager
+En `config.json` deja `"useDev": true`.
 
-## Producción / Vercel
+### Opción B — Vercel (producción)
 
-En login, cambia **Servidor API** a tu URL de Vercel, por ejemplo:
+En `config.json`:
+```json
+{
+  "url": "https://agencia-datos.vercel.app",
+  "devUrl": "http://127.0.0.1:3000",
+  "useDev": false
+}
+```
 
-`https://tu-proyecto.vercel.app`
+Luego:
+```bash
+npm run dev
+```
 
-(El endpoint `/api/desktop/login` debe estar desplegado.)
+## Qué incluye
 
-## Siguiente
-
-- Pantallas Diamantes, KPI, Campañas
-- Instalador `.exe` con electron-builder
+Todo lo de la web: Overview, Creadores, Diamantes, Livecoins, KPI, WhatsApp,
+Tareas, Campañas, Calendario, Reclutamiento, Finanzas, Bonos, Contratos,
+Managers, etc. (según rol admin/manager).

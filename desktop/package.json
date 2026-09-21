@@ -1,26 +1,58 @@
 {
-  "name": "agencia-desktop",
-  "version": "0.1.0",
+  "name": "backstage-agencia",
+  "productName": "Backstage Agencia",
+  "version": "1.0.0",
   "private": true,
-  "description": "Panel de agencia TikTok LIVE — app de escritorio",
+  "description": "Backstage Agencia — panel de escritorio",
+  "author": "Backstage Agencia",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "build": "vite build",
-    "start": "electron ."
+    "dev": "electron .",
+    "start": "electron .",
+    "dist": "electron-builder --win portable",
+    "dist:installer": "electron-builder --win nsis"
   },
-  "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+  "build": {
+    "appId": "com.backstage.agencia",
+    "productName": "Backstage Agencia",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "config.json",
+      "package.json",
+      "build/icon.ico",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "config.json",
+        "to": "config.json"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "Backstage-Agencia-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "shortcutName": "Backstage Agencia"
+    }
   },
   "devDependencies": {
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^9.2.0",
     "electron": "^37.2.0",
-    "typescript": "^5.8.0",
-    "vite": "^6.3.0",
-    "wait-on": "^8.0.0"
+    "electron-builder": "^26.0.12",
+    "png-to-ico": "^2.1.8"
   }
 }

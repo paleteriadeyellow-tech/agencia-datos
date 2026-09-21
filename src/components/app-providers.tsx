@@ -4,15 +4,33 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SWRConfig } from "swr";
 import { QuickCreateProvider } from "@/components/quick-create";
-import { PANEL_SWR_DEFAULTS, bindPanelAgency, prefetchPanel } from "@/lib/swr";
+import { PANEL_SWR_DEFAULTS, bindPanelAgency } from "@/lib/swr";
 import { ViewAsProvider } from "@/components/view-as";
 import { PanelWarmup } from "@/components/panel-warmup";
 import { useAgency } from "@/lib/use-agency";
+import { prefetchPanelFast } from "@/lib/nav-prefetch";
 
 const PREFETCH_ROUTES = [
   "/dashboard",
   "/creadores",
   "/control-diamantes",
+  "/metricas",
+  "/envio-kpi",
+  "/mensajes-wa",
+  "/tareas",
+  "/campanas",
+  "/calendario",
+  "/reclutamiento",
+  "/programacion",
+  "/control-usuarios",
+  "/llamadas",
+  "/graduacion-batallas",
+  "/sugerencia-video",
+  "/batallas-oficiales",
+  "/finanzas",
+  "/bonos",
+  "/contratos",
+  "/managers",
 ];
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
@@ -27,7 +45,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     bindPanelAgency(slug);
-    const t = window.setTimeout(() => prefetchPanel(), 400);
+    const t = window.setTimeout(() => prefetchPanelFast(), 200);
     return () => window.clearTimeout(t);
   }, [slug]);
 

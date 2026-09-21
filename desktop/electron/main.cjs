@@ -1,38 +1,125 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, Menu, nativeImage } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs");
 
-const isDev = !app.isPackaged;
+function appRoot() {
+  // Empaquetado: resources/app.asar o resources/app
+  if (app.isPackaged) return app.getAppPath();
+  return path.join(__dirname, "..");
+}
+
+function resolveIcon() {
+  const candidates = [
+    path.join(appRoot(), "build", "icon.ico"),
+    path.join(appRoot(), "build", "icon.png"),
+    path.join(__dirname, "..", "build", "icon.ico"),
+    path.join(__dirname, "..", "build", "icon.png"),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      const img = nativeImage.createFromPath(p);
+      if (!img.isEmpty()) return img;
+    }
+  }
+  return undefined;
+}
+
+function loadConfig() {
+  const defaults = {
+    url: "https://agencia-datos.vercel.app",
+    devUrl: "http://127.0.0.1:3000",
+    useDev: false,
+  };
+  const candidates = [
+    path.join(process.resourcesPath || "", "config.json"),
+    path.join(appRoot(), "config.json"),
+    path.join(__dirname, "..", "config.json"),
+  ];
+  for (const configPath of candidates) {
+    try {
+      if (!configPath || !fs.existsSync(configPath)) continue;
+      const raw = fs.readFileSync(configPath, "utf8");
+      return { ...defaults, ...JSON.parse(raw) };
+    } catch {
+      /* try next */
+    }
+  }
+  return defaults;
+}
 
 function createWindow() {
+  const cfg = loadConfig();
+  const startUrl = cfg.useDev ? cfg.devUrl : cfg.url;
+  const icon = resolveIcon();
+
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 960,
-    minHeight: 640,
+    width: 1400,
+    height: 900,
+    minWidth: 1024,
+    minHeight: 700,
     backgroundColor: "#0f1115",
-    title: "Agencia Panel",
+    title: "Backstage Agencia",
     autoHideMenuBar: true,
+    show: false,
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      partition: "persist:agencia",
+      spellcheck: false,
+      backgroundThrottling: false,
     },
   });
 
+  if (process.platform === "win32" && icon) {
+    win.setIcon(icon);
+  }
+
+  Menu.setApplicationMenu(null);
+  win.once("ready-to-show", () => win.show());
+
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: "deny" };
+    try {
+      const u = new URL(url);
+      const allowed = [cfg.url, cfg.devUrl].some((base) => {
+        try {
+          return u.origin === new URL(base).origin;
+        } catch {
+          return false;
+        }
+      });
+      if (!allowed) {
+        shell.openExternal(url);
+        return { action: "deny" };
+      }
+    } catch {
+      shell.openExternal(url);
+      return { action: "deny" };
+    }
+    return { action: "allow" };
   });
 
-  if (isDev) {
-    win.loadURL("http://127.0.0.1:5173");
-  } else {
-    win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
-  }
+  win.loadURL(startUrl).catch((err) => {
+    win.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(
+        `<!DOCTYPE html><html><body style="font-family:Segoe UI;background:#0f1115;color:#e8ecf4;padding:40px">
+        <h1>No se pudo abrir el panel</h1>
+        <p>URL: <code>${startUrl}</code></p>
+        <p>${String(err?.message || err)}</p>
+        </body></html>`
+      )}`
+    );
+  });
 }
 
+app.setName("Backstage Agencia");
+
 app.whenReady().then(() => {
+  if (process.platform === "win32") {
+    app.setAppUserModelId("com.backstage.agencia");
+  }
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

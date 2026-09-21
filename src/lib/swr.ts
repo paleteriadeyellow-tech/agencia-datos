@@ -96,7 +96,9 @@ export function usePanelData(url: string | null, options?: SWRConfiguration) {
   return useSWR(key, () => panelFetcher(url!), {
     ...PANEL_SWR_DEFAULTS,
     fallbackData: memory ?? fallback,
+    // Con caché/sessionStorage: pintar ya; refrescar en segundo plano solo si no hay datos.
     revalidateOnMount: memory == null && fallback == null,
+    revalidateIfStale: false,
     ...options,
   });
 }

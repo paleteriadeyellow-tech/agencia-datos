@@ -5,6 +5,7 @@ import {
   getApiBase,
   getToken,
   getUser,
+  normalizeApiBase,
   setApiBase,
   setSession,
   type DesktopUser,
@@ -42,7 +43,9 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: (u: DesktopUser) => void
     e.preventDefault();
     setBusy(true);
     setError("");
-    setApiBase(apiBase);
+    const base = apiBase.trim();
+    setApiBase(base);
+    setApiBaseInput(normalizeApiBase(base));
     try {
       const data = await apiFetch<{
         accessToken: string;
@@ -75,9 +78,12 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: (u: DesktopUser) => void
               className="field"
               value={apiBase}
               onChange={(e) => setApiBaseInput(e.target.value)}
-              placeholder="(vacío = proxy local) o https://tu-app.vercel.app"
+              placeholder="vacío = local  |  https://agencia-datos.vercel.app"
               autoComplete="off"
             />
+            <p className="api-hint" style={{ marginTop: 6 }}>
+              Solo el dominio, sin /a/streamersfederation
+            </p>
           </div>
           <div>
             <label className="label">Agencia</label>

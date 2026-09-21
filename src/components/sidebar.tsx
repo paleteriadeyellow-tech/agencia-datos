@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { filterNavByRole } from "@/lib/permissions";
 import { useAgency } from "@/lib/use-agency";
 import { useViewAs } from "@/components/view-as";
+import { apisForRoute, warmApis } from "@/lib/nav-prefetch";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -71,7 +72,7 @@ export function Sidebar() {
   const visibleNav = useMemo(() => filterNavByRole(nav, role), [role]);
 
   useEffect(() => {
-    visibleNav.slice(0, 4).forEach((item) => router.prefetch(path(item.href)));
+    visibleNav.forEach((item) => router.prefetch(path(item.href)));
   }, [router, path, visibleNav]);
 
   const content = (
@@ -107,6 +108,14 @@ export function Sidebar() {
               key={item.href}
               href={href}
               prefetch
+              onMouseEnter={() => {
+                router.prefetch(href);
+                warmApis(apisForRoute(item.href));
+              }}
+              onFocus={() => {
+                router.prefetch(href);
+                warmApis(apisForRoute(item.href));
+              }}
               onClick={() => setOpen(false)}
               className={cn(
                 "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
