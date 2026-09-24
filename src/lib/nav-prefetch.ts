@@ -1,6 +1,12 @@
 import { currentMonth } from "@/lib/utils";
 import { mondayOf, ymd } from "@/lib/weekly-schedule";
-import { PANEL, panelWarmUrls, panelSWRKey, panelFetcher } from "@/lib/swr";
+import {
+  PANEL,
+  panelWarmUrls,
+  panelSWRKey,
+  panelFetcher,
+  hydratePanelCacheFromStorage,
+} from "@/lib/swr";
 import { mutate } from "swr";
 
 /** APIs a calentar al pasar el mouse por cada pestaña. */
@@ -79,9 +85,11 @@ export function warmApis(urls: string[]) {
 export function prefetchPanelFast() {
   if (typeof window === "undefined") return;
   const urls = panelWarmUrls();
+  // Primero hidratar desde disco (0 ms de red)
+  hydratePanelCacheFromStorage(urls);
   const run = () => {
     urls.forEach((url, i) => {
-      window.setTimeout(() => warmApis([url]), i * 120);
+      window.setTimeout(() => warmApis([url]), i * 100);
     });
   };
   const w = window as Window & {

@@ -4,7 +4,12 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SWRConfig } from "swr";
 import { QuickCreateProvider } from "@/components/quick-create";
-import { PANEL_SWR_DEFAULTS, bindPanelAgency } from "@/lib/swr";
+import {
+  PANEL_SWR_DEFAULTS,
+  bindPanelAgency,
+  hydratePanelCacheFromStorage,
+  panelWarmUrls,
+} from "@/lib/swr";
 import { ViewAsProvider } from "@/components/view-as";
 import { PanelWarmup } from "@/components/panel-warmup";
 import { useAgency } from "@/lib/use-agency";
@@ -45,7 +50,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     bindPanelAgency(slug);
-    const t = window.setTimeout(() => prefetchPanelFast(), 200);
+    // 1) Pintar al instante desde disco  2) Precargar el resto en idle
+    hydratePanelCacheFromStorage(panelWarmUrls());
+    const t = window.setTimeout(() => prefetchPanelFast(), 150);
     return () => window.clearTimeout(t);
   }, [slug]);
 

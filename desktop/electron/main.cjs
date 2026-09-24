@@ -1,9 +1,8 @@
-const { app, BrowserWindow, shell, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, shell, Menu, nativeImage, session } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
 function appRoot() {
-  // Empaquetado: resources/app.asar o resources/app
   if (app.isPackaged) return app.getAppPath();
   return path.join(__dirname, "..");
 }
@@ -52,6 +51,14 @@ function createWindow() {
   const startUrl = cfg.useDev ? cfg.devUrl : cfg.url;
   const icon = resolveIcon();
 
+  // Partition persistente = cookies + localStorage + caché HTTP en disco
+  const ses = session.fromPartition("persist:agencia");
+  try {
+    ses.setUserAgent(ses.getUserAgent() + " BackstageAgenciaDesktop/1.0");
+  } catch {
+    /* ignore */
+  }
+
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -67,7 +74,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      partition: "persist:agencia",
+      session: ses,
       spellcheck: false,
       backgroundThrottling: false,
     },
@@ -114,6 +121,7 @@ function createWindow() {
   });
 }
 
+app.commandLine.appendSwitch("disk-cache-size", String(512 * 1024 * 1024));
 app.setName("Backstage Agencia");
 
 app.whenReady().then(() => {

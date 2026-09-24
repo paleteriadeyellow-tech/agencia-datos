@@ -28,6 +28,16 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Caché privada en navegador/Electron: carga rápida al volver a la pestaña
+        source: "/api/panel/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "private, max-age=60, stale-while-revalidate=600",
+          },
+        ],
+      },
     ];
   },
 };

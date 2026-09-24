@@ -6,7 +6,9 @@ import { currentMonth } from "@/lib/utils";
 import { mondayOf, ymd } from "@/lib/weekly-schedule";
 import { useAgency } from "@/lib/use-agency";
 
-const SESSION_PREFIX = "panel-swr-v2:";
+const CACHE_PREFIX = "panel-cache-v3:";
+/** Mostrar datos guardados hasta 24h; se refrescan en segundo plano. */
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 let boundAgency = "";
 
@@ -19,32 +21,72 @@ export function panelSWRKey(url: string, agency = boundAgency) {
 }
 
 function storageKey(url: string) {
-  return `${SESSION_PREFIX}${boundAgency || "x"}:${url}`;
+  return `${CACHE_PREFIX}${boundAgency || "x"}:${url}`;
 }
 
-function readSession(url: string) {
+type CacheEntry = { t: number; d: unknown };
+
+function readCache(url: string): { data: unknown; age: number } | undefined {
   if (typeof window === "undefined") return undefined;
   try {
-    const raw = sessionStorage.getItem(storageKey(url));
+    const raw =
+      localStorage.getItem(storageKey(url)) ??
+      sessionStorage.getItem(`panel-swr-v2:${boundAgency || "x"}:${url}`);
     if (!raw) return undefined;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw) as CacheEntry | unknown;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "t" in parsed &&
+      "d" in parsed &&
+      typeof (parsed as CacheEntry).t === "number"
+    ) {
+      const entry = parsed as CacheEntry;
+      const age = Date.now() - entry.t;
+      if (age > CACHE_TTL_MS) return undefined;
+      return { data: entry.d, age };
+    }
+    // formato viejo (solo JSON del payload)
+    return { data: parsed, age: 0 };
   } catch {
     return undefined;
   }
 }
 
-function writeSession(url: string, data: unknown) {
+function writeCache(url: string, data: unknown) {
   if (typeof window === "undefined") return;
+  const payload = JSON.stringify({ t: Date.now(), d: data } satisfies CacheEntry);
   try {
-    sessionStorage.setItem(storageKey(url), JSON.stringify(data));
+    localStorage.setItem(storageKey(url), payload);
   } catch {
-    /* quota */
+    try {
+      // cuota llena: limpiar cachés viejas del panel
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k?.startsWith(CACHE_PREFIX) || k?.startsWith("panel-swr-")) {
+          keys.push(k);
+        }
+      }
+      keys.slice(0, Math.ceil(keys.length / 2)).forEach((k) => {
+        localStorage.removeItem(k);
+      });
+      localStorage.setItem(storageKey(url), payload);
+    } catch {
+      try {
+        sessionStorage.setItem(storageKey(url), payload);
+      } catch {
+        /* ignore */
+      }
+    }
   }
 }
 
 export async function panelFetcher(url: string) {
   const res = await fetch(url, {
     headers: { "x-skip-view-as": "1" },
+    // Permite caché HTTP del navegador / Electron cuando el server lo autoriza
+    cache: "default",
   });
   if (!res.ok) {
     let message = "Error al cargar";
@@ -57,7 +99,7 @@ export async function panelFetcher(url: string) {
     throw new Error(message);
   }
   const json = await res.json();
-  writeSession(url, json);
+  writeCache(url, json);
   return json;
 }
 
@@ -72,11 +114,12 @@ export const PANEL_SWR_DEFAULTS: SWRConfiguration = {
   fetcher: panelFetcher,
   revalidateOnFocus: false,
   revalidateOnReconnect: true,
-  revalidateIfStale: false,
+  revalidateIfStale: true,
   keepPreviousData: true,
-  dedupingInterval: 30_000,
+  dedupingInterval: 60_000,
   errorRetryCount: 2,
   errorRetryInterval: 1200,
+  focusThrottleInterval: 60_000,
 };
 
 export function usePanelData(url: string | null, options?: SWRConfiguration) {
@@ -88,23 +131,37 @@ export function usePanelData(url: string | null, options?: SWRConfiguration) {
     ? (cache as { get: (k: unknown) => { data?: unknown } | undefined }).get(key)
         ?.data
     : undefined;
-  const fallback = useMemo(() => {
+  const cached = useMemo(() => {
     if (!url || memory != null) return undefined;
-    return readSession(url);
+    return readCache(url);
   }, [url, memory, slug]);
+
+  const fallbackData = memory ?? cached?.data;
+  // Con caché: pintar YA y refrescar en segundo plano si tiene > 45s
+  const shouldRevalidate =
+    memory == null &&
+    (cached == null || (cached.age ?? 0) > 45_000);
 
   return useSWR(key, () => panelFetcher(url!), {
     ...PANEL_SWR_DEFAULTS,
-    fallbackData: memory ?? fallback,
-    // Con caché/sessionStorage: pintar ya; refrescar en segundo plano solo si no hay datos.
-    revalidateOnMount: memory == null && fallback == null,
-    revalidateIfStale: false,
+    fallbackData,
+    revalidateOnMount: shouldRevalidate || fallbackData == null,
     ...options,
   });
 }
 
 export function persistPanelCache(url: string, data: unknown) {
-  writeSession(url, data);
+  writeCache(url, data);
+}
+
+/** Hidrata la memoria SWR desde localStorage (arranque instantáneo). */
+export function hydratePanelCacheFromStorage(urls: string[]) {
+  if (typeof window === "undefined") return;
+  for (const url of urls) {
+    const hit = readCache(url);
+    if (!hit) continue;
+    void mutate(panelSWRKey(url), hit.data, { revalidate: false });
+  }
 }
 
 export function mutatePanel(
@@ -130,6 +187,18 @@ export function invalidatePanel(...keys: string[]) {
 
 export function invalidateAllPanel() {
   void mutate(() => true, undefined, { revalidate: true });
+}
+
+export function clearPanelDiskCache() {
+  if (typeof window === "undefined") return;
+  const toRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k?.startsWith(CACHE_PREFIX) || k?.startsWith("panel-swr-")) {
+      toRemove.push(k);
+    }
+  }
+  toRemove.forEach((k) => localStorage.removeItem(k));
 }
 
 export const PANEL = {
@@ -193,9 +262,10 @@ export function prefetchPanel() {
   if (typeof window === "undefined") return;
 
   const urls = panelWarmUrls();
+  hydratePanelCacheFromStorage(urls);
   window.setTimeout(() => {
-    urls.slice(2, 6).forEach((url, i) => {
-      window.setTimeout(() => warm(url), i * 400);
+    urls.slice(0, 8).forEach((url, i) => {
+      window.setTimeout(() => warm(url), i * 200);
     });
-  }, 1200);
+  }, 400);
 }
