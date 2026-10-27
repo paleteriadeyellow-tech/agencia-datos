@@ -21,6 +21,23 @@ function viewAsIdFromRequest(req: NextRequest) {
   );
 }
 
+/** Rol leído de la base, reutilizado 30s por instancia: ahorra una consulta por petición. */
+const ROLE_TTL_MS = 30_000;
+const roleCache = new Map<string, { role: string | null; t: number }>();
+
+async function cachedRole(userId: string, agencySlug: string) {
+  const key = `${agencySlug}:${userId}`;
+  const hit = roleCache.get(key);
+  if (hit && Date.now() - hit.t < ROLE_TTL_MS) return hit.role;
+  const dbUser = await prisma.user.findFirst({
+    where: { id: userId, agencySlug },
+    select: { role: true },
+  });
+  const role = dbUser?.role ?? null;
+  roleCache.set(key, { role, t: Date.now() });
+  return role;
+}
+
 async function resolveToken(req: NextRequest): Promise<JWT | null> {
   const auth = req.headers.get("authorization");
   if (auth?.toLowerCase().startsWith("bearer ")) {
@@ -62,11 +79,8 @@ export async function requireApiAuth(req: NextRequest) {
 
   const userId = userIdFromToken(token);
   if (userId) {
-    const dbUser = await prisma.user.findFirst({
-      where: { id: userId, agencySlug },
-      select: { role: true },
-    });
-    if (dbUser) token.role = dbUser.role;
+    const role = await cachedRole(userId, agencySlug);
+    if (role) token.role = role;
   }
 
   const isAdminUser = isAdmin(token.role as string | undefined);

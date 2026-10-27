@@ -5,7 +5,8 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 function datasourceUrl() {
   const url = process.env.DATABASE_URL ?? "";
   if (!url || /[?&]connection_limit=/.test(url)) return url;
-  return `${url}${url.includes("?") ? "&" : "?"}connection_limit=1`;
+  // Con 1 conexión los Promise.all de las rutas se ejecutan en fila; el pooler (6543) aguanta varias.
+  return `${url}${url.includes("?") ? "&" : "?"}connection_limit=5`;
 }
 
 export function isMissingSchema(e: unknown) {
