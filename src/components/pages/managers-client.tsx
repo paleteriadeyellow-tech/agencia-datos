@@ -8,7 +8,8 @@ import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Field, Panel, inputClass } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
-import { createManager, deleteManager } from "@/lib/actions";
+import { createManager, deleteManager, setUserPosition } from "@/lib/actions";
+import { POSITIONS, POSITION_LABEL } from "@/lib/positions";
 import { useViewAs } from "@/components/view-as";
 
 type ManagerRow = {
@@ -16,6 +17,7 @@ type ManagerRow = {
   name: string;
   email: string;
   role: string;
+  position: string | null;
   createdAt: string;
   creatorsCount: number;
 };
@@ -33,6 +35,7 @@ export default function ManagersClient() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("manager");
+  const [position, setPosition] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -47,6 +50,7 @@ export default function ManagersClient() {
     fd.set("email", email);
     fd.set("password", password);
     fd.set("role", role);
+    fd.set("position", position);
     const res = await createManager(fd);
     setSaving(false);
     if (res.error) {
@@ -57,9 +61,21 @@ export default function ManagersClient() {
     setEmail("");
     setPassword("");
     setRole("manager");
+    setPosition("");
     setMsg("Manager creado. Ya puede iniciar sesión y asignarse a creadores.");
     mutate();
     invalidatePanel(PANEL.creators);
+  }
+
+  async function onPosition(m: ManagerRow, value: string) {
+    setErr("");
+    const res = await setUserPosition(m.id, value || null);
+    if (res.error) {
+      setErr(res.error);
+      return;
+    }
+    mutate();
+    invalidatePanel("/api/panel/mi-dia", PANEL.tasks);
   }
 
   async function onDelete(m: ManagerRow) {
@@ -150,6 +166,20 @@ export default function ManagersClient() {
               <option value="admin">Admin</option>
             </select>
           </Field>
+          <Field label="Puesto (define sus tareas fijas de cada día)">
+            <select
+              value={position}
+              onChange={(e) => setPosition(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Sin puesto</option>
+              {POSITIONS.map((p) => (
+                <option key={p} value={p}>
+                  {POSITION_LABEL[p]}
+                </option>
+              ))}
+            </select>
+          </Field>
           {err && <p className="text-sm text-danger md:col-span-2">{err}</p>}
           {msg && <p className="text-sm text-success md:col-span-2">{msg}</p>}
           <div className="md:col-span-2">
@@ -167,6 +197,7 @@ export default function ManagersClient() {
               <th className="px-4 py-2.5 font-medium">Nombre</th>
               <th className="px-4 py-2.5 font-medium">Email</th>
               <th className="px-4 py-2.5 font-medium">Rol</th>
+              <th className="px-4 py-2.5 font-medium">Puesto</th>
               <th className="px-4 py-2.5 font-medium">Creadores</th>
               <th className="px-4 py-2.5 font-medium">Alta</th>
               <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
@@ -187,6 +218,21 @@ export default function ManagersClient() {
                     <Shield className="h-3 w-3" />
                     {m.role}
                   </span>
+                </td>
+                <td className="px-4 py-2.5">
+                  <select
+                    value={m.position ?? ""}
+                    onChange={(e) => void onPosition(m, e.target.value)}
+                    className={`${inputClass} !py-1 text-xs`}
+                    aria-label={`Puesto de ${m.name}`}
+                  >
+                    <option value="">Sin puesto</option>
+                    {POSITIONS.map((p) => (
+                      <option key={p} value={p}>
+                        {POSITION_LABEL[p]}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td className="px-4 py-2.5 text-text-muted">
                   {m.creatorsCount}

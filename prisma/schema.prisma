@@ -15,6 +15,7 @@ model User {
   email        String
   passwordHash String
   role         String    @default("manager") // admin | manager
+  position     String?   // puesto: administracion | mentor | reclutador | creador (define sus tareas fijas)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   creators     Creator[] @relation("ManagerCreators")
@@ -143,11 +144,16 @@ model Task {
   status      String    @default("pendiente") // pendiente | en_progreso | hecha
   period      String    @default("") // YYYY-MM
   dueDate     DateTime?
+  templateId  String?
+  template    TaskTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  genKey      String? // fecha (YYYY-MM-DD) de la que se generó, para no repetirla
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  @@unique([templateId, assigneeId, genKey])
   @@index([agencySlug])
   @@index([agencySlug, period])
+  @@index([assigneeId, status])
 }
 
 model Campaign {
@@ -463,4 +469,28 @@ model CreatorPortalToken {
   createdAt  DateTime @default(now())
 
   @@index([agencySlug])
+}
+
+/// Tarea fija de un puesto: se repite sola (diaria, semanal o mensual) y llega a "Mi día" de cada persona con ese puesto.
+model TaskTemplate {
+  id           String   @id @default(cuid())
+  agencySlug   String   @default("streamersfederation")
+  position     String // administracion | mentor | reclutador | creador
+  title        String
+  description  String?
+  priority     String   @default("media") // baja | media | alta
+  recurrence   String   @default("diaria") // diaria | semanal | mensual
+  weekdays     String   @default("1,2,3,4,5") // 1=lunes … 7=domingo
+  dayOfMonth   Int? // para mensual
+  dueTime      String? // HH:MM, informativo
+  evidenceHint String?
+  isPreset     Boolean  @default(false)
+  active       Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  tasks        Task[]
+
+  @@unique([agencySlug, position, title])
+  @@index([agencySlug, position, active])
 }

@@ -9,6 +9,7 @@ import { authOptions } from "@/lib/auth";
 import { formatPhoneInputValue } from "@/lib/phone";
 import { isAgencySlug, type AgencySlug } from "@/lib/agencies";
 import { isAdmin } from "@/lib/permissions";
+import { isPosition } from "@/lib/positions";
 import { filterCreatorIdsForScope, getScope } from "@/lib/creator-scope";
 import { parseViewAsId, VIEW_AS_COOKIE } from "@/lib/view-as";
 
@@ -74,10 +75,24 @@ export async function createManager(formData: FormData) {
       email,
       passwordHash,
       role: role === "admin" ? "admin" : "manager",
+      position: isPosition(formData.get("position")) ? String(formData.get("position")) : null,
     },
   });
 
   revalidateAgency(agencySlug, "/managers", "/creadores");
+  return { ok: true };
+}
+
+/** Asigna (o quita) el puesto de una persona: define qué tareas fijas le llegan en "Mi día". */
+export async function setUserPosition(id: string, position: string | null) {
+  const gate = await requireAdmin();
+  if (gate.error) return { error: gate.error };
+  const agencySlug = gate.session!.user.agencySlug;
+  if (position !== null && !isPosition(position)) return { error: "Puesto inválido." };
+  const user = await prisma.user.findFirst({ where: { id, agencySlug }, select: { id: true } });
+  if (!user) return { error: "Persona no encontrada." };
+  await prisma.user.update({ where: { id }, data: { position } });
+  revalidateAgency(agencySlug, "/managers", "/mi-dia", "/tareas");
   return { ok: true };
 }
 

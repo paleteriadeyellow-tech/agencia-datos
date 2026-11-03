@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
+import { generateTasksForAgency, todayKey } from "@/lib/task-generator";
 
 export const dynamic = "force-dynamic";
 
-const TZ = "America/Mexico_City";
-
-/** Fecha de hoy (YYYY-MM-DD) en la zona de la agencia. */
-function todayKey() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-}
 
 /**
  * "Mi día": las tareas asignadas a una persona, de cualquier periodo, solo de su agencia.
@@ -24,6 +19,9 @@ export async function GET(req: NextRequest) {
   const requested = req.nextUrl.searchParams.get("user");
   const userId = scope.admin && requested ? requested : scope.userId;
   if (!userId) return NextResponse.json({ error: "Sin usuario" }, { status: 400 });
+
+  // Las tareas fijas de hoy según el puesto de cada persona (idempotente)
+  await generateTasksForAgency(agencySlug).catch(() => 0);
 
   const today = todayKey();
   // Inicio del día de hoy en la zona de la agencia (UTC-6, suficiente para "cerradas hoy")

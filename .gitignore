@@ -52,3 +52,7 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# app de escritorio: instaladores y binarios generados (pesan >100 MB)
+desktop/release*/
+desktop/node_modules/

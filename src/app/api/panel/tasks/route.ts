@@ -7,6 +7,7 @@ import {
   taskWhere,
 } from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
+import { generateTasksForAgency } from "@/lib/task-generator";
 import { currentMonth } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ export async function GET(req: NextRequest) {
   const scopeFilter = creatorWhere(scope, agencySlug);
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
+
+  await generateTasksForAgency(agencySlug).catch(() => 0);
 
   if (isAdminUser) {
     await prisma.task.updateMany({
