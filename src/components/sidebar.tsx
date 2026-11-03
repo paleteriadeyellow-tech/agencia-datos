@@ -41,16 +41,15 @@ import { useViewAs } from "@/components/view-as";
 import { apisForRoute, warmApis } from "@/lib/nav-prefetch";
 
 const nav = [
+  { href: "/mi-dia", label: "Mi día", icon: Sun },
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/creadores", label: "Creadores", icon: Users },
   { href: "/control-diamantes", label: "Control de diamantes", icon: Gem },
   { href: "/metricas", label: "App livecoins", icon: Smartphone },
   { href: "/envio-kpi", label: "Envío de KPI", icon: Send },
   { href: "/mensajes-wa", label: "Mensajes WhatsApp", icon: MessageCircle },
-  { href: "/mi-dia", label: "Mi día", icon: Sun },
   { href: "/tareas", label: "Tareas", icon: CheckSquare },
   { href: "/plantillas", label: "Tareas fijas", icon: Repeat },
-  { href: "/evidencias", label: "Evidencias", icon: ImageIcon },
   { href: "/campanas", label: "Campañas", icon: Megaphone },
   { href: "/calendario", label: "Calendario LIVE", icon: CalendarDays },
   { href: "/reclutamiento", label: "Reclutamiento y seguimiento", icon: UserPlus },
@@ -64,6 +63,7 @@ const nav = [
   { href: "/bonos", label: "Bonos", icon: Gift },
   { href: "/contratos", label: "Contratos", icon: FileText },
   { href: "/managers", label: "Managers", icon: UserCog },
+  { href: "/evidencias", label: "Evidencias", icon: ImageIcon },
 ];
 
 export function Sidebar() {
