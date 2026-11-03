@@ -65,6 +65,9 @@ export async function GET(req: NextRequest) {
     dueDate: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,
     time: t.template?.dueTime ?? null,
     fixed: !!t.templateId,
+    evidenceAt: t.evidenceAt,
+    reviewedAt: t.reviewedAt,
+    reviewNote: t.reviewNote,
     creator: t.creator?.name ?? null,
   });
 

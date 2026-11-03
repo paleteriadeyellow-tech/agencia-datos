@@ -21,6 +21,7 @@ export const MANAGER_ALLOWED_PATHS = [
 ] as const;
 
 export const ADMIN_ONLY_PATHS = [
+  "/evidencias",
   "/plantillas",
   "/finanzas",
   "/bonos",

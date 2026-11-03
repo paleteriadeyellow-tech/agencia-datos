@@ -147,6 +147,11 @@ model Task {
   templateId  String?
   template    TaskTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   genKey      String? // fecha (YYYY-MM-DD) de la que se generó, para no repetirla
+  evidencePath String? // ruta de la foto en el almacenamiento (bucket task-evidence)
+  evidenceNote String?
+  evidenceAt   DateTime?
+  reviewedAt   DateTime? // el admin la aprobó
+  reviewNote   String? // motivo si el admin la devolvió
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

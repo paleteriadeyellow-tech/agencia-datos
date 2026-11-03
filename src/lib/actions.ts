@@ -338,6 +338,9 @@ export async function updateTaskStatus(id: string, status: string) {
   }
   const task = await prisma.task.findFirst({ where: { id, agencySlug } });
   if (!task) return { error: "Tarea no encontrada." };
+  if (status === "hecha" && !isAdmin(session.user.role) && !task.evidenceAt) {
+    return { error: "Para terminarla sube la evidencia desde Mi día." };
+  }
   // Puede moverla: admin, la persona a quien se asignó, o quien lleva al creador de la tarea.
   if (!isAdmin(session.user.role) && task.assigneeId !== session.user.id) {
     if (!task.creatorId) return { error: "No autorizado." };
