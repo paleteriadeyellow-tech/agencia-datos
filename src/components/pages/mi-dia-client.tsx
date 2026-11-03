@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, CircleDot, Calendar, User, Undo2, Sparkles } from "lucide-react";
+import { CheckCircle2, CircleDot, Calendar, Clock, User, Undo2, Sparkles } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
@@ -17,6 +17,8 @@ type Row = {
   priority: string;
   status: string;
   dueDate: string | null;
+  time: string | null;
+  fixed: boolean;
   creator: string | null;
 };
 
@@ -69,7 +71,7 @@ export default function MiDiaClient() {
   }
 
   const titleName = data?.user?.name?.split(" ")[0];
-  const subtitle = viewUser && titleName ? `Lo que tiene asignado ${titleName}` : "Lo que te toca hacer hoy";
+  const subtitle = viewUser && titleName ? `Lo que tiene asignado ${titleName}` : "Lo que te toca hoy · se renueva cada día a las 6:00 a.m.";
 
   if (error) {
     return (
@@ -130,6 +132,12 @@ export default function MiDiaClient() {
             </div>
             {t.description && <p className="mt-1 text-xs leading-relaxed text-text-muted">{t.description}</p>}
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-muted">
+              {t.time && (
+                <span className="inline-flex items-center gap-1 font-medium text-text">
+                  <Clock className="h-3 w-3 opacity-70" />
+                  {t.time}
+                </span>
+              )}
               {t.creator && (
                 <span className="inline-flex items-center gap-1">
                   <User className="h-3 w-3 opacity-70" />
@@ -249,6 +257,14 @@ export default function MiDiaClient() {
 
           {fail && <p className="text-sm text-danger">{fail}</p>}
 
+          {data.open.length === 0 && done.length > 0 && (
+            <Panel className="py-8 text-center">
+              <Sparkles className="mx-auto mb-2 h-6 w-6 text-success" />
+              <p className="font-semibold">¡Terminaste todo por hoy!</p>
+              <p className="mt-1 text-sm text-text-muted">Mañana a las 6:00 a.m. te llegan tus tareas del día.</p>
+            </Panel>
+          )}
+
           {data.open.length === 0 && done.length === 0 && (
             <Panel className="py-10 text-center">
               <Sparkles className="mx-auto mb-2 h-6 w-6 text-accent" />
@@ -263,14 +279,16 @@ export default function MiDiaClient() {
           <Section title="Próximas" rows={upcoming} kind="other" />
 
           {done.length > 0 && (
-            <section className="space-y-2.5">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-success">Hechas hoy</h2>
-              <ul className="space-y-2.5">
+            <details className="group space-y-2.5">
+              <summary className="cursor-pointer text-sm font-semibold uppercase tracking-wide text-success">
+                Hechas hoy · {done.length} <span className="ml-1 text-xs font-normal normal-case text-text-muted">(toca para verlas)</span>
+              </summary>
+              <ul className="mt-2.5 space-y-2.5">
                 {done.map((t) => (
                   <Card key={t.id} t={t} kind="done" />
                 ))}
               </ul>
-            </section>
+            </details>
           )}
         </div>
       )}

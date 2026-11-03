@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
-import { generateTasksForAgency, todayKey } from "@/lib/task-generator";
+import { dayStart, generateTasksForAgency, todayKey } from "@/lib/task-generator";
 
 export const dynamic = "force-dynamic";
 
@@ -24,19 +24,20 @@ export async function GET(req: NextRequest) {
   await generateTasksForAgency(agencySlug).catch(() => 0);
 
   const today = todayKey();
-  // Inicio del día de hoy en la zona de la agencia (UTC-6, suficiente para "cerradas hoy")
-  const startOfToday = new Date(`${today}T00:00:00-06:00`);
+  // El día de trabajo empieza a las 6:00 a.m.: lo cerrado desde esa hora cuenta como "hecho hoy"
+  const startOfToday = dayStart(today);
+  const tpl = { select: { dueTime: true, recurrence: true, sortOrder: true } } as const;
 
-  const [user, open, doneToday, users] = await Promise.all([
+  const [user, openAll, doneToday, users] = await Promise.all([
     prisma.user.findFirst({ where: { id: userId, agencySlug }, select: { id: true, name: true } }),
     prisma.task.findMany({
       where: { agencySlug, assigneeId: userId, status: { in: ["pendiente", "en_progreso"] } },
-      include: { creator: { select: { name: true } } },
+      include: { creator: { select: { name: true } }, template: tpl },
       orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
     }),
     prisma.task.findMany({
       where: { agencySlug, assigneeId: userId, status: "hecha", updatedAt: { gte: startOfToday } },
-      include: { creator: { select: { name: true } } },
+      include: { creator: { select: { name: true } }, template: tpl },
       orderBy: { updatedAt: "desc" },
     }),
     scope.admin
@@ -44,13 +45,26 @@ export async function GET(req: NextRequest) {
       : Promise.resolve([] as { id: string; name: string }[]),
   ]);
 
-  const row = (t: (typeof open)[number]) => ({
+  // Las tareas diarias de días anteriores que no se hicieron ya no estorban: cada mañana empieza limpia.
+  // (Semanales y mensuales sí se siguen mostrando como atrasadas hasta hacerlas.)
+  const open = openAll
+    .filter((t) => !(t.template?.recurrence === "diaria" && t.genKey && t.genKey < today))
+    .sort((x, y) => {
+      const dx = x.dueDate ? x.dueDate.getTime() : Infinity;
+      const dy = y.dueDate ? y.dueDate.getTime() : Infinity;
+      if (dx !== dy) return dx - dy;
+      return (x.template?.dueTime ?? "99:99").localeCompare(y.template?.dueTime ?? "99:99") || x.createdAt.getTime() - y.createdAt.getTime();
+    });
+
+  const row = (t: (typeof openAll)[number]) => ({
     id: t.id,
     title: t.title,
     description: t.description,
     priority: t.priority,
     status: t.status,
     dueDate: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,
+    time: t.template?.dueTime ?? null,
+    fixed: !!t.templateId,
     creator: t.creator?.name ?? null,
   });
 
