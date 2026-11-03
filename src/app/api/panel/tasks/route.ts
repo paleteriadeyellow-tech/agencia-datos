@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const [creators, tasks] = await Promise.all([
+  const [creators, tasks, users] = await Promise.all([
     prisma.creator.findMany({
       where: scopeFilter,
       select: { id: true, name: true, managerId: true },
@@ -39,14 +39,26 @@ export async function GET(req: NextRequest) {
     }),
     prisma.task.findMany({
       where: taskWhere(scope, agencySlug, { period }),
-      include: { creator: { select: { name: true, managerId: true } } },
+      include: {
+        creator: { select: { name: true, managerId: true } },
+        assignee: { select: { id: true, name: true } },
+      },
       orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     }),
+    // Solo el admin necesita la lista de personas para asignar
+    isAdminUser && scope.admin
+      ? prisma.user.findMany({
+          where: { agencySlug },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
   ]);
 
   return NextResponse.json({
     period,
     creators,
+    users,
     tasks: tasks.map((t) => ({
       id: t.id,
       title: t.title,
@@ -60,6 +72,7 @@ export async function GET(req: NextRequest) {
         : null,
       managerId: t.creator?.managerId ?? null,
       creatorId: t.creatorId,
+      assignee: t.assignee ? { id: t.assignee.id, name: t.assignee.name } : null,
     })),
   });
 }
@@ -92,7 +105,11 @@ export async function PATCH(req: NextRequest) {
   if (!existing) {
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   }
-  if (existing.creatorId) {
+  // Admin, la persona asignada, o quien lleva al creador de la tarea
+  if (!scope.admin && existing.assigneeId !== scope.userId) {
+    if (!existing.creatorId) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
     const accessErr = await assertCreatorAccess(
       scope,
       existing.creatorId,
@@ -117,6 +134,7 @@ const createSchema = z.object({
   status: z.enum(["pendiente", "en_progreso", "hecha"]).optional(),
   period: z.string().regex(/^\d{4}-\d{2}$/),
   dueDate: z.string().nullable().optional(),
+  assigneeId: z.string().nullable().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -150,10 +168,26 @@ export async function POST(req: NextRequest) {
     creatorId = creator.id;
   }
 
-  const assigneeId =
+  const me =
     (typeof token.id === "string" && token.id) ||
     (typeof token.sub === "string" && token.sub) ||
     null;
+  // Solo un admin puede asignar a otra persona (de su misma agencia)
+  let assigneeId = me;
+  const wanted = parsed.data.assigneeId || null;
+  if (wanted && wanted !== me) {
+    if (!scope.admin) {
+      return NextResponse.json({ error: "Solo un admin puede asignar a otra persona" }, { status: 403 });
+    }
+    const person = await prisma.user.findFirst({
+      where: { id: wanted, agencySlug },
+      select: { id: true },
+    });
+    if (!person) {
+      return NextResponse.json({ error: "Persona no encontrada" }, { status: 404 });
+    }
+    assigneeId = person.id;
+  }
 
   const task = await prisma.task.create({
     data: {
