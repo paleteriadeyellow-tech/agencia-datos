@@ -20,11 +20,13 @@ type TaskRow = {
   creator: { name: string } | null;
   managerId?: string | null;
   creatorId?: string | null;
+  assignee?: { id: string; name: string } | null;
 };
 
 type TasksPayload = {
   period: string;
   creators: { id: string; name: string }[];
+  users?: { id: string; name: string }[];
   tasks: TaskRow[];
 };
 
@@ -153,10 +155,11 @@ export default function TasksClient() {
           <div className="mb-5">
             <TaskForm
               creators={formCreators}
+              users={data.users}
               period={period}
               onSaved={() => {
                 void mutate();
-                invalidatePanel(PANEL.dashboard);
+                invalidatePanel("/api/panel/mi-dia", PANEL.dashboard);
               }}
             />
           </div>
