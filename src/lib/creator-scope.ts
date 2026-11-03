@@ -71,8 +71,9 @@ export function taskWhere(
     AND: [
       base,
       {
+        // Lo que me asignaron + lo de mis creadores (las tareas generales ya no se ven entre compañeros)
         OR: [
-          { creatorId: null },
+          { assigneeId: scope.userId },
           { creator: { managerId: scope.userId } },
         ],
       },

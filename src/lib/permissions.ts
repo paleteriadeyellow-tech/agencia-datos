@@ -7,6 +7,7 @@ export const MANAGER_ALLOWED_PATHS = [
   "/metricas",
   "/envio-kpi",
   "/mensajes-wa",
+  "/mi-dia",
   "/tareas",
   "/campanas",
   "/calendario",
