@@ -28,7 +28,7 @@ export default function ManagersClient() {
   const { data, error, mutate } = usePanelData(PANEL.managers) as {
     data?: { managers: ManagerRow[] };
     error?: Error;
-    mutate: () => void;
+    mutate: (data?: unknown, opts?: { revalidate?: boolean }) => Promise<unknown> | void;
   };
 
   const [name, setName] = useState("");
@@ -69,12 +69,28 @@ export default function ManagersClient() {
 
   async function onPosition(m: ManagerRow, value: string) {
     setErr("");
-    const res = await setUserPosition(m.id, value || null);
-    if (res.error) {
-      setErr(res.error);
-      return;
+    setMsg("");
+    const next = value || null;
+    // Se ve al instante; si falla, se revierte y se muestra el motivo.
+    await mutate(
+      (cur?: { managers: ManagerRow[] }) =>
+        cur && { managers: cur.managers.map((x) => (x.id === m.id ? { ...x, position: next } : x)) },
+      { revalidate: false }
+    );
+    try {
+      const res = await setUserPosition(m.id, next);
+      if (res.error) throw new Error(res.error);
+      setMsg(`Puesto de ${m.name} guardado.`);
+    } catch (e) {
+      setErr(e instanceof Error && e.message ? e.message : "No se pudo guardar el puesto. Revisa que la base de datos tenga las columnas nuevas.");
     }
-    mutate();
+    // Confirmar contra el servidor sin usar la caché del navegador
+    try {
+      const fresh = await fetch(PANEL.managers, { cache: "no-store", headers: { "x-skip-view-as": "1" } });
+      if (fresh.ok) await mutate(await fresh.json(), { revalidate: false });
+    } catch {
+      /* se queda lo que ya se ve */
+    }
     invalidatePanel("/api/panel/mi-dia", PANEL.tasks);
   }
 
@@ -189,6 +205,10 @@ export default function ManagersClient() {
           </div>
         </form>
       </Panel>
+
+      {(err || msg) && (
+        <p className={`mb-3 text-sm ${err ? "text-danger" : "text-success"}`}>{err || msg}</p>
+      )}
 
       <Panel className="overflow-x-auto p-0">
         <table className="w-full min-w-[640px] text-left text-sm">
