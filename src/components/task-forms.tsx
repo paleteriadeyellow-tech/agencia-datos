@@ -56,10 +56,13 @@ function PriorityBadge({ priority }: { priority: string }) {
 
 export function TaskForm({
   creators,
+  users = [],
   period,
   onSaved,
 }: {
   creators: { id: string; name: string }[];
+  /** Personas a quienes se puede asignar (solo lo recibe el admin). */
+  users?: { id: string; name: string }[];
   period: string;
   onSaved?: () => void;
 }) {
@@ -125,6 +128,18 @@ export function TaskForm({
               autoFocus
             />
           </Field>
+          {users.length > 0 && (
+            <Field label="Asignar a">
+              <select name="assigneeId" defaultValue="" className={inputClass}>
+                <option value="">Yo</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Creador (opcional)">
             <select name="creatorId" defaultValue="" className={inputClass}>
               <option value="">General / agencia</option>
@@ -183,6 +198,7 @@ export function TaskBoard({
     status: string;
     dueDate: string | null;
     creator: { name: string } | null;
+    assignee?: { id: string; name: string } | null;
   }[];
   onMove: (id: string, status: string) => void;
 }) {
@@ -253,6 +269,11 @@ export function TaskBoard({
                         <User className="h-3 w-3 opacity-70" />
                         {t.creator?.name ?? "General"}
                       </span>
+                      {t.assignee && (
+                        <span className="inline-flex items-center gap-1 text-cyan">
+                          Para: {t.assignee.name}
+                        </span>
+                      )}
                       {t.dueDate && (
                         <span
                           className={cn(

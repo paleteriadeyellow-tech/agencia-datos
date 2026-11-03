@@ -282,13 +282,28 @@ export async function createTask(formData: FormData) {
     ? periodRaw
     : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
 
+  // Solo un admin puede asignar a otra persona; el resto se la asigna a sí mismo.
+  const wanted = String(formData.get("assigneeId") || "");
+  let assigneeId = session.user.id;
+  if (wanted && wanted !== session.user.id) {
+    if (!isAdmin(session.user.role)) {
+      return { error: "Solo un admin puede asignar tareas a otras personas." };
+    }
+    const exists = await prisma.user.findFirst({
+      where: { id: wanted, agencySlug },
+      select: { id: true },
+    });
+    if (!exists) return { error: "La persona elegida no existe." };
+    assigneeId = wanted;
+  }
+
   await prisma.task.create({
     data: {
       agencySlug,
       title,
       description: String(formData.get("description") || "").trim() || null,
       creatorId,
-      assigneeId: session.user.id,
+      assigneeId,
       priority: String(formData.get("priority") || "media"),
       status: String(formData.get("status") || "pendiente"),
       period,
@@ -296,23 +311,28 @@ export async function createTask(formData: FormData) {
     },
   });
 
-  revalidateAgency(agencySlug, "/tareas", "/dashboard");
+  revalidateAgency(agencySlug, "/tareas", "/mi-dia", "/dashboard");
   return { ok: true };
 }
 
 export async function updateTaskStatus(id: string, status: string) {
   const session = await requireSession();
   const agencySlug = session.user.agencySlug;
+  if (!["pendiente", "en_progreso", "hecha"].includes(status)) {
+    return { error: "Estado inválido." };
+  }
   const task = await prisma.task.findFirst({ where: { id, agencySlug } });
   if (!task) return { error: "Tarea no encontrada." };
-  if (task.creatorId && !isAdmin(session.user.role)) {
+  // Puede moverla: admin, la persona a quien se asignó, o quien lleva al creador de la tarea.
+  if (!isAdmin(session.user.role) && task.assigneeId !== session.user.id) {
+    if (!task.creatorId) return { error: "No autorizado." };
     const creator = await prisma.creator.findFirst({
       where: { id: task.creatorId, agencySlug, managerId: session.user.id },
     });
     if (!creator) return { error: "No autorizado." };
   }
   await prisma.task.update({ where: { id }, data: { status } });
-  revalidateAgency(agencySlug, "/tareas", "/dashboard");
+  revalidateAgency(agencySlug, "/tareas", "/mi-dia", "/dashboard");
   return { ok: true };
 }
 
