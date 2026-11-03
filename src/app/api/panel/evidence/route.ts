@@ -36,9 +36,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Esta tarea no es tuya." }, { status: 403, headers: NO_STORE });
   }
 
-  const storage = await evidenceStorage();
+  const { storage, error: storageError } = await evidenceStorage();
   if (!storage) {
-    return NextResponse.json({ error: "El almacenamiento de fotos no está disponible. Avisa al admin." }, { status: 503, headers: NO_STORE });
+    return NextResponse.json({ error: `El almacenamiento de fotos no está disponible: ${storageError}.` }, { status: 503, headers: NO_STORE });
   }
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
   const path = `${agencySlug}/${task.id}-${Date.now()}.${ext}`;
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
   });
 
   // Enlaces temporales (1 h) a las fotos privadas
-  const storage = await evidenceStorage();
+  const { storage } = await evidenceStorage();
   const urls = new Map<string, string>();
   if (storage && tasks.length) {
     const paths = tasks.map((t) => t.evidencePath).filter((p): p is string => !!p);
