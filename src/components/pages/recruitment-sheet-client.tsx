@@ -91,22 +91,24 @@ function coerce(col: Col, raw: string): string {
   return v;
 }
 
-/** Peso relativo de cada columna: la hoja reparte todo el ancho disponible entre ellas, sin scroll lateral. */
-function colWeight(c: Col) {
-  if (c.key === "creatorName") return 1.5;
-  if (c.key === "recruiter") return 1.1;
-  if (c.type === "date") return 1.25;
-  if (c.type === "number") return 0.85;
-  if (c.type === "check") return 0.6;
-  if (c.type === "select") return 1.15;
-  return c.label.length > 22 ? 1.4 : 1;
+/** Ancho de cada columna en píxeles: lo bastante para leer el contenido sin cortarlo. */
+function colWidth(c: Col) {
+  if (c.key === "creatorName") return 200;
+  if (c.key === "situation") return 210;
+  if (c.key === "recruiter") return 130;
+  if (c.type === "date") return 135;
+  if (c.type === "number") return 120;
+  if (c.type === "check") return 90;
+  if (c.type === "select") return 150;
+  return c.label.length > 22 ? 210 : 160;
 }
 
+const tint = (rgb: string, text: string) => `bg-bg-elevated bg-[linear-gradient(rgba(${rgb},0.38),rgba(${rgb},0.38))] ${text}`;
 const HEADER_TONE: Record<string, string> = {
-  pipeline: "bg-emerald-600/35 text-emerald-100",
-  contacto: "bg-sky-600/35 text-sky-100",
-  custom: "bg-violet-600/35 text-violet-100",
-  other: "bg-slate-600/35 text-slate-100",
+  pipeline: tint("5,150,105", "text-emerald-100"),
+  contacto: tint("2,132,199", "text-sky-100"),
+  custom: tint("124,58,237", "text-violet-100"),
+  other: tint("71,85,105", "text-slate-100"),
 };
 function headerTone(c: Col) {
   if (!c.builtin) return HEADER_TONE.custom;
@@ -124,7 +126,7 @@ function focusCell(r: number, c: number) {
   return true;
 }
 
-const CELL = "h-8 w-full min-w-0 truncate text-ellipsis bg-transparent px-1.5 text-[12px] outline-none transition focus:bg-white/10 focus:ring-1 focus:ring-inset focus:ring-accent disabled:opacity-60";
+const CELL = "h-9 w-full min-w-0 truncate text-ellipsis bg-transparent px-2.5 text-[13px] outline-none transition focus:bg-white/10 focus:ring-1 focus:ring-inset focus:ring-accent disabled:opacity-60";
 
 const Cell = memo(function Cell({
   row,
@@ -153,7 +155,7 @@ const Cell = memo(function Cell({
 
   if (col.type === "check") {
     return (
-      <label className="flex h-8 items-center justify-center">
+      <label className="flex h-9 items-center justify-center">
         <input data-cell={`${r}-${c}`} type="checkbox" disabled={disabled} checked={value === "1"} onChange={(e) => onCommit(row, col, e.target.checked ? "1" : "")} className="h-4 w-4 accent-accent" />
       </label>
     );
@@ -184,7 +186,7 @@ const Cell = memo(function Cell({
         onChange={(e) => onCommit(row, col, e.target.value)}
         onDoubleClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
         title={value ? undefined : "Escribe la fecha o haz doble clic para abrir el calendario"}
-        className={cn(CELL, "[&::-webkit-calendar-picker-indicator]:hidden")}
+        className={cn(CELL, "[&::-webkit-calendar-picker-indicator]:hidden", !value && "text-transparent focus:text-white")}
       />
     );
   }
@@ -247,11 +249,15 @@ const SheetRow = memo(function SheetRow({
   const temp = row.id.startsWith("tmp-");
   return (
     <tr className={cn("group", tone)}>
-      <td className="border-b border-r border-white/10 bg-bg-elevated px-0.5 text-center text-[10px] text-text-muted">
+      <td className="sticky left-0 z-10 border-b border-r border-white/10 bg-bg-elevated px-0.5 text-center text-[11px] text-text-muted">
         {status === "…" ? "…" : status === "Error" ? <span className="text-danger">!</span> : r + 1}
       </td>
       {cols.map((col, c) => (
-        <td key={col.key} className="border-b border-r border-white/10 p-0" title={getVal(row, col.key) || undefined}>
+        <td
+          key={col.key}
+          className={cn("border-b border-r border-white/10 p-0", col.key === "creatorName" && "sticky left-9 z-10 bg-bg-elevated shadow-[2px_0_0_rgba(255,255,255,0.08)]")}
+          title={getVal(row, col.key) || undefined}
+        >
           <Cell row={row} col={col} r={r} c={c} value={getVal(row, col.key)} disabled={temp} onCommit={onCommit} onPasteGrid={onPasteGrid} />
         </td>
       ))}
@@ -296,9 +302,7 @@ export default function RecruitmentSheetClient() {
   const managers = useMemo(() => payload?.managers ?? [], [payload?.managers]);
   const allCols = useMemo(() => [...(payload?.columns ?? [])].sort((a, b) => a.sortOrder - b.sortOrder), [payload?.columns]);
   const cols = useMemo(() => allCols.filter((c) => !c.hidden), [allCols]);
-  const weightSum = useMemo(() => cols.reduce((a, c) => a + colWeight(c), 0) || 1, [cols]);
-  // Si hay demasiadas columnas para que se lean, la hoja se desplaza en lugar de apretarlas más
-  const minTableWidth = 36 + 30 + cols.length * 66;
+  const minTableWidth = 36 + 30 + cols.reduce((a, c) => a + colWidth(c), 0);
 
   const rows = useMemo(() => {
     let list = payload?.rows ?? [];
@@ -676,17 +680,17 @@ export default function RecruitmentSheetClient() {
             <colgroup>
               <col style={{ width: 36 }} />
               {cols.map((col) => (
-                <col key={col.key} style={{ width: `calc((100% - 66px) * ${colWeight(col) / weightSum})` }} />
+                <col key={col.key} style={{ width: colWidth(col) }} />
               ))}
               <col style={{ width: 30 }} />
             </colgroup>
             <thead>
               <tr>
-                <th className="sticky top-0 z-20 border-b border-r border-white/10 bg-bg-elevated px-0.5 py-1.5 text-[10px] text-text-muted">#</th>
+                <th className="sticky left-0 top-0 z-30 border-b border-r border-white/10 bg-bg-elevated px-0.5 py-2 text-[11px] text-text-muted">#</th>
                 {cols.map((col) => (
                   <th
                     key={col.key}
-                    className={cn("sticky top-0 z-20 border-b border-r border-white/10 px-1.5 py-1.5 text-left text-[10px] font-semibold uppercase leading-tight tracking-wide", headerTone(col))}
+                    className={cn("sticky top-0 border-b border-r border-white/10 px-2.5 py-2 text-left text-[11px] font-semibold uppercase leading-tight tracking-wide", col.key === "creatorName" ? "left-9 z-30" : "z-20", headerTone(col))}
                     title={col.label}
                   >
                     {col.label}

@@ -256,7 +256,8 @@ async function postRecruitment(req: NextRequest) {
   }
 
   if (data.action === "create") {
-    const creatorName = (data.creatorName ?? "").trim() || "Nuevo creador";
+    // Si el nombre viene vacío a propósito (fila nueva de la hoja) se queda vacío; si no viene, se usa el de siempre
+    const creatorName = data.creatorName === undefined ? "Nuevo creador" : data.creatorName.trim();
     const requestDate = toDate(data.requestDate ?? null);
     const parts = dateParts(isoDate(requestDate));
     let recruiter = (data.recruiter ?? "").trim();
