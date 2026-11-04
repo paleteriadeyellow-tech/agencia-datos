@@ -248,17 +248,18 @@ const SheetRow = memo(function SheetRow({
   onPasteGrid: (r: number, c: number, text: string) => void;
   onRemove: (id: string) => void;
 }) {
-  const tone = situationTone(row.situation);
+  const tone = row.integrationDate ? "bg-emerald-500/10" : situationTone(row.situation);
   const temp = row.id.startsWith("tmp-");
+  const stickyBg = row.integrationDate ? "bg-[#12301f]" : "bg-bg-elevated";
   return (
     <tr className={cn("group", tone)}>
-      <td className="sticky left-0 z-10 border-b border-r border-white/10 bg-bg-elevated px-0.5 text-center text-[11px] text-text-muted">
+      <td className={cn("sticky left-0 z-10 border-b border-r border-white/10 px-0.5 text-center text-[11px] text-text-muted", stickyBg)}>
         {status === "…" ? "…" : status === "Error" ? <span className="text-danger">!</span> : r + 1}
       </td>
       {cols.map((col, c) => (
         <td
           key={col.key}
-          className={cn("border-b border-r border-white/10 p-0", col.key === "creatorName" && "sticky left-9 z-10 bg-bg-elevated shadow-[2px_0_0_rgba(255,255,255,0.08)]")}
+          className={cn("border-b border-r border-white/10 p-0", col.key === "creatorName" && cn("sticky left-9 z-10 shadow-[2px_0_0_rgba(255,255,255,0.08)]", stickyBg))}
           title={getVal(row, col.key) || undefined}
         >
           <Cell row={row} col={col} r={r} c={c} value={getVal(row, col.key)} disabled={temp} onCommit={onCommit} onPasteGrid={onPasteGrid} />
@@ -336,7 +337,7 @@ export default function RecruitmentSheetClient() {
   const settings = payload?.settings ?? DEFAULT_FOLLOW_SETTINGS;
   const followRows = useMemo(() => byManager(allPayload?.rows ?? []), [allPayload?.rows, byManager]);
   // Aviso en la pestaña: urgentes y altas del mes que estás viendo
-  const badge = useMemo(() => computeFollowUp(rows, settings).filter((i) => i.severity <= 2).length, [rows, settings]);
+  const badge = useMemo(() => computeFollowUp(rows, settings, cols.map((c) => ({ key: c.key, label: c.label }))).filter((i) => i.severity <= 2).length, [rows, settings, cols]);
 
   // Siempre con lo último, sin la caché del navegador (las rutas del panel se guardan 60 s)
   const refresh = useCallback(async () => {
@@ -719,7 +720,7 @@ export default function RecruitmentSheetClient() {
         <FollowUpView
           rows={followRows}
           settings={settings}
-          columns={allCols.map((c) => ({ key: c.key, label: c.label }))}
+          columns={cols.map((c) => ({ key: c.key, label: c.label }))}
           admin={admin}
           year={year}
           month={month}
@@ -756,7 +757,9 @@ export default function RecruitmentSheetClient() {
             {hint ? <span className="ml-2 text-text">{hint}</span> : null}
           </p>
 
-          {!payload ? (
+          <GuideBox />
+
+      {!payload ? (
             <div className="glass-panel h-64 animate-pulse rounded-2xl" />
           ) : (
             <div className="max-h-[calc(100vh-19rem)] min-h-[16rem] overflow-auto rounded-xl border border-white/10">
@@ -942,5 +945,39 @@ function ColumnsModal({ open, onClose, columns, onChanged }: { open: boolean; on
         ))}
       </ul>
     </Modal>
+  );
+}
+
+/** Guía de llenado de la hoja (la de la hoja de cálculo de la agencia). */
+function GuideBox() {
+  const fields: [string, string][] = [
+    ["Solicitud (fecha)", "Día en que se envió o recibió el mensaje al talento. Formato DD/MM/AAAA."],
+    ["Creador", "Handle del creador: el nombre de usuario que aparece con @."],
+    ["Situación", "En qué estado está la cuenta: disponible, riesgo de varias cuentas, otro motivo o en otra agencia."],
+    ["Mensaje", "Una vez confirmada su solicitud (sea apto o no) se le da seguimiento y se le avisa por chat."],
+    ["Comentario", "Es probable que no pueda recibir esos mensajes por sus configuraciones: se comenta un video pidiéndole que revise su spam."],
+    ["Teléfono", "En los mensajes predeterminados hay uno donde se da seguimiento y se pide su número."],
+    ["Resolución", "Cuando TikTok da su veredicto y decide si acepta o rechaza al creador."],
+    ["Conclusión", "Ya fue aceptado o rechazado y se le debe avisar, sin importar el veredicto."],
+    ["Seguimiento de tareas", "Las tareas se activan cuando ya está dentro de la agencia; hay que asegurar que asista a la capacitación."],
+  ];
+  return (
+    <details className="rounded-xl border border-white/10 bg-bg-elevated/60 p-3.5">
+      <summary className="cursor-pointer text-sm font-semibold">Guía de llenado de la hoja</summary>
+      <div className="mt-3 grid gap-x-6 gap-y-2 text-xs md:grid-cols-2">
+        {fields.map(([k, v]) => (
+          <p key={k}>
+            <b className="text-text">{k}:</b> <span className="text-text-muted">{v}</span>
+          </p>
+        ))}
+      </div>
+      <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-text-muted">
+        <li>Este registro debe llenarse de inmediato después del contacto.</li>
+        <li>Es obligatorio para todos los managers que estén activos en reclutamiento.</li>
+        <li>La dirección lo revisa cada semana para validar avances y seguimiento.</li>
+        <li>Una falta de actualización o inconsistencias puede influir en la activación de bonos o en los reportes de desempeño.</li>
+        <li>La fila se pone en verde cuando se llena la fecha de integración.</li>
+      </ul>
+    </details>
   );
 }

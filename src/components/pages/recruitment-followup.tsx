@@ -1,31 +1,30 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Copy, ExternalLink, Settings2 } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, Settings2 } from "lucide-react";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { Field, Panel, inputClass } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import {
-  ALERT_LABEL,
   SEVERITY_LABEL,
   computeFollowUp,
+  isClosed,
+  isIntegrated,
   statsByRecruiter,
   todayKey,
-  type AlertKind,
   type FollowRow,
   type FollowSettings,
+  type MissingCell,
   type Severity,
 } from "@/lib/recruitment-followup";
 
-type ColLite = { key: string; label: string };
-
 type Scope = "mes" | "30" | "60" | "todo";
+type Order = "urgente" | "faltan" | "cerca" | "antiguos";
 
-const SEV_STYLE: Record<Severity, { box: string; chip: string; title: string }> = {
-  1: { box: "border-danger/40", chip: "border-danger/40 bg-danger/10 text-danger", title: "text-danger" },
-  2: { box: "border-orange-400/40", chip: "border-orange-400/40 bg-orange-500/10 text-orange-300", title: "text-orange-300" },
-  3: { box: "border-amber-400/30", chip: "border-amber-400/30 bg-amber-500/10 text-amber-200", title: "text-amber-200" },
-  4: { box: "border-white/10", chip: "border-border text-text-muted", title: "text-text-muted" },
+const SEV_STYLE: Record<Severity, { box: string; title: string; chip: string }> = {
+  1: { box: "border-danger/40", title: "text-danger", chip: "border-danger/40 bg-danger/10 text-danger" },
+  2: { box: "border-orange-400/40", title: "text-orange-300", chip: "border-orange-400/40 bg-orange-500/10 text-orange-300" },
+  3: { box: "border-white/10", title: "text-text-muted", chip: "border-amber-400/30 bg-amber-500/10 text-amber-200" },
 };
 
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
@@ -49,7 +48,8 @@ export function FollowUpView({
 }: {
   rows: FollowRow[];
   settings: FollowSettings;
-  columns: ColLite[];
+  /** Columnas visibles de la hoja, en orden. */
+  columns: MissingCell[];
   admin: boolean;
   year: string;
   month: string;
@@ -59,8 +59,9 @@ export function FollowUpView({
 }) {
   const [scope, setScope] = useState<Scope>("mes");
   const [recruiter, setRecruiter] = useState("all");
-  const [kind, setKind] = useState<AlertKind | "all">("all");
+  const [cell, setCell] = useState<string>("all");
   const [sev, setSev] = useState<Severity | "all">("all");
+  const [order, setOrder] = useState<Order>("urgente");
   const [cfgOpen, setCfgOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -68,36 +69,46 @@ export function FollowUpView({
 
   // Lo que se revisa: el mes elegido arriba, o una ventana reciente
   const inScope = useMemo(() => {
-    const dayMs = 86_400_000;
     const now = Date.parse(`${today}T00:00:00Z`);
     return rows.filter((r) => {
-      if (!r.requestDate) return scope === "todo";
       if (scope === "todo") return true;
+      if (!r.requestDate) return false;
       if (scope === "mes") {
         const [y, m] = r.requestDate.split("-");
         return (year === "all" || y === year) && (month === "all" || Number(m) === Number(month));
       }
-      const age = (now - Date.parse(`${r.requestDate}T00:00:00Z`)) / dayMs;
+      const age = (now - Date.parse(`${r.requestDate}T00:00:00Z`)) / 86_400_000;
       return age >= 0 && age <= Number(scope);
     });
   }, [rows, scope, year, month, today]);
 
-  const items = useMemo(() => computeFollowUp(inScope, settings, today), [inScope, settings, today]);
-  const stats = useMemo(() => statsByRecruiter(inScope, items, settings), [inScope, items, settings]);
+  const items = useMemo(() => computeFollowUp(inScope, settings, columns, today), [inScope, settings, columns, today]);
+  const stats = useMemo(() => statsByRecruiter(inScope, items), [inScope, items]);
 
-  const shown = items.filter(
-    (i) =>
-      (recruiter === "all" || (i.row.recruiter.trim() || "Sin reclutador") === recruiter) &&
-      (kind === "all" || i.alerts.some((a) => a.kind === kind)) &&
-      (sev === "all" || i.severity === sev)
-  );
+  const activeTotal = inScope.filter((r) => r.creatorName.trim() && !isClosed(r)).length;
+  const integrated = inScope.filter((r) => r.creatorName.trim() && !isClosed(r) && isIntegrated(r)).length;
+  const closed = inScope.filter((r) => r.creatorName.trim() && isClosed(r)).length;
 
-  const bySev = ([1, 2, 3, 4] as Severity[]).map((s) => ({ s, n: items.filter((i) => i.severity === s).length }));
-  const byKind = (Object.keys(ALERT_LABEL) as AlertKind[]).map((k) => ({ k, n: items.filter((i) => i.alerts.some((a) => a.kind === k)).length }));
+  const shown = useMemo(() => {
+    const list = items.filter(
+      (i) =>
+        (recruiter === "all" || (i.row.recruiter.trim() || "Sin reclutador") === recruiter) &&
+        (cell === "all" || i.missing.some((m) => m.key === cell)) &&
+        (sev === "all" || i.severity === sev)
+    );
+    if (order === "faltan") list.sort((a, b) => b.missing.length - a.missing.length);
+    else if (order === "cerca") list.sort((a, b) => a.missing.length - b.missing.length);
+    else if (order === "antiguos") list.sort((a, b) => (a.row.requestDate ?? "").localeCompare(b.row.requestDate ?? ""));
+    return list;
+  }, [items, recruiter, cell, sev, order]);
+
+  const required = columns.filter((c) => settings.requiredKeys.includes(c.key));
+  const bySev = ([1, 2, 3] as Severity[]).map((s) => ({ s, n: items.filter((i) => i.severity === s).length }));
+  const byCell = required.map((c) => ({ ...c, n: items.filter((i) => i.missing.some((m) => m.key === c.key)).length })).filter((c) => c.n > 0);
 
   async function copyList() {
     const text = shown
-      .map((i) => `${i.row.creatorName.startsWith("@") ? "" : "@"}${i.row.creatorName} (${i.row.recruiter || "sin reclutador"}) — ${i.alerts.map((a) => a.text).join("; ")}`)
+      .map((i) => `@${i.row.creatorName.replace(/^@/, "")} (${i.row.recruiter || "sin reclutador"}) — ${i.expiry ? i.expiry.text + ". " : ""}Faltan: ${i.missing.map((m) => m.label).join(", ") || "nada"}`)
       .join("\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -108,14 +119,12 @@ export function FollowUpView({
     }
   }
 
-  const monthText = month === "all" ? "todos los meses" : `el mes elegido`;
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <Field label="Qué revisar">
           <select className={inputClass} value={scope} onChange={(e) => setScope(e.target.value as Scope)}>
-            <option value="mes">Solicitudes de {monthText}</option>
+            <option value="mes">Solicitudes del mes elegido</option>
             <option value="30">Últimos 30 días</option>
             <option value="60">Últimos 60 días</option>
             <option value="todo">Todo el historial</option>
@@ -131,6 +140,14 @@ export function FollowUpView({
             ))}
           </select>
         </Field>
+        <Field label="Ordenar por">
+          <select className={inputClass} value={order} onChange={(e) => setOrder(e.target.value as Order)}>
+            <option value="urgente">Más urgentes primero</option>
+            <option value="faltan">Más casillas faltantes</option>
+            <option value="cerca">Más cerca de completar</option>
+            <option value="antiguos">Más antiguos</option>
+          </select>
+        </Field>
         <div className="ml-auto flex gap-2">
           <button type="button" onClick={() => void copyList()} disabled={!shown.length} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-text-muted transition hover:border-white/25 hover:text-text disabled:opacity-40">
             <Copy className="h-4 w-4" /> {copied ? "¡Copiado!" : "Copiar lista"}
@@ -144,53 +161,63 @@ export function FollowUpView({
       </div>
 
       <p className="text-xs text-text-muted">
-        El mensaje y el comentario se hacen en la app de TikTok; aquí solo se registran. Esta vista muestra lo que <b className="text-text">falta registrar o hacer</b>, para revisar cómo trabaja el
-        personal. Una casilla vacía o que dice “no” cuenta como pendiente.
+        Cada creador debe llegar a su <b className="text-text">integración</b>, que es cuando su fila queda en verde. Aquí ves las casillas que le faltan por registrar y quién las dejó pendientes. El mensaje y el
+        comentario se hacen en TikTok; la hoja es el registro que revisa la dirección. Una casilla vacía o que dice “no” cuenta como pendiente.
       </p>
 
       {admin && cfgOpen && <SettingsPanel settings={settings} columns={columns} onSave={onSaveSettings} />}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {bySev.map(({ s, n }) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setSev(sev === s ? "all" : s)}
-            className={cn("rounded-xl border bg-bg-elevated/70 p-3.5 text-left transition hover:border-white/30", SEV_STYLE[s].box, sev === s && "ring-2 ring-accent/60")}
-          >
+        {bySev.slice(0, 2).map(({ s, n }) => (
+          <button key={s} type="button" onClick={() => setSev(sev === s ? "all" : s)} className={cn("rounded-xl border bg-bg-elevated/70 p-3.5 text-left transition hover:border-white/30", SEV_STYLE[s].box, sev === s && "ring-2 ring-accent/60")}>
             <p className={cn("text-[11px] font-semibold uppercase tracking-wide", SEV_STYLE[s].title)}>{SEVERITY_LABEL[s]}</p>
             <p className="mt-1 font-[family-name:var(--font-syne)] text-2xl font-bold">{n}</p>
-            <p className="text-[11px] text-text-muted">{s === 1 ? "vencen hoy o en pocos días" : s === 2 ? "vencidas o sin mensaje" : s === 3 ? "sin comentar video / volver a contactar" : "sin teléfono"}</p>
+            <p className="text-[11px] text-text-muted">{s === 1 ? "vencen hoy o en pocos días" : "la solicitud ya venció"}</p>
           </button>
         ))}
+        <button type="button" onClick={() => setSev(sev === 3 ? "all" : 3)} className={cn("rounded-xl border bg-bg-elevated/70 p-3.5 text-left transition hover:border-white/30", SEV_STYLE[3].box, sev === 3 && "ring-2 ring-accent/60")}>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-200">Por completar</p>
+          <p className="mt-1 font-[family-name:var(--font-syne)] text-2xl font-bold">{items.length}</p>
+          <p className="text-[11px] text-text-muted">con casillas faltantes</p>
+        </button>
+        <div className="rounded-xl border border-success/40 bg-success/5 p-3.5">
+          <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-success">
+            <CheckCircle2 className="h-3.5 w-3.5" /> En verde (integrados)
+          </p>
+          <p className="mt-1 font-[family-name:var(--font-syne)] text-2xl font-bold">
+            {integrated}
+            <span className="text-base text-text-muted"> de {activeTotal}</span>
+          </p>
+          <p className="text-[11px] text-text-muted">
+            {pct(integrated, activeTotal)}% completo{closed ? ` · ${closed} cerrados sin integrarse` : ""}
+          </p>
+        </div>
       </div>
 
       {stats.length > 0 && (
         <Panel className="overflow-x-auto p-0">
-          <table className="w-full min-w-[560px] text-left text-sm">
+          <table className="w-full min-w-[620px] text-left text-sm">
             <thead className="border-b border-border-soft text-[11px] uppercase tracking-wide text-text-muted">
               <tr>
                 <th className="px-4 py-2.5 font-medium">Reclutador</th>
-                <th className="px-3 py-2.5 text-right font-medium">Solicitudes activas</th>
-                <th className="px-3 py-2.5 text-right font-medium">Con mensaje</th>
-                <th className="px-3 py-2.5 text-right font-medium">Video comentado</th>
-                <th className="px-3 py-2.5 text-right font-medium">Pendientes</th>
+                <th className="px-3 py-2.5 text-right font-medium">Solicitudes</th>
+                <th className="px-3 py-2.5 text-right font-medium">Integrados</th>
+                <th className="px-3 py-2.5 text-right font-medium">Por completar</th>
+                <th className="px-3 py-2.5 text-right font-medium">Casillas faltantes</th>
                 <th className="px-3 py-2.5 text-right font-medium">Urgentes</th>
                 <th className="px-3 py-2.5 text-right font-medium">Vencidas</th>
               </tr>
             </thead>
             <tbody>
               {stats.map((s) => (
-                <tr
-                  key={s.recruiter}
-                  onClick={() => setRecruiter(recruiter === s.recruiter ? "all" : s.recruiter)}
-                  className={cn("cursor-pointer border-b border-border-soft/70 transition hover:bg-bg-hover/40", recruiter === s.recruiter && "bg-accent/10")}
-                >
+                <tr key={s.recruiter} onClick={() => setRecruiter(recruiter === s.recruiter ? "all" : s.recruiter)} className={cn("cursor-pointer border-b border-border-soft/70 transition hover:bg-bg-hover/40", recruiter === s.recruiter && "bg-accent/10")}>
                   <td className="px-4 py-2 font-medium">{s.recruiter}</td>
                   <td className="px-3 py-2 text-right text-text-muted">{s.total}</td>
-                  <td className={cn("px-3 py-2 text-right", pct(s.messageDone, s.total) < 80 ? "text-orange-300" : "text-success")}>{pct(s.messageDone, s.total)}%</td>
-                  <td className={cn("px-3 py-2 text-right", pct(s.videoDone, s.total) < 80 ? "text-orange-300" : "text-success")}>{pct(s.videoDone, s.total)}%</td>
-                  <td className="px-3 py-2 text-right">{s.pendientes}</td>
+                  <td className="px-3 py-2 text-right text-success">
+                    {s.integrated} <span className="text-text-muted">({pct(s.integrated, s.total)}%)</span>
+                  </td>
+                  <td className="px-3 py-2 text-right">{s.pending}</td>
+                  <td className="px-3 py-2 text-right">{s.missingCells}</td>
                   <td className={cn("px-3 py-2 text-right", s.urgentes ? "font-semibold text-danger" : "text-text-muted")}>{s.urgentes}</td>
                   <td className={cn("px-3 py-2 text-right", s.vencidas ? "text-orange-300" : "text-text-muted")}>{s.vencidas}</td>
                 </tr>
@@ -200,24 +227,31 @@ export function FollowUpView({
         </Panel>
       )}
 
-      <div className="flex flex-wrap gap-1.5">
-        <button type="button" onClick={() => setKind("all")} className={cn("rounded-md border px-2.5 py-1 text-[11px] font-semibold transition", kind === "all" ? "border-white/60 bg-white/15 text-white" : "border-border text-text-muted hover:text-text")}>
-          Todos los avisos · {items.length}
-        </button>
-        {byKind.map(({ k, n }) => (
-          <button key={k} type="button" onClick={() => setKind(kind === k ? "all" : k)} className={cn("rounded-md border px-2.5 py-1 text-[11px] transition", kind === k ? "border-accent bg-accent text-white" : "border-border text-text-muted hover:text-text")}>
-            {ALERT_LABEL[k]} · {n}
-          </button>
-        ))}
-      </div>
+      {byCell.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-xs text-text-muted">Casillas que más faltan (toca una para ver solo esos creadores):</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => setCell("all")} className={cn("rounded-md border px-2.5 py-1 text-[11px] font-semibold transition", cell === "all" ? "border-white/60 bg-white/15 text-white" : "border-border text-text-muted hover:text-text")}>
+              Todas · {items.length}
+            </button>
+            {byCell.map((c) => (
+              <button key={c.key} type="button" onClick={() => setCell(cell === c.key ? "all" : c.key)} className={cn("rounded-md border px-2.5 py-1 text-[11px] transition", cell === c.key ? "border-accent bg-accent text-white" : "border-border text-text-muted hover:text-text")}>
+                {c.label} · {c.n}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="glass-panel h-40 animate-pulse rounded-2xl" />
       ) : shown.length === 0 ? (
-        <Panel className="py-10 text-center text-sm text-text-muted">{items.length === 0 ? "¡Todo al día! No hay pendientes en lo que estás revisando." : "No hay avisos con esos filtros."}</Panel>
+        <Panel className="py-10 text-center text-sm text-text-muted">
+          {items.length === 0 ? "¡Todo en verde! No hay casillas pendientes en lo que estás revisando." : "No hay creadores con esos filtros."}
+        </Panel>
       ) : (
         <div className="space-y-5">
-          {([1, 2, 3, 4] as Severity[]).map((s) => {
+          {([1, 2, 3] as Severity[]).map((s) => {
             const group = shown.filter((i) => i.severity === s);
             if (!group.length) return null;
             return (
@@ -226,32 +260,47 @@ export function FollowUpView({
                   {SEVERITY_LABEL[s]} · {group.length}
                 </h3>
                 <ul className="grid gap-2 lg:grid-cols-2">
-                  {group.map((i) => (
-                    <li key={i.row.id} className={cn("rounded-xl border bg-bg-elevated/80 p-3", SEV_STYLE[s].box)}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          <TikTokAvatar username={i.row.creatorName} name={i.row.creatorName} size={36} />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold">@{i.row.creatorName.replace(/^@/, "")}</p>
-                            <p className="truncate text-[11px] text-text-muted">
-                              {i.row.recruiter || "Sin reclutador"} · solicitud {fmtDay(i.row.requestDate)}
-                              {i.row.phone ? ` · ${i.row.phone}` : ""}
-                            </p>
+                  {group.map((i) => {
+                    const done = pct(i.filled, i.required);
+                    return (
+                      <li key={i.row.id} className={cn("rounded-xl border bg-bg-elevated/80 p-3", SEV_STYLE[s].box)}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <TikTokAvatar username={i.row.creatorName} name={i.row.creatorName} size={36} />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold">@{i.row.creatorName.replace(/^@/, "")}</p>
+                              <p className="truncate text-[11px] text-text-muted">
+                                {i.row.recruiter || "Sin reclutador"} · solicitud {fmtDay(i.row.requestDate)}
+                                {i.row.phone ? ` · ${i.row.phone}` : ""}
+                              </p>
+                            </div>
                           </div>
+                          <button type="button" onClick={() => onOpen(i.row)} title="Abrir esta fila en la hoja de captura" className="shrink-0 rounded-md border border-border p-1.5 text-text-muted transition hover:border-white/25 hover:text-text">
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </button>
                         </div>
-                        <button type="button" onClick={() => onOpen(i.row)} title="Abrir esta fila en la hoja de captura" className="shrink-0 rounded-md border border-border p-1.5 text-text-muted transition hover:border-white/25 hover:text-text">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {i.alerts.map((a) => (
-                          <span key={a.kind} className={cn("rounded-md border px-2 py-0.5 text-[11px]", SEV_STYLE[a.severity].chip)}>
-                            {a.text}
+
+                        {i.expiry && <p className={cn("mt-2 inline-block rounded-md border px-2 py-0.5 text-[11px] font-semibold", SEV_STYLE[i.expiry.severity].chip)}>{i.expiry.text}</p>}
+
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+                            <div className={cn("h-full rounded-full transition-all", done >= 100 ? "bg-success" : "bg-cyan")} style={{ width: `${done}%` }} />
+                          </div>
+                          <span className="text-[11px] text-text-muted">
+                            {i.filled}/{i.required} casillas
                           </span>
-                        ))}
-                      </div>
-                    </li>
-                  ))}
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {i.missing.map((m) => (
+                            <span key={m.key} className="rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+                              Falta: {m.label}
+                            </span>
+                          ))}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             );
@@ -262,13 +311,35 @@ export function FollowUpView({
   );
 }
 
-/** Reglas del seguimiento (solo admin): días de vigencia y qué columnas se revisan. */
-function SettingsPanel({ settings, columns, onSave }: { settings: FollowSettings; columns: ColLite[]; onSave: (patch: Partial<FollowSettings>) => Promise<void> }) {
+/** Reglas del seguimiento (solo admin): qué casillas son obligatorias y cuántos días dura una solicitud. */
+function SettingsPanel({ settings, columns, onSave }: { settings: FollowSettings; columns: MissingCell[]; onSave: (patch: Partial<FollowSettings>) => Promise<void> }) {
   const [days, setDays] = useState(String(settings.validityDays));
   const [soon, setSoon] = useState(String(settings.soonDays));
+  // Las columnas de identidad no se piden como casilla
+  const selectable = columns.filter((c) => !["recruiter", "requestDate", "creatorName"].includes(c.key));
+
+  function toggle(key: string) {
+    const set = new Set(settings.requiredKeys);
+    if (set.has(key)) set.delete(key);
+    else set.add(key);
+    // Se guarda en el orden de las columnas de la hoja
+    void onSave({ requiredKeys: columns.filter((c) => set.has(c.key)).map((c) => c.key) });
+  }
+
   return (
-    <Panel className="space-y-3">
-      <p className="text-sm font-semibold">Reglas del seguimiento</p>
+    <Panel className="space-y-4">
+      <div>
+        <p className="mb-2 text-sm font-semibold">Casillas obligatorias hasta la integración</p>
+        <p className="mb-2 text-xs text-text-muted">Marca las casillas que cada creador debe tener llenas. Las que falten aparecen como aviso hasta que se integre.</p>
+        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {selectable.map((c) => (
+            <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-2.5 py-1.5 text-sm hover:bg-white/5">
+              <input type="checkbox" className="h-4 w-4 accent-accent" checked={settings.requiredKeys.includes(c.key)} onChange={() => toggle(c.key)} />
+              {c.label}
+            </label>
+          ))}
+        </div>
+      </div>
       <div className="grid gap-3 md:grid-cols-3">
         <Field label="Cómo se cuenta el vencimiento">
           <select className={inputClass} value={settings.expiryMode} onChange={(e) => void onSave({ expiryMode: e.target.value as FollowSettings["expiryMode"] })}>
@@ -283,26 +354,8 @@ function SettingsPanel({ settings, columns, onSave }: { settings: FollowSettings
         <Field label="“Vence pronto” si faltan (días) o menos">
           <input type="number" min={0} max={30} className={inputClass} value={soon} onChange={(e) => setSoon(e.target.value)} onBlur={() => Number(soon) >= 0 && Number(soon) !== settings.soonDays && void onSave({ soonDays: Number(soon) })} />
         </Field>
-        <Field label="Columna del mensaje enviado">
-          <select className={inputClass} value={settings.messageKey} onChange={(e) => void onSave({ messageKey: e.target.value })}>
-            {columns.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Columna del comentario de video">
-          <select className={inputClass} value={settings.videoKey} onChange={(e) => void onSave({ videoKey: e.target.value })}>
-            {columns.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </Field>
       </div>
-      <p className="text-xs text-text-muted">Se ignoran los casos ya integrados y los marcados como “otra agencia” o “sin permiso de datos”.</p>
+      <p className="text-xs text-text-muted">Se ignoran los casos ya integrados y los marcados como “otra agencia”, “sin permiso de datos” o “no apto”.</p>
     </Panel>
   );
 }

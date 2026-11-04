@@ -1,7 +1,7 @@
 /**
- * Avisos de seguimiento del reclutamiento.
- * El mensaje y el comentario de video se hacen en la app de TikTok: la hoja es solo el REGISTRO. Por eso aquí se revisa
- * qué falta registrar (o hacer) por creador y por reclutador, para evaluar cómo trabaja el personal.
+ * Seguimiento del reclutamiento: qué casillas le faltan a cada creador hasta que su fila queda completa con la INTEGRACIÓN.
+ * El mensaje y el comentario se hacen en la app de TikTok; la hoja es solo el REGISTRO que revisa la dirección cada semana,
+ * así que aquí se ve lo que falta registrar y quién lo dejó pendiente.
  */
 export type FollowRow = {
   id: string;
@@ -22,11 +22,26 @@ export type FollowSettings = {
   expiryMode: "fixed" | "column" | "off";
   validityDays: number;
   soonDays: number;
-  messageKey: string;
-  videoKey: string;
+  /** Llaves de las casillas obligatorias, en el orden en que se muestran las faltantes. */
+  requiredKeys: string[];
 };
 
-export const DEFAULT_FOLLOW_SETTINGS: FollowSettings = { expiryMode: "fixed", validityDays: 7, soonDays: 2, messageKey: "mensaje", videoKey: "comment" };
+export const DEFAULT_REQUIRED_KEYS = [
+  "atendio",
+  "situation",
+  "seEnvioInvitacion",
+  "mensaje",
+  "comment",
+  "phone",
+  "visitarLive",
+  "integracion",
+  "mensajeAceptacion",
+  "mensajeImagen",
+  "comment2",
+  "integrationDate",
+];
+
+export const DEFAULT_FOLLOW_SETTINGS: FollowSettings = { expiryMode: "fixed", validityDays: 7, soonDays: 2, requiredKeys: DEFAULT_REQUIRED_KEYS };
 
 const CORE = new Set(["recruiter", "requestDate", "creatorName", "situation", "phone", "comment", "comment2", "recontact", "integrationDate"]);
 
@@ -45,42 +60,39 @@ const norm = (v: string) =>
     .toLowerCase()
     .trim();
 
-/** Una celda cuenta como "hecho" si tiene algo y no dice que NO se hizo. */
+/** Una casilla cuenta como llena si tiene algo y no dice que NO se hizo. */
 export function isDone(value: string): boolean {
   const v = norm(value);
   if (!v) return false;
   return !["no", "n", "0", "-", "—", "pendiente", "falta", "faltan", "sin", "nada", "no se envio", "no enviado", "no se comento"].includes(v);
 }
 
-/** Casos que ya no se pueden o no hay que trabajar. */
-function notActionable(row: FollowRow): boolean {
+/** Cerrado sin integrarse: ya no se persigue (otra agencia, sin permiso de datos, no apto). */
+export function isClosed(row: FollowRow): boolean {
   const s = norm(row.situation);
-  if (s.includes("otra agencia") || s.includes("permiso") || s.includes("no apto")) return true;
-  if (row.integrationDate) return true;
-  return isDone(row.steps["integracion"] ?? "");
+  return s.includes("otra agencia") || s.includes("permiso") || s.includes("no apto");
 }
 
-export type AlertKind = "vencida" | "vence" | "sin_mensaje" | "sin_video" | "recontactar" | "sin_telefono";
+/** Ya integrado (fila en verde). */
+export function isIntegrated(row: FollowRow): boolean {
+  return !!row.integrationDate;
+}
 
-export const ALERT_LABEL: Record<AlertKind, string> = {
-  vencida: "Solicitud vencida",
-  vence: "Vence pronto",
-  sin_mensaje: "Sin mensaje registrado",
-  sin_video: "Sin comentar su video",
-  recontactar: "Volver a contactar",
-  sin_telefono: "Sin teléfono",
-};
+/** 1 = urgente, 2 = alta, 3 = pendiente, 4 = al día (solo con vencimientos) */
+export type Severity = 1 | 2 | 3;
+export const SEVERITY_LABEL: Record<Severity, string> = { 1: "Urgente", 2: "Vencida", 3: "Por completar" };
 
-/** 1 = urgente, 2 = alta, 3 = media, 4 = baja */
-export type Severity = 1 | 2 | 3 | 4;
-export const SEVERITY_LABEL: Record<Severity, string> = { 1: "Urgente", 2: "Alta", 3: "Media", 4: "Baja" };
+export type Expiry = { text: string; severity: 1 | 2 | 3 };
 
-export type Alert = { kind: AlertKind; severity: Severity; text: string };
+export type MissingCell = { key: string; label: string };
 
 export type FollowItem = {
   row: FollowRow;
   daysLeft: number | null;
-  alerts: Alert[];
+  expiry: Expiry | null;
+  missing: MissingCell[];
+  required: number;
+  filled: number;
   severity: Severity;
 };
 
@@ -95,36 +107,47 @@ export function todayKey(now = new Date()) {
 export function daysLeft(row: FollowRow, s: FollowSettings, today: string): number | null {
   if (s.expiryMode === "off") return null;
   if (s.expiryMode === "column") {
-    const n = Number(String(row.extra["diasVenceInvitacion"] ?? "").replace(",", "."));
-    return Number.isFinite(n) && String(row.extra["diasVenceInvitacion"] ?? "").trim() !== "" ? Math.round(n) : null;
+    const raw = String(row.extra["diasVenceInvitacion"] ?? "").trim();
+    const n = Number(raw.replace(",", "."));
+    return raw !== "" && Number.isFinite(n) ? Math.round(n) : null;
   }
   if (!row.requestDate) return null;
   return dayNumber(row.requestDate) + s.validityDays - dayNumber(today);
 }
 
-export function computeFollowUp(rows: FollowRow[], settings: FollowSettings, today = todayKey()): FollowItem[] {
+/**
+ * Filas todavía sin integrar, con las casillas que les faltan (en el orden de las columnas) y su vencimiento.
+ * `columns` = columnas visibles de la hoja en orden (de ahí salen los nombres de las casillas).
+ */
+export function computeFollowUp(rows: FollowRow[], settings: FollowSettings, columns: MissingCell[], today = todayKey()): FollowItem[] {
+  const required = columns.filter((c) => settings.requiredKeys.includes(c.key));
   const items: FollowItem[] = [];
   for (const row of rows) {
-    if (!row.creatorName.trim() || notActionable(row)) continue;
-    const alerts: Alert[] = [];
+    if (!row.creatorName.trim() || isIntegrated(row) || isClosed(row)) continue;
+
+    const missing = required.filter((c) => !isDone(valueOf(row, c.key)));
     const left = daysLeft(row, settings, today);
-    const expiredFlag = norm(valueOf(row, "solicitudVencida")) .startsWith("si");
+    const expiredFlag = norm(valueOf(row, "solicitudVencida")).startsWith("si");
 
+    let expiry: Expiry | null = null;
     if ((left !== null && left < 0) || expiredFlag) {
-      alerts.push({ kind: "vencida", severity: 2, text: left !== null && left < 0 ? `Venció hace ${-left} ${-left === 1 ? "día" : "días"}` : "Marcada como vencida" });
+      expiry = { text: left !== null && left < 0 ? `Venció hace ${-left} ${-left === 1 ? "día" : "días"}` : "Marcada como vencida", severity: 2 };
     } else if (left !== null && left <= settings.soonDays) {
-      alerts.push({ kind: "vence", severity: 1, text: left === 0 ? "Vence hoy" : `Vence en ${left} ${left === 1 ? "día" : "días"}` });
+      expiry = { text: left === 0 ? "Vence hoy" : `Vence en ${left} ${left === 1 ? "día" : "días"}`, severity: 1 };
     } else if (left !== null && left <= settings.soonDays + 3) {
-      alerts.push({ kind: "vence", severity: 3, text: `Vence en ${left} días` });
+      expiry = { text: `Vence en ${left} días`, severity: 3 };
     }
-    if (!isDone(valueOf(row, settings.messageKey))) alerts.push({ kind: "sin_mensaje", severity: 2, text: "No hay mensaje registrado" });
-    if (!isDone(valueOf(row, settings.videoKey))) alerts.push({ kind: "sin_video", severity: 3, text: "No hay comentario de su video registrado" });
-    if (row.recontact.trim() && isDone(row.recontact)) alerts.push({ kind: "recontactar", severity: 3, text: `Volver a contactar: ${row.recontact.trim()}` });
-    if (!row.phone.trim()) alerts.push({ kind: "sin_telefono", severity: 4, text: "Sin teléfono" });
 
-    if (!alerts.length) continue;
-    alerts.sort((a, b) => a.severity - b.severity);
-    items.push({ row, daysLeft: left, alerts, severity: alerts[0].severity });
+    if (!missing.length && !expiry) continue;
+    items.push({
+      row,
+      daysLeft: left,
+      expiry,
+      missing,
+      required: required.length,
+      filled: required.length - missing.length,
+      severity: expiry && expiry.severity < 3 ? expiry.severity : 3,
+    });
   }
   items.sort(
     (a, b) =>
@@ -137,34 +160,34 @@ export function computeFollowUp(rows: FollowRow[], settings: FollowSettings, tod
 
 export type RecruiterStat = {
   recruiter: string;
-  total: number;
-  messageDone: number;
-  videoDone: number;
-  vencidas: number;
+  total: number; // solicitudes en seguimiento (sin contar cerradas)
+  integrated: number;
+  pending: number; // con casillas por llenar
+  missingCells: number;
   urgentes: number;
-  pendientes: number;
+  vencidas: number;
 };
 
-/** Resumen por reclutador: sirve para ver quién registra y quién deja pendientes. */
-export function statsByRecruiter(rows: FollowRow[], items: FollowItem[], settings: FollowSettings): RecruiterStat[] {
+/** Resumen por reclutador: sirve para ver quién completa sus filas y quién deja casillas pendientes. */
+export function statsByRecruiter(rows: FollowRow[], items: FollowItem[]): RecruiterStat[] {
   const map = new Map<string, RecruiterStat>();
   const get = (name: string) => {
     const k = name.trim() || "Sin reclutador";
-    if (!map.has(k)) map.set(k, { recruiter: k, total: 0, messageDone: 0, videoDone: 0, vencidas: 0, urgentes: 0, pendientes: 0 });
+    if (!map.has(k)) map.set(k, { recruiter: k, total: 0, integrated: 0, pending: 0, missingCells: 0, urgentes: 0, vencidas: 0 });
     return map.get(k)!;
   };
   for (const row of rows) {
-    if (!row.creatorName.trim() || notActionable(row)) continue;
+    if (!row.creatorName.trim() || isClosed(row)) continue;
     const s = get(row.recruiter);
     s.total++;
-    if (isDone(valueOf(row, settings.messageKey))) s.messageDone++;
-    if (isDone(valueOf(row, settings.videoKey))) s.videoDone++;
+    if (isIntegrated(row)) s.integrated++;
   }
   for (const it of items) {
     const s = get(it.row.recruiter);
-    s.pendientes++;
-    if (it.alerts.some((a) => a.kind === "vencida")) s.vencidas++;
+    s.pending++;
+    s.missingCells += it.missing.length;
     if (it.severity === 1) s.urgentes++;
+    if (it.expiry?.severity === 2) s.vencidas++;
   }
-  return [...map.values()].sort((a, b) => b.urgentes - a.urgentes || b.pendientes - a.pendientes || b.total - a.total);
+  return [...map.values()].sort((a, b) => b.urgentes - a.urgentes || b.missingCells - a.missingCells || b.total - a.total);
 }

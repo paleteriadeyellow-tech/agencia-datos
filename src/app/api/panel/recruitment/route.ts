@@ -192,8 +192,7 @@ export async function GET(req: NextRequest) {
       expiryMode: settingsRow.expiryMode,
       validityDays: settingsRow.validityDays,
       soonDays: settingsRow.soonDays,
-      messageKey: settingsRow.messageKey,
-      videoKey: settingsRow.videoKey,
+      requiredKeys: settingsRow.requiredKeys.split(",").filter(Boolean),
     },
     columns: columns.map((c) => ({ id: c.id, key: c.key, label: c.label, type: c.type, options: c.options, sortOrder: c.sortOrder, hidden: c.hidden, builtin: c.builtin })),
   });

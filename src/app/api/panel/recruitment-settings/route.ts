@@ -11,8 +11,7 @@ const schema = z.object({
   expiryMode: z.enum(["fixed", "column", "off"]).optional(),
   validityDays: z.number().int().min(1).max(90).optional(),
   soonDays: z.number().int().min(0).max(30).optional(),
-  messageKey: z.string().regex(/^[a-zA-Z0-9_]{1,40}$/).optional(),
-  videoKey: z.string().regex(/^[a-zA-Z0-9_]{1,40}$/).optional(),
+  requiredKeys: z.array(z.string().regex(/^[a-zA-Z0-9_]{1,40}$/)).max(80).optional(),
 });
 
 /** Las reglas son de toda la agencia: solo un admin real (no en modo "ver como") las cambia. */
@@ -25,13 +24,15 @@ export async function PATCH(req: NextRequest) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400, headers: NO_STORE });
   const { agencySlug } = auth;
+  const { requiredKeys, ...rest } = parsed.data;
+  const data = { ...rest, ...(requiredKeys ? { requiredKeys: requiredKeys.join(",") } : {}) };
   const row = await prisma.recruitmentSettings.upsert({
     where: { agencySlug },
-    update: parsed.data,
-    create: { agencySlug, ...parsed.data },
+    update: data,
+    create: { agencySlug, ...data },
   });
   return NextResponse.json(
-    { ok: true, settings: { expiryMode: row.expiryMode, validityDays: row.validityDays, soonDays: row.soonDays, messageKey: row.messageKey, videoKey: row.videoKey } },
+    { ok: true, settings: { expiryMode: row.expiryMode, validityDays: row.validityDays, soonDays: row.soonDays, requiredKeys: row.requiredKeys.split(",").filter(Boolean) } },
     { headers: NO_STORE }
   );
 }
