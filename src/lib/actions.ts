@@ -96,6 +96,18 @@ export async function setUserPosition(id: string, position: string | null) {
   return { ok: true };
 }
 
+/** Da o quita el permiso de ver TODOS los creadores de la agencia (por defecto cada manager ve solo los suyos). */
+export async function setUserViewAll(id: string, value: boolean) {
+  const gate = await requireAdmin();
+  if (gate.error) return { error: gate.error };
+  const agencySlug = gate.session!.user.agencySlug;
+  const user = await prisma.user.findFirst({ where: { id, agencySlug }, select: { id: true } });
+  if (!user) return { error: "Persona no encontrada." };
+  await prisma.user.update({ where: { id }, data: { canViewAll: value } });
+  revalidateAgency(agencySlug, "/managers", "/creadores");
+  return { ok: true };
+}
+
 export async function deleteManager(id: string) {
   const gate = await requireAdmin();
   if (gate.error) return { error: gate.error };

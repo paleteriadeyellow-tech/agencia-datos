@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { creatorWhere } from "@/lib/creator-scope";
+import { creatorWhere, readScope } from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 import { currentMonth, monthRange } from "@/lib/utils";
 
@@ -10,7 +10,8 @@ export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
   const { agencySlug, scope, isAdmin } = auth;
-  const scopeFilter = creatorWhere(scope, agencySlug);
+  // Con el permiso de "ver todos" la lista sale completa; sin él, solo los creadores del manager
+  const scopeFilter = creatorWhere(readScope(scope), agencySlug);
 
   const sp = req.nextUrl.searchParams;
   const q = sp.get("q") ?? undefined;

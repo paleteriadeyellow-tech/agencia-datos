@@ -8,7 +8,7 @@ import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Field, Panel, inputClass } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
-import { createManager, deleteManager, setUserPosition } from "@/lib/actions";
+import { createManager, deleteManager, setUserPosition, setUserViewAll } from "@/lib/actions";
 import { POSITIONS, POSITION_LABEL } from "@/lib/positions";
 import { useViewAs } from "@/components/view-as";
 
@@ -18,6 +18,7 @@ type ManagerRow = {
   email: string;
   role: string;
   position: string | null;
+  canViewAll: boolean;
   createdAt: string;
   creatorsCount: number;
 };
@@ -92,6 +93,29 @@ export default function ManagersClient() {
       /* se queda lo que ya se ve */
     }
     invalidatePanel("/api/panel/mi-dia", PANEL.tasks);
+  }
+
+  async function onViewAll(m: ManagerRow, value: boolean) {
+    setErr("");
+    setMsg("");
+    await mutate(
+      (cur?: { managers: ManagerRow[] }) => cur && { managers: cur.managers.map((x) => (x.id === m.id ? { ...x, canViewAll: value } : x)) },
+      { revalidate: false }
+    );
+    try {
+      const res = await setUserViewAll(m.id, value);
+      if (res.error) throw new Error(res.error);
+      setMsg(value ? `${m.name} ahora ve todos los creadores (puede tardar unos segundos).` : `${m.name} vuelve a ver solo sus creadores.`);
+    } catch (e) {
+      setErr(e instanceof Error && e.message ? e.message : "No se pudo guardar el permiso.");
+    }
+    try {
+      const fresh = await fetch(PANEL.managers, { cache: "no-store", headers: { "x-skip-view-as": "1" } });
+      if (fresh.ok) await mutate(await fresh.json(), { revalidate: false });
+    } catch {
+      /* se queda lo que ya se ve */
+    }
+    invalidatePanel(PANEL.creators);
   }
 
   async function onDelete(m: ManagerRow) {
@@ -218,6 +242,7 @@ export default function ManagersClient() {
               <th className="px-4 py-2.5 font-medium">Email</th>
               <th className="px-4 py-2.5 font-medium">Rol</th>
               <th className="px-4 py-2.5 font-medium">Puesto</th>
+              <th className="px-4 py-2.5 font-medium" title="Si lo activas, esta persona ve todos los creadores y no solo los suyos">Ve todos los creadores</th>
               <th className="px-4 py-2.5 font-medium">Creadores</th>
               <th className="px-4 py-2.5 font-medium">Alta</th>
               <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
@@ -253,6 +278,22 @@ export default function ManagersClient() {
                       </option>
                     ))}
                   </select>
+                </td>
+                <td className="px-4 py-2.5">
+                  {m.role === "admin" ? (
+                    <span className="text-xs text-text-muted">Siempre</span>
+                  ) : (
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-accent"
+                        checked={m.canViewAll}
+                        onChange={(e) => void onViewAll(m, e.target.checked)}
+                        aria-label={`Que ${m.name} vea todos los creadores`}
+                      />
+                      <span className={m.canViewAll ? "text-success" : "text-text-muted"}>{m.canViewAll ? "Sí, todos" : "Solo los suyos"}</span>
+                    </label>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-text-muted">
                   {m.creatorsCount}

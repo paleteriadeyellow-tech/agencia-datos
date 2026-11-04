@@ -14,7 +14,12 @@ export function roleFromToken(token: JWT) {
 
 export type ManagerScope =
   | { admin: true; userId?: string }
-  | { admin: false; userId: string };
+  | { admin: false; userId: string; /** el admin le dio permiso de ver todos los creadores */ viewAll?: boolean };
+
+/** Para LEER la lista de creadores: quien tiene el permiso de ver todos la ve completa. Escribir sigue limitado a lo suyo. */
+export function readScope(scope: ManagerScope): ManagerScope {
+  return !scope.admin && scope.viewAll ? { admin: true, userId: scope.userId } : scope;
+}
 
 export function getScope(token: Pick<JWT, "id" | "sub" | "role">): ManagerScope {
   const userId = userIdFromToken(token as JWT);
@@ -34,13 +39,13 @@ export async function applyViewAs(
   }
   const manager = await prisma.user.findFirst({
     where: { id: viewAsId, agencySlug, role: "manager" },
-    select: { id: true, name: true },
+    select: { id: true, name: true, canViewAll: true },
   });
   if (!manager) {
     return { scope, viewingAs: null as { id: string; name: string } | null };
   }
   return {
-    scope: { admin: false, userId: manager.id } satisfies ManagerScope,
+    scope: { admin: false, userId: manager.id, viewAll: manager.canViewAll } satisfies ManagerScope,
     viewingAs: manager,
   };
 }

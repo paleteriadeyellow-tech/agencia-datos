@@ -16,6 +16,7 @@ model User {
   passwordHash String
   role         String    @default("manager") // admin | manager
   position     String?   // puesto: administracion | mentor | reclutador | creador (define sus tareas fijas)
+  canViewAll   Boolean   @default(false) // el admin le dio permiso de ver todos los creadores (no solo los suyos)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   creators     Creator[] @relation("ManagerCreators")

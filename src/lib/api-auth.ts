@@ -23,19 +23,20 @@ function viewAsIdFromRequest(req: NextRequest) {
 
 /** Rol leído de la base, reutilizado 30s por instancia: ahorra una consulta por petición. */
 const ROLE_TTL_MS = 30_000;
-const roleCache = new Map<string, { role: string | null; t: number }>();
+const roleCache = new Map<string, { role: string | null; viewAll: boolean; t: number }>();
 
-async function cachedRole(userId: string, agencySlug: string) {
+/** Rol y permiso de "ver todos los creadores" (lo da el admin), reutilizados 30 s. */
+async function cachedAccess(userId: string, agencySlug: string) {
   const key = `${agencySlug}:${userId}`;
   const hit = roleCache.get(key);
-  if (hit && Date.now() - hit.t < ROLE_TTL_MS) return hit.role;
+  if (hit && Date.now() - hit.t < ROLE_TTL_MS) return hit;
   const dbUser = await prisma.user.findFirst({
     where: { id: userId, agencySlug },
-    select: { role: true },
+    select: { role: true, canViewAll: true },
   });
-  const role = dbUser?.role ?? null;
-  roleCache.set(key, { role, t: Date.now() });
-  return role;
+  const value = { role: dbUser?.role ?? null, viewAll: dbUser?.canViewAll ?? false, t: Date.now() };
+  roleCache.set(key, value);
+  return value;
 }
 
 async function resolveToken(req: NextRequest): Promise<JWT | null> {
@@ -78,9 +79,11 @@ export async function requireApiAuth(req: NextRequest) {
   }
 
   const userId = userIdFromToken(token);
+  let viewAll = false;
   if (userId) {
-    const role = await cachedRole(userId, agencySlug);
-    if (role) token.role = role;
+    const access = await cachedAccess(userId, agencySlug);
+    if (access.role) token.role = access.role;
+    viewAll = access.viewAll;
   }
 
   const isAdminUser = isAdmin(token.role as string | undefined);
@@ -98,6 +101,9 @@ export async function requireApiAuth(req: NextRequest) {
       viewingAs: null as null,
     };
   }
+
+  // Quien tiene el permiso de "ver todos" lo lleva en su alcance (solo se usa donde se lee la lista de creadores)
+  if (!scope.admin && viewAll) scope = { ...scope, viewAll: true };
 
   const skipViewAs = req.headers.get("x-skip-view-as") === "1";
   const viewed =

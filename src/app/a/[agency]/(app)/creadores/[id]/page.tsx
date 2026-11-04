@@ -49,7 +49,13 @@ export default async function CreatorDetailPage({
       agency,
       parseViewAsId(cookieStore.get(VIEW_AS_COOKIE)?.value)
     );
-    if (!viewed.scope.admin && creator.managerId !== viewed.scope.userId) {
+    // Puede entrar a la ficha: admin, el manager del creador, o quien tiene el permiso de "ver todos los creadores"
+    let canSeeAll = viewed.scope.admin || !!(!viewed.scope.admin && viewed.scope.viewAll);
+    if (!canSeeAll && !viewed.viewingAs) {
+      const me = await prisma.user.findFirst({ where: { id: session.user.id, agencySlug: agency }, select: { canViewAll: true } });
+      canSeeAll = !!me?.canViewAll;
+    }
+    if (!canSeeAll && !viewed.scope.admin && creator.managerId !== viewed.scope.userId) {
       notFound();
     }
   }
