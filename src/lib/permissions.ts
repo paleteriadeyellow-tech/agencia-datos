@@ -23,6 +23,7 @@ export const MANAGER_ALLOWED_PATHS = [
 ] as const;
 
 export const ADMIN_ONLY_PATHS = [
+  "/bonos-niveles",
   "/evidencias",
   "/plantillas",
   "/finanzas",

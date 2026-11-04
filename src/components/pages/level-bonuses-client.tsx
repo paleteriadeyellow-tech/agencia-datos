@@ -1,0 +1,478 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Calculator, Gift, RefreshCw, Search } from "lucide-react";
+import { TikTokAvatar } from "@/components/tiktok-avatar";
+import { TopBar } from "@/components/top-bar";
+import { PanelLoadError } from "@/components/panel-load-error";
+import { Button, Field, Panel, inputClass } from "@/components/ui";
+import { MESES_NOMBRE, periodKey } from "@/lib/bonos";
+import {
+  DIAMOND_TIERS,
+  HOURS_TIERS,
+  INCORP2_TIERS,
+  KIND_LABEL,
+  LEVELS,
+  LEVEL_LABEL,
+  type BonusKind,
+  type Level,
+} from "@/lib/level-bonuses";
+import { fmtHours } from "@/lib/goal-levels";
+import { cn, formatNumber } from "@/lib/utils";
+
+const API = "/api/panel/level-bonuses";
+
+type AwardState = { id: string; status: string; scheduledFor: string | null; method: string | null; paidAt: string | null; note: string | null; saved: true } | null;
+type Bonus = { kind: BonusKind; tier: string; coins: number; usd: number | null; advisory: boolean; award: AwardState };
+type Item = {
+  username: string;
+  creatorId: string | null;
+  creatorName: string | null;
+  level: Level;
+  metrics: { diamonds: number; days: number; hours: number };
+  payout: string;
+  hint: string | null;
+  welcome: string | null;
+  bonuses: Bonus[];
+};
+type Money = { coins: number; usd: number };
+type PendingRow = { id: string; period: string; username: string; kind: BonusKind; tier: string; level: Level; coins: number; usd: number | null; status: string };
+type Payload = {
+  period: string;
+  items: Item[];
+  byLevel: Record<Level, number>;
+  totals: { toPay: Money; saved: number; paid: Money; pendingBefore: Money };
+  pending: PendingRow[];
+};
+
+const LEVEL_STYLE: Record<Level, string> = {
+  E: "border-emerald-400/40 bg-emerald-500/15 text-emerald-200",
+  D: "border-teal-400/40 bg-teal-500/15 text-teal-200",
+  C: "border-sky-400/40 bg-sky-500/15 text-sky-200",
+  B: "border-violet-400/40 bg-violet-500/15 text-violet-200",
+  A: "border-amber-400/50 bg-amber-500/15 text-amber-200",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  calculado: "Calculado",
+  programado: "Programado",
+  pagado: "Pagado",
+  acumulado: "Acumulado al mes siguiente",
+};
+const STATUS_STYLE: Record<string, string> = {
+  calculado: "border-border text-text-muted",
+  programado: "border-sky-400/40 bg-sky-500/10 text-sky-200",
+  pagado: "border-success/40 bg-success/10 text-success",
+  acumulado: "border-amber-400/40 bg-amber-500/10 text-amber-200",
+};
+const METHOD_LABEL: Record<string, string> = {
+  batalla: "Batalla agendada",
+  live_normal: "LIVE normal",
+  tiktok_shop: "TikTok Shop",
+  transferencia: "Transferencia bancaria",
+};
+
+const money = (m: Money) => `${formatNumber(m.coins)} monedas${m.usd ? ` · ${formatNumber(Math.round(m.usd))} USD` : ""}`;
+
+function reward(b: { coins: number; usd: number | null; advisory: boolean }, level: Level) {
+  if (b.advisory) return "Asesoría personalizada y estrategia";
+  if (level === "A" && b.usd != null) return `${b.usd} USD`;
+  if (b.usd != null) return `${b.usd} USD (${formatNumber(b.coins)} monedas)`;
+  return `${formatNumber(b.coins)} monedas`;
+}
+
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-bg-elevated/70 p-3.5">
+      <p className="text-[11px] uppercase tracking-wide text-text-muted">{label}</p>
+      <p className="mt-1 font-[family-name:var(--font-syne)] text-lg font-bold leading-tight">{value}</p>
+      {sub && <p className="mt-0.5 text-[11px] text-text-muted">{sub}</p>}
+    </div>
+  );
+}
+
+export default function LevelBonusesClient() {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [data, setData] = useState<Payload | null>(null);
+  const [error, setError] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [level, setLevel] = useState<Level | "todos">("todos");
+  const [statusFilter, setStatusFilter] = useState("todos");
+  const [q, setQ] = useState("");
+
+  const period = periodKey(year, month);
+  const thisYear = now.getFullYear();
+  const years = useMemo(() => Array.from({ length: 7 }, (_, i) => thisYear - 4 + i), [thisYear]);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}?period=${period}`, { cache: "no-store", headers: { "x-skip-view-as": "1" } });
+      if (!res.ok) throw new Error();
+      setData((await res.json()) as Payload);
+      setError(false);
+    } catch {
+      setError(true);
+    }
+  }, [period]);
+
+  useEffect(() => {
+    setData(null);
+    setLevel("todos");
+    setStatusFilter("todos");
+    void load();
+  }, [load]);
+
+  async function call(method: string, body: unknown) {
+    setMsg("");
+    const res = await fetch(API, { method, headers: { "Content-Type": "application/json", "x-skip-view-as": "1" }, body: JSON.stringify(body) });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMsg(json.error ?? "No se pudo guardar.");
+      return null;
+    }
+    return json;
+  }
+
+  async function calculate() {
+    setBusy(true);
+    const r = await call("POST", { action: "calculate", period });
+    if (r) {
+      setMsg(
+        `Mes calculado: ${r.created} premios nuevos, ${r.updated} actualizados${r.locked ? `, ${r.locked} ya pagados sin cambios` : ""}${r.removed ? `, ${r.removed} que ya no corresponden` : ""}.`
+      );
+      await load();
+    }
+    setBusy(false);
+  }
+
+  /** Cambia el estado/fecha/medio de un premio y lo refleja al instante. */
+  async function setAward(id: string, patch: { status?: string; scheduledFor?: string | null; method?: string | null }) {
+    setData((d) =>
+      d && {
+        ...d,
+        items: d.items.map((i) => ({
+          ...i,
+          bonuses: i.bonuses.map((b) => (b.award?.id === id ? { ...b, award: { ...b.award, ...patch } as NonNullable<AwardState> } : b)),
+        })),
+      }
+    );
+    const r = await call("PATCH", { id, ...patch });
+    if (!r) await load(); // se revierte
+  }
+
+  async function setWelcome(username: string, reward: string) {
+    setData((d) => d && { ...d, items: d.items.map((i) => (i.username === username ? { ...i, welcome: reward || null } : i)) });
+    const r = await call("POST", { action: "welcome", username, reward: reward || null });
+    if (!r) await load();
+  }
+
+  const items = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    return (data?.items ?? []).filter((i) => {
+      if (level !== "todos" && i.level !== level) return false;
+      if (term && !i.username.toLowerCase().includes(term) && !(i.creatorName ?? "").toLowerCase().includes(term)) return false;
+      if (statusFilter === "todos") return true;
+      if (statusFilter === "sin_guardar") return i.bonuses.some((b) => !b.award);
+      if (statusFilter === "sin_bono") return i.bonuses.length === 0;
+      return i.bonuses.some((b) => b.award?.status === statusFilter);
+    });
+  }, [data, level, q, statusFilter]);
+
+  if (error) {
+    return (
+      <div>
+        <TopBar title="Bonos por niveles" subtitle="Niveles E, D, C, B y A" />
+        <PanelLoadError onRetry={() => void load()} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <TopBar title="Bonos por niveles" subtitle={`${MESES_NOMBRE[month]} ${year} · sistema de niveles y bonos (E, D, C, B, A)`} />
+
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <Field label="Mes">
+          <select className={inputClass} value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+            {MESES_NOMBRE.slice(1).map((m, i) => (
+              <option key={m} value={i + 1}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Año">
+          <select className={inputClass} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Button disabled={busy || !data?.items.length} onClick={() => void calculate()}>
+          <Calculator className="h-4 w-4" /> {busy ? "Calculando…" : "Calcular y guardar el mes"}
+        </Button>
+        <Button variant="secondary" onClick={() => void load()}>
+          <RefreshCw className="h-4 w-4" /> Actualizar
+        </Button>
+        <div className="min-w-[12rem] flex-1">
+          <Field label="Buscar creador">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} className={cn(inputClass, "pl-9")} placeholder="Nombre o @usuario" />
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      {msg && <p className="mb-3 text-sm text-text-muted">{msg}</p>}
+
+      {data && (
+        <>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat label="Por pagar este mes" value={money(data.totals.toPay)} sub={`${data.items.length} creadores con datos`} />
+            <Stat label="Ya pagado" value={money(data.totals.paid)} sub={`${data.totals.saved} premios guardados`} />
+            <Stat label="Pendiente de meses anteriores" value={money(data.totals.pendingBefore)} sub={`${data.pending.length} premios sin pagar`} />
+            <Stat label="Sin bono este mes" value={String(data.items.filter((i) => i.bonuses.length === 0).length)} sub="no cumplen ninguna categoría" />
+          </div>
+
+          <Panel className="mb-4 space-y-3">
+            <p className="text-xs text-text-muted">
+              El nivel se calcula solo con lo importado en Control de diamantes (diamantes, días y horas del mes). Para cobrar una categoría hay que cumplir los tres
+              requisitos a la vez. Pulsa <b className="text-text">Calcular y guardar el mes</b> para registrar los premios y llevar su pago.
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <button
+                type="button"
+                onClick={() => setLevel("todos")}
+                className={cn("rounded-md border px-2.5 py-1 text-[11px] font-semibold transition", level === "todos" ? "border-white/60 bg-white/15 text-white" : "border-border text-text-muted hover:text-text")}
+              >
+                Todos · {data.items.length}
+              </button>
+              {LEVELS.map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => setLevel(level === l ? "todos" : l)}
+                  className={cn("rounded-md border px-2.5 py-1 text-[11px] transition", level === l ? "border-accent bg-accent text-white" : LEVEL_STYLE[l])}
+                >
+                  Nivel {l} · {data.byLevel[l]}
+                </button>
+              ))}
+              <div className="ml-auto min-w-[12rem]">
+                <select className={inputClass} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filtrar por estado del pago">
+                  <option value="todos">Todos los estados</option>
+                  <option value="sin_guardar">Sin guardar (falta calcular)</option>
+                  <option value="calculado">Calculado</option>
+                  <option value="programado">Programado</option>
+                  <option value="pagado">Pagado</option>
+                  <option value="acumulado">Acumulado</option>
+                  <option value="sin_bono">Sin bono este mes</option>
+                </select>
+              </div>
+            </div>
+          </Panel>
+
+          {data.pending.length > 0 && (
+            <details className="mb-4 rounded-xl border border-amber-400/30 bg-amber-500/5 p-3.5">
+              <summary className="cursor-pointer text-sm font-semibold text-amber-200">
+                Pendientes de meses anteriores · {data.pending.length} ({money(data.totals.pendingBefore)})
+              </summary>
+              <ul className="mt-3 space-y-2">
+                {data.pending.map((p) => (
+                  <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-bg-elevated/60 px-3 py-2 text-xs">
+                    <span>
+                      <b>@{p.username}</b> · {MESES_NOMBRE[Number(p.period.slice(5))]} {p.period.slice(0, 4)} · {KIND_LABEL[p.kind]} {p.tier} ·{" "}
+                      <span className="text-text-muted">{reward({ coins: p.coins, usd: p.usd, advisory: false }, p.level)}</span>
+                    </span>
+                    <select
+                      value={p.status}
+                      onChange={(e) => {
+                        void (async () => {
+                          await call("PATCH", { id: p.id, status: e.target.value });
+                          await load();
+                        })();
+                      }}
+                      className={cn(inputClass, "!w-auto !py-1 text-xs")}
+                    >
+                      {Object.entries(STATUS_LABEL).map(([k, v]) => (
+                        <option key={k} value={k}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+
+      {!data ? (
+        <div className="glass-panel h-64 animate-pulse rounded-2xl" />
+      ) : data.items.length === 0 ? (
+        <Panel className="py-10 text-center text-sm text-text-muted">
+          No hay datos de {MESES_NOMBRE[month]} {year}. Importa el archivo en Control de diamantes y vuelve aquí.
+        </Panel>
+      ) : items.length === 0 ? (
+        <Panel className="py-10 text-center text-sm text-text-muted">Ningún creador coincide con ese filtro.</Panel>
+      ) : (
+        <ul className="space-y-3">
+          {items.map((i) => (
+            <li key={i.username} className="rounded-xl border border-white/10 bg-bg-elevated/80 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <TikTokAvatar username={i.username} name={i.creatorName ?? i.username} size={44} />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{i.creatorName ?? `@${i.username}`}</p>
+                    <p className="truncate text-xs text-text-muted">
+                      @{i.username}
+                      {!i.creatorId && <span className="ml-2 text-amber-300">· sin vincular a un creador</span>}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-text-muted">
+                    <b className="text-text">{formatNumber(i.metrics.diamonds)}</b> 💎 · <b className="text-text">{i.metrics.days}</b> días · <b className="text-text">{fmtHours(i.metrics.hours)}</b>
+                  </span>
+                  <span className={cn("rounded-md border px-2 py-1 font-semibold", LEVEL_STYLE[i.level])}>
+                    Nivel {i.level} · {LEVEL_LABEL[i.level]}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {i.bonuses.length === 0 && (
+                  <p className="rounded-lg bg-white/5 px-3 py-2 text-xs text-text-muted">Este mes no cumple los requisitos (días, horas y diamantes) de ninguna categoría.</p>
+                )}
+                {i.bonuses.map((b) => (
+                  <div key={b.kind} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-text-muted">
+                          {KIND_LABEL[b.kind]} · <span className="text-text">{b.tier}</span>
+                        </p>
+                        <p className="text-sm font-bold text-accent">{reward(b, i.level)}</p>
+                      </div>
+                      {b.award ? (
+                        <span className={cn("rounded-md border px-2 py-0.5 text-[11px] font-semibold", STATUS_STYLE[b.award.status])}>{STATUS_LABEL[b.award.status]}</span>
+                      ) : (
+                        <span className="rounded-md border border-border px-2 py-0.5 text-[11px] text-text-muted">Sin guardar</span>
+                      )}
+                    </div>
+                    {b.award && (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                        <select
+                          value={b.award.status}
+                          onChange={(e) => void setAward(b.award!.id, { status: e.target.value })}
+                          className={cn(inputClass, "!py-1.5 text-xs")}
+                          aria-label="Estado del pago"
+                        >
+                          {Object.entries(STATUS_LABEL).map(([k, v]) => (
+                            <option key={k} value={k}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="date"
+                          value={b.award.scheduledFor ?? ""}
+                          onChange={(e) => void setAward(b.award!.id, { scheduledFor: e.target.value || null, ...(b.award!.status === "calculado" && e.target.value ? { status: "programado" } : {}) })}
+                          className={cn(inputClass, "!py-1.5 text-xs")}
+                          aria-label="Fecha programada (después del día 8)"
+                          title="Fecha programada: los pagos comienzan después del día 8 de cada mes"
+                        />
+                        <select
+                          value={b.award.method ?? ""}
+                          onChange={(e) => void setAward(b.award!.id, { method: e.target.value || null })}
+                          className={cn(inputClass, "!py-1.5 text-xs")}
+                          aria-label="Medio de pago"
+                        >
+                          <option value="">Medio de pago…</option>
+                          {Object.entries(METHOD_LABEL).map(([k, v]) => (
+                            <option key={k} value={k}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {i.level === "E" && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-400/20 bg-emerald-500/5 px-3 py-2 text-xs">
+                    <Gift className="h-4 w-4 text-emerald-300" />
+                    <span className="font-semibold">Regalo de bienvenida (Bono #1):</span>
+                    <select value={i.welcome ?? ""} onChange={(e) => void setWelcome(i.username, e.target.value)} className={cn(inputClass, "!w-auto !py-1 text-xs")}>
+                      <option value="">Pendiente</option>
+                      <option value="osito">Entregado: Osito Miska</option>
+                      <option value="cofres">Entregado: 5 cofres para el público</option>
+                    </select>
+                    <span className="text-text-muted">Se da al completar 3 transmisiones válidas (45 min o más, una por día).</span>
+                  </div>
+                )}
+              </div>
+
+              <p className="mt-2 text-[11px] text-text-muted">
+                Pago: {i.payout}.{i.hint ? ` ${i.hint}` : ""}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <details className="mt-6 rounded-xl border border-white/10 bg-bg-elevated/60 p-4">
+        <summary className="cursor-pointer text-sm font-semibold">Ver las tablas y reglas del programa</summary>
+        <div className="mt-3 space-y-5 text-xs">
+          {(
+            [
+              ["Bono por horas (niveles D, C, B y A)", HOURS_TIERS],
+              ["Bono por diamantes (niveles C, B y A)", DIAMOND_TIERS],
+              ["Bono de incorporación #2 (nivel E)", INCORP2_TIERS],
+            ] as const
+          ).map(([title, tiers]) => (
+            <div key={title}>
+              <p className="mb-1.5 font-semibold">{title}</p>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[420px] text-left">
+                  <thead className="text-[11px] uppercase text-text-muted">
+                    <tr>
+                      <th className="py-1 pr-3">Categoría</th>
+                      <th className="py-1 pr-3">Días</th>
+                      <th className="py-1 pr-3">Horas</th>
+                      <th className="py-1 pr-3">Diamantes mín.</th>
+                      <th className="py-1">Premio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tiers.map((t) => (
+                      <tr key={t.name} className="border-t border-white/10">
+                        <td className="py-1 pr-3 font-medium">{t.name}</td>
+                        <td className="py-1 pr-3">{t.days}</td>
+                        <td className="py-1 pr-3">{t.hours}</td>
+                        <td className="py-1 pr-3">{formatNumber(t.diamonds)}</td>
+                        <td className="py-1">{t.advisory ? "Asesoría y estrategia" : `${formatNumber(t.coins)} monedas${t.usd ? ` · ${t.usd} USD` : ""}`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+          <ul className="list-disc space-y-1 pl-5 text-text-muted">
+            <li>Nivel C: más de 30,000 diamantes en un mes, o 90 días dentro de la agencia. Nivel B: más de 100,000. Nivel A: más de 300,000 (solo por diamantes).</li>
+            <li>De E a D: al cumplir las métricas del Bono #2 Básico; el nivel D aplica desde el mes siguiente. El nivel nunca baja.</li>
+            <li>Los pagos empiezan después del día 8 de cada mes, de preferencia en batallas agendadas. Lo que no se paga se acumula al siguiente periodo.</li>
+            <li>Nivel B: monedas o productos de TikTok Shop (mínimo 20 USD acumulados). Nivel A: transferencia bancaria en dólares reales, con retenciones.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  );
+}

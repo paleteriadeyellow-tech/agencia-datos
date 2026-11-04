@@ -525,3 +525,42 @@ model CalendarMonthNote {
 
   @@unique([agencySlug, month])
 }
+
+/// Premio calculado de un creador en un mes, del sistema de niveles y bonos (E, D, C, B, A).
+/// Se llega por username (el mismo de Control de diamantes) para incluir también a quien aún no está vinculado a un creador.
+model BonusAward {
+  id           String    @id @default(cuid())
+  agencySlug   String    @default("streamersfederation")
+  period       String // YYYY-MM del que salen las métricas
+  username     String
+  creatorId    String?
+  kind         String // horas | diamantes | incorporacion2
+  tier         String // Bajo, Expectativa, Normal… / Básico, Superior…
+  level        String // E | D | C | B | A al calcularlo
+  coins        Int       @default(0)
+  usd          Float? // equivalente en dólares (niveles B y A)
+  advisory     Boolean   @default(false) // el premio es asesoría (no monedas)
+  status       String    @default("calculado") // calculado | programado | pagado | acumulado
+  scheduledFor String? // YYYY-MM-DD
+  method       String? // batalla | live_normal | tiktok_shop | transferencia
+  paidAt       DateTime?
+  note         String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([agencySlug, period, username, kind])
+  @@index([agencySlug, period])
+  @@index([agencySlug, status])
+}
+
+/// Bono de incorporación #1 (regalo de bienvenida): se marca a mano porque depende de 3 transmisiones válidas de 45 min.
+model BonusWelcome {
+  id          String    @id @default(cuid())
+  agencySlug  String    @default("streamersfederation")
+  username    String
+  reward      String // osito | cofres
+  deliveredAt DateTime  @default(now())
+  note        String?
+
+  @@unique([agencySlug, username])
+}
