@@ -25,7 +25,7 @@ type Row = {
 
 type Payload = { period: string; rows: Row[] };
 
-type Sort = "cerca" | "diamantes" | "nivel" | "nombre";
+type Sort = "cerca" | "diamantes" | "nivel_d" | "nivel_h" | "nombre";
 
 function Bar({
   label,
@@ -112,6 +112,74 @@ function GoalBlock({ title, levels, stats, p }: { title: string; levels: GoalLev
   );
 }
 
+/**
+ * Barra deslizable de niveles: se arrastra de "Todos" → "Sin nivel" → Nivel 1 … N, y filtra a los creadores
+ * que están exactamente en ese nivel. value: -1 = todos, 0 = sin nivel, 1..N = ese nivel.
+ */
+function LevelSlider({
+  title,
+  levels,
+  value,
+  counts,
+  total,
+  onChange,
+}: {
+  title: string;
+  levels: GoalLevel[];
+  value: number;
+  counts: Map<number, number>;
+  total: number;
+  onChange: (v: number) => void;
+}) {
+  const max = levels[levels.length - 1].level;
+  const stops = [-1, 0, ...levels.map((l) => l.level)];
+  const label = (v: number) => (v === -1 ? "Todos" : v === 0 ? "Sin nivel" : `Nivel ${v}`);
+  const countOf = (v: number) => (v === -1 ? total : counts.get(v) ?? 0);
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3.5">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{title}</p>
+        <p className="text-sm">
+          <b className={value === -1 ? "text-text" : "text-accent"}>{label(value)}</b>
+          <span className="ml-2 text-xs text-text-muted">
+            {countOf(value)} {countOf(value) === 1 ? "creador" : "creadores"}
+          </span>
+        </p>
+      </div>
+
+      <input
+        type="range"
+        min={-1}
+        max={max}
+        step={1}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-label={`Filtrar por nivel: ${title}`}
+        className="w-full cursor-pointer accent-accent"
+      />
+
+      <div className="mt-1 flex justify-between">
+        {stops.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            title={`${label(v)} · ${countOf(v)}`}
+            className={cn(
+              "flex min-w-0 flex-col items-center px-0.5 text-[10px] leading-tight transition",
+              value === v ? "font-bold text-accent" : "text-text-muted hover:text-text"
+            )}
+          >
+            <span>{v === -1 ? "Todos" : v === 0 ? "—" : v}</span>
+            <span className="opacity-60">{countOf(v)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const TABLE_IDS = Object.keys(GOAL_TABLES) as GoalTableId[];
 
 export default function GoalsClient() {
@@ -119,11 +187,11 @@ export default function GoalsClient() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  // Cada creador muestra las DOS tablas; esta elige con cuál se filtra y se ordena
-  const [table, setTable] = useState<GoalTableId>("bonos");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("cerca");
-  const [levelFilter, setLevelFilter] = useState<number | null>(null); // null = todos
+  // -1 = todos, 0 = sin nivel, 1..N = ese nivel (una barra por tabla)
+  const [levelB, setLevelB] = useState(-1);
+  const [levelE, setLevelE] = useState(-1);
   const [refreshing, setRefreshing] = useState(false);
 
   const period = periodKey(year, month);
@@ -155,36 +223,45 @@ export default function GoalsClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
 
-  const levels = GOAL_TABLES[table].levels;
-
-  const everyone = useMemo(() => {
+  const base = useMemo(() => {
     const term = q.trim().toLowerCase();
     const list = (data?.rows ?? [])
       .filter((r) => !term || r.username.toLowerCase().includes(term) || (r.creatorName ?? "").toLowerCase().includes(term))
       .map((r) => {
         const stats: Stats = { diamonds: r.diamonds, days: r.days, hours: r.hours };
         const progress = { bonos: progressFor(GOAL_TABLES.bonos.levels, stats), empleados: progressFor(GOAL_TABLES.empleados.levels, stats) };
-        return { row: r, stats, progress, p: progress[table] };
+        // Qué tan cerca está de sus siguientes metas (promedio de las dos tablas; en el máximo cuenta como completo)
+        const close = (progress.bonos.overall + progress.empleados.overall) / 2;
+        return { row: r, stats, progress, close };
       });
     list.sort((a, b) => {
       if (sort === "nombre") return (a.row.creatorName ?? a.row.username).localeCompare(b.row.creatorName ?? b.row.username);
       if (sort === "diamantes") return b.row.diamonds - a.row.diamonds;
-      if (sort === "nivel") return b.p.level - a.p.level || b.row.diamonds - a.row.diamonds;
-      // "cerca": los que están más cerca de su siguiente meta primero (los que ya están en el máximo, al final)
-      const ra = a.p.next ? a.p.overall : -1;
-      const rb = b.p.next ? b.p.overall : -1;
-      return rb - ra || b.row.diamonds - a.row.diamonds;
+      if (sort === "nivel_d") return b.progress.bonos.level - a.progress.bonos.level || b.row.diamonds - a.row.diamonds;
+      if (sort === "nivel_h") return b.progress.empleados.level - a.progress.empleados.level || b.row.hours - a.row.hours;
+      return b.close - a.close || b.row.diamonds - a.row.diamonds;
     });
     return list;
-  }, [data, q, sort, table]);
+  }, [data, q, sort]);
 
-  const byLevel = useMemo(() => {
+  // Cada barra cuenta con el filtro de la otra aplicado, para que los números cuadren con lo que se ve
+  const countsB = useMemo(() => {
     const c = new Map<number, number>();
-    for (const i of everyone) c.set(i.p.level, (c.get(i.p.level) ?? 0) + 1);
+    for (const i of base) if (levelE === -1 || i.progress.empleados.level === levelE) c.set(i.progress.bonos.level, (c.get(i.progress.bonos.level) ?? 0) + 1);
     return c;
-  }, [everyone]);
+  }, [base, levelE]);
+  const countsE = useMemo(() => {
+    const c = new Map<number, number>();
+    for (const i of base) if (levelB === -1 || i.progress.bonos.level === levelB) c.set(i.progress.empleados.level, (c.get(i.progress.empleados.level) ?? 0) + 1);
+    return c;
+  }, [base, levelB]);
 
-  const items = useMemo(() => (levelFilter === null ? everyone : everyone.filter((i) => i.p.level === levelFilter)), [everyone, levelFilter]);
+  const items = useMemo(
+    () => base.filter((i) => (levelB === -1 || i.progress.bonos.level === levelB) && (levelE === -1 || i.progress.empleados.level === levelE)),
+    [base, levelB, levelE]
+  );
+  const totalForB = base.filter((i) => levelE === -1 || i.progress.empleados.level === levelE).length;
+  const totalForE = base.filter((i) => levelB === -1 || i.progress.bonos.level === levelB).length;
 
   const lastUpdate = useMemo(() => {
     const t = (data?.rows ?? []).map((r) => new Date(r.updatedAt).getTime());
@@ -223,27 +300,12 @@ export default function GoalsClient() {
             ))}
           </select>
         </Field>
-        <Field label="Filtrar y ordenar por">
-          <select
-            className={inputClass}
-            value={table}
-            onChange={(e) => {
-              setTable(e.target.value as GoalTableId);
-              setLevelFilter(null);
-            }}
-          >
-            {TABLE_IDS.map((k) => (
-              <option key={k} value={k}>
-                {GOAL_TABLES[k].label}
-              </option>
-            ))}
-          </select>
-        </Field>
         <Field label="Ordenar por">
           <select className={inputClass} value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-            <option value="cerca">Más cerca de su meta</option>
+            <option value="cerca">Más cerca de sus metas</option>
             <option value="diamantes">Más diamantes</option>
-            <option value="nivel">Nivel más alto</option>
+            <option value="nivel_d">Nivel más alto en diamantes</option>
+            <option value="nivel_h">Nivel más alto en días y horas</option>
             <option value="nombre">Nombre</option>
           </select>
         </Field>
@@ -260,55 +322,38 @@ export default function GoalsClient() {
       <Panel className="mb-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-text-muted">
-            Cada creador aparece en las dos tablas. Los botones de abajo filtran por el nivel de <b className="text-text">{GOAL_TABLES[table].label}</b>. Se calcula con lo
-            importado en{" "}
+            Desliza cada barra para ver solo a los creadores de ese nivel. Se calcula con lo importado en{" "}
             <Link href={path("/control-diamantes")} className="text-cyan underline-offset-2 hover:underline">
               Control de diamantes
             </Link>
             {lastUpdate ? ` · última actualización ${formatDateTime(lastUpdate)}` : ""}.
           </p>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={refreshing}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted transition hover:border-white/25 hover:text-text disabled:opacity-50"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Actualizar
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setLevelFilter(null)}
-            className={cn(
-              "rounded-md border px-2.5 py-1 text-[11px] font-semibold transition",
-              levelFilter === null ? "border-white/60 bg-white/15 text-white" : "border-border text-text-muted hover:border-white/30 hover:text-text"
-            )}
-          >
-            Todos · {everyone.length}
-          </button>
-          {[0, ...levels.map((l) => l.level)].map((lv) => {
-            const n = byLevel.get(lv) ?? 0;
-            const active = levelFilter === lv;
-            return (
+          <div className="flex gap-2">
+            {(levelB !== -1 || levelE !== -1) && (
               <button
-                key={lv}
                 type="button"
-                onClick={() => setLevelFilter(active ? null : lv)}
-                aria-pressed={active}
-                className={cn(
-                  "rounded-md border px-2.5 py-1 text-[11px] transition",
-                  active
-                    ? "border-accent bg-accent text-white"
-                    : n > 0
-                      ? "border-accent/40 bg-accent-soft text-white hover:border-accent"
-                      : "border-border text-text-muted hover:border-white/30"
-                )}
+                onClick={() => {
+                  setLevelB(-1);
+                  setLevelE(-1);
+                }}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted transition hover:border-white/25 hover:text-text"
               >
-                {lv === 0 ? "Sin nivel" : `Nivel ${lv}`} · {n}
+                Ver todos
               </button>
-            );
-          })}
+            )}
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted transition hover:border-white/25 hover:text-text disabled:opacity-50"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Actualizar
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <LevelSlider title={`${GOAL_TABLES.bonos.label} · Nivel 1 al 10`} levels={GOAL_TABLES.bonos.levels} value={levelB} counts={countsB} total={totalForB} onChange={setLevelB} />
+          <LevelSlider title={`${GOAL_TABLES.empleados.label} · Nivel 1 al 5`} levels={GOAL_TABLES.empleados.levels} value={levelE} counts={countsE} total={totalForE} onChange={setLevelE} />
         </div>
       </Panel>
 
@@ -324,9 +369,7 @@ export default function GoalsClient() {
         </Panel>
       ) : items.length === 0 ? (
         <Panel className="py-10 text-center text-sm text-text-muted">
-          {levelFilter !== null
-            ? `Nadie está en ${levelFilter === 0 ? "“Sin nivel”" : `el Nivel ${levelFilter}`} de ${GOAL_TABLES[table].label} este mes.`
-            : "Ningún creador coincide con la búsqueda."}
+          {levelB !== -1 || levelE !== -1 ? "Nadie cumple esa combinación de niveles este mes." : "Ningún creador coincide con la búsqueda."}
         </Panel>
       ) : (
         <ul className="space-y-4">
