@@ -379,7 +379,7 @@ export async function DELETE(req: NextRequest) {
   // Borrar TODO lo importado de un mes (filas + historial de importaciones)
   if (req.nextUrl.searchParams.get("all") === "1") {
     const period = req.nextUrl.searchParams.get("period") ?? "";
-    if (!/^d{4}-d{2}$/.test(period)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
       return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
     }
     if (req.nextUrl.searchParams.get("confirm") !== "BORRAR") {
