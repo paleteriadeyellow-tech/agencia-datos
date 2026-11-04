@@ -11,7 +11,7 @@ export const GOAL_TABLES: Record<GoalTableId, { label: string; hint: string; lev
     label: "Bonos (Nivel 1–10)",
     hint: "Cada nivel pide diamantes, 20 horas y 10 días.",
     levels: [
-      { level: 1, diamonds: 50_000, hours: 20, days: 10 },
+      { level: 1, diamonds: 40_000, hours: 20, days: 10 },
       { level: 2, diamonds: 50_000, hours: 20, days: 10 },
       { level: 3, diamonds: 100_000, hours: 20, days: 10 },
       { level: 4, diamonds: 200_000, hours: 20, days: 10 },
