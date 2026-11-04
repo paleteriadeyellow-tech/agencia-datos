@@ -655,7 +655,7 @@ export default function RecruitmentSheetClient() {
   const monthLabel = month === "all" ? "Todos los meses" : MESES_NOMBRE[Number(month)];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:[--fw:calc(100vw_-_18.5rem_-_15px)] lg:ml-[calc((100%_-_var(--fw))_/_2)] lg:w-[var(--fw)]">
       <TopBar title="Reclutamiento y seguimiento" subtitle={`${monthLabel} ${year === "all" ? "" : year} · edita directo en la hoja, se guarda solo`} />
 
       <div className="flex gap-2 border-b border-white/10 pb-3">
