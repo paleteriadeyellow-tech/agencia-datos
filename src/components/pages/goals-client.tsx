@@ -11,6 +11,7 @@ import { MESES_NOMBRE, periodKey } from "@/lib/bonos";
 import { GOAL_TABLES, fmtHours, progressFor, type GoalLevel, type GoalTableId, type Progress, type Stats } from "@/lib/goal-levels";
 import { PANEL, usePanelData } from "@/lib/swr";
 import { useAgency } from "@/lib/use-agency";
+import { useViewAs } from "@/components/view-as";
 import { cn, formatDateTime, formatNumber } from "@/lib/utils";
 
 type Row = {
@@ -20,6 +21,7 @@ type Row = {
   diamonds: number;
   hours: number;
   days: number;
+  managerId?: string | null;
   updatedAt: string;
 };
 
@@ -129,7 +131,9 @@ export default function GoalsClient() {
   const period = periodKey(year, month);
   const thisYear = now.getFullYear();
   const years = useMemo(() => Array.from({ length: 7 }, (_, i) => thisYear - 4 + i), [thisYear]);
-  const url = `${PANEL.diamonds}?period=${period}`;
+  // scope=metas: el servidor muestra todos los creadores a quien tiene el permiso de "ver todos", y solo los suyos al resto
+  const url = `${PANEL.diamonds}?period=${period}&scope=metas`;
+  const { viewAsId, viewAsCanViewAll } = useViewAs();
 
   const { data, error, mutate } = usePanelData(url) as {
     data?: Payload;
@@ -159,7 +163,9 @@ export default function GoalsClient() {
 
   const everyone = useMemo(() => {
     const term = q.trim().toLowerCase();
-    const list = (data?.rows ?? [])
+    // En "Vista de un manager" (solo admin) se simula lo que vería esa persona
+    const visible = (data?.rows ?? []).filter((r) => !viewAsId || viewAsCanViewAll || r.managerId === viewAsId);
+    const list = visible
       .filter((r) => !term || r.username.toLowerCase().includes(term) || (r.creatorName ?? "").toLowerCase().includes(term))
       .map((r) => {
         const stats: Stats = { diamonds: r.diamonds, days: r.days, hours: r.hours };
@@ -176,7 +182,7 @@ export default function GoalsClient() {
       return rb - ra || b.row.diamonds - a.row.diamonds;
     });
     return list;
-  }, [data, q, sort, table]);
+  }, [data, q, sort, table, viewAsId, viewAsCanViewAll]);
 
   const byLevel = useMemo(() => {
     const c = new Map<number, number>();

@@ -6,6 +6,7 @@ import {
   assertCreatorNickAccess,
   creatorWhere,
   diamondWhere,
+  readScope,
 } from "@/lib/creator-scope";
 import { prisma } from "@/lib/prisma";
 
@@ -35,7 +36,9 @@ export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
   const { agencySlug, scope } = auth;
-  const whereScope = await diamondWhere(scope, agencySlug);
+  // Metas de creadores (scope=metas) sigue el permiso de "ver todos"; Control de diamantes sigue mostrando solo lo propio
+  const forMetas = req.nextUrl.searchParams.get("scope") === "metas";
+  const whereScope = await diamondWhere(forMetas ? readScope(scope) : scope, agencySlug);
 
   const period = parsePeriod(req.nextUrl.searchParams.get("period"));
   const rows = await prisma.diamondControl.findMany({
