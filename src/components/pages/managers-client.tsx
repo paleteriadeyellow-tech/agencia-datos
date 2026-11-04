@@ -8,7 +8,7 @@ import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Field, Panel, inputClass } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
-import { createManager, deleteManager, setUserPosition, setUserViewAll } from "@/lib/actions";
+import { createManager, deleteManager, setUserPosition } from "@/lib/actions";
 import { POSITIONS, POSITION_LABEL } from "@/lib/positions";
 import { useViewAs } from "@/components/view-as";
 
@@ -103,8 +103,13 @@ export default function ManagersClient() {
       { revalidate: false }
     );
     try {
-      const res = await setUserViewAll(m.id, value);
-      if (res.error) throw new Error(res.error);
+      const res = await fetch(PANEL.managers, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-skip-view-as": "1" },
+        body: JSON.stringify({ id: m.id, canViewAll: value }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(json.error || "No se pudo guardar el permiso.");
       setMsg(value ? `${m.name} ahora ve todos los creadores (puede tardar unos segundos).` : `${m.name} vuelve a ver solo sus creadores.`);
     } catch (e) {
       setErr(e instanceof Error && e.message ? e.message : "No se pudo guardar el permiso.");

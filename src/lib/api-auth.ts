@@ -25,6 +25,11 @@ function viewAsIdFromRequest(req: NextRequest) {
 const ROLE_TTL_MS = 30_000;
 const roleCache = new Map<string, { role: string | null; viewAll: boolean; t: number }>();
 
+/** Olvida lo guardado de una persona para que su rol o permiso nuevo se aplique de inmediato en esta instancia. */
+export function forgetAccess(userId: string, agencySlug: string) {
+  roleCache.delete(`${agencySlug}:${userId}`);
+}
+
 /** Rol y permiso de "ver todos los creadores" (lo da el admin), reutilizados 30 s. */
 async function cachedAccess(userId: string, agencySlug: string) {
   const key = `${agencySlug}:${userId}`;
