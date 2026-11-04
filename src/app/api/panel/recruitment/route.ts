@@ -226,7 +226,7 @@ const rowSchema = z.object({
 });
 
 const postSchema = z.object({
-  action: z.enum(["create", "upsert", "import"]),
+  action: z.enum(["create", "upsert", "import", "fixShift"]),
   id: z.string().optional(),
   rows: z.array(rowSchema).max(2000).optional(),
   replace: z.boolean().optional(),
@@ -271,6 +271,42 @@ async function postRecruitment(req: NextRequest) {
     if (!admin) return userId ?? null;
     if (explicit) return explicit;
     return matchManagerId(recruiter, users);
+  }
+
+  // Corrige filas importadas con los datos corridos de columna:
+  // Situación(números)→Diamantes · Mensaje→Situación · Teléfono→Mensaje · Comentario→Se envió invitación
+  if (data.action === "fixShift") {
+    if (!admin) return NextResponse.json({ error: "Solo un admin puede hacer esto." }, { status: 403 });
+    const known = new Set(["apto", "no apto", "pendiente", "otra agencia"]);
+    const leads = await prisma.recruitmentLead.findMany({ where: { agencySlug } });
+    let fixed = 0;
+    for (const lead of leads) {
+      const steps = { ...(lead.steps as Record<string, string> | null) };
+      const extra = { ...(lead.extra as Record<string, string> | null) };
+      const sit = (lead.situation ?? "").trim();
+      const men = (steps.mensaje ?? "").trim().toLowerCase();
+      const numeric = /^\d+([.,]\d+)?$/.test(sit);
+      const shifted = numeric || (!sit && known.has(men));
+      if (!shifted || extra.diamantes || extra.seEnvioInvitacion) continue;
+      if (numeric) extra.diamantes = sit.replace(",", ".");
+      const inv = (lead.comment ?? "").trim().toLowerCase();
+      if (inv) extra.seEnvioInvitacion = /^(si|sí|s)$/.test(inv) ? "Sí" : /^no?$/.test(inv) ? "No" : lead.comment;
+      const newSituation = steps.mensaje ?? "";
+      if (lead.phone) steps.mensaje = lead.phone;
+      else delete steps.mensaje;
+      await prisma.recruitmentLead.update({
+        where: { id: lead.id },
+        data: {
+          situation: newSituation,
+          comment: "",
+          phone: "",
+          steps: steps as Prisma.InputJsonValue,
+          extra: extra as Prisma.InputJsonValue,
+        },
+      });
+      fixed += 1;
+    }
+    return NextResponse.json({ ok: true, fixed });
   }
 
   if (data.action === "create") {
