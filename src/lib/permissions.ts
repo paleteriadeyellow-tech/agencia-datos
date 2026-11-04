@@ -11,6 +11,7 @@ export const MANAGER_ALLOWED_PATHS = [
   "/tareas",
   "/campanas",
   "/calendario",
+  "/calendario-mensual",
   "/programacion",
   "/control-usuarios",
   "/llamadas",

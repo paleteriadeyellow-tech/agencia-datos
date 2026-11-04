@@ -499,3 +499,29 @@ model TaskTemplate {
   @@unique([agencySlug, position, title])
   @@index([agencySlug, position, active])
 }
+
+/// Evento del calendario mensual del equipo (una celda de la hoja: subasta, entrega de videos, junta…).
+model CalendarEvent {
+  id         String   @id @default(cuid())
+  agencySlug String   @default("streamersfederation")
+  date       String // YYYY-MM-DD
+  time       String? // HH:MM
+  title      String
+  notes      String?
+  color      String   @default("azul") // azul | verde | rojo | amarillo | morado
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([agencySlug, date])
+}
+
+/// Nota de cada mes (por ejemplo la tarea mensual y lo que debe estar listo).
+model CalendarMonthNote {
+  id         String   @id @default(cuid())
+  agencySlug String   @default("streamersfederation")
+  month      String // YYYY-MM
+  note       String
+  updatedAt  DateTime @updatedAt
+
+  @@unique([agencySlug, month])
+}
