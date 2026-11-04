@@ -8,7 +8,7 @@ import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Field, Panel, inputClass } from "@/components/ui";
 import { MESES_NOMBRE, periodKey } from "@/lib/bonos";
-import { GOAL_TABLES, fmtHours, progressFor, type GoalTableId, type Stats } from "@/lib/goal-levels";
+import { GOAL_TABLES, fmtHours, progressFor, type GoalLevel, type GoalTableId, type Progress, type Stats } from "@/lib/goal-levels";
 import { PANEL, usePanelData } from "@/lib/swr";
 import { useAgency } from "@/lib/use-agency";
 import { cn, formatDateTime, formatNumber } from "@/lib/utils";
@@ -67,11 +67,59 @@ function Bar({
   );
 }
 
+/** Un bloque de metas (una tabla): insignia de nivel, tres barras y cuánto falta. */
+function GoalBlock({ title, levels, stats, p }: { title: string; levels: GoalLevel[]; stats: Stats; p: Progress }) {
+  const t = p.next ?? levels[levels.length - 1];
+  const maxLevel = levels[levels.length - 1].level;
+  const parts = [
+    p.missing.diamonds > 0 ? `${formatNumber(p.missing.diamonds)} diamantes` : null,
+    p.missing.days > 0 ? `${p.missing.days} ${p.missing.days === 1 ? "día" : "días"}` : null,
+    p.missing.hours > 0 ? fmtHours(p.missing.hours) : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3.5">
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{title}</p>
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold",
+              p.level > 0 ? "border-success/40 bg-success/10 text-success" : "border-border text-text-muted"
+            )}
+          >
+            <Trophy className="h-3 w-3" />
+            {p.level > 0 ? `Nivel ${p.level}` : "Sin nivel"}
+          </span>
+          <span className="text-[10px] text-text-muted">{p.next ? `Siguiente: Nivel ${p.next.level}` : `Nivel máximo (${maxLevel})`}</span>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <Bar label="Diamantes" have={stats.diamonds} want={t.diamonds} ratio={p.ratio.diamonds} missing={p.missing.diamonds} format={formatNumber} />
+        <Bar label="Días LIVE" have={stats.days} want={t.days} ratio={p.ratio.days} missing={p.missing.days} format={(n) => String(Math.round(n))} unit=" d" />
+        <Bar label="Horas LIVE" have={stats.hours} want={t.hours} ratio={p.ratio.hours} missing={p.missing.hours} format={fmtHours} />
+      </div>
+
+      <p className={cn("mt-3 rounded-md px-2.5 py-1.5 text-[11px]", p.next ? "bg-white/5 text-text-muted" : "bg-success/10 text-success")}>
+        {!p.next
+          ? "¡Llegó al nivel máximo!"
+          : parts.length === 0
+            ? `Ya cumple todo para el Nivel ${p.next.level}.`
+            : `Para el Nivel ${p.next.level} faltan: ${parts.join(" · ")}.`}
+      </p>
+    </div>
+  );
+}
+
+const TABLE_IDS = Object.keys(GOAL_TABLES) as GoalTableId[];
+
 export default function GoalsClient() {
   const { path } = useAgency();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  // Cada creador muestra las DOS tablas; esta elige con cuál se filtra y se ordena
   const [table, setTable] = useState<GoalTableId>("bonos");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("cerca");
@@ -108,7 +156,6 @@ export default function GoalsClient() {
   }, [url]);
 
   const levels = GOAL_TABLES[table].levels;
-  const maxLevel = levels[levels.length - 1].level;
 
   const everyone = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -116,7 +163,8 @@ export default function GoalsClient() {
       .filter((r) => !term || r.username.toLowerCase().includes(term) || (r.creatorName ?? "").toLowerCase().includes(term))
       .map((r) => {
         const stats: Stats = { diamonds: r.diamonds, days: r.days, hours: r.hours };
-        return { row: r, stats, p: progressFor(levels, stats) };
+        const progress = { bonos: progressFor(GOAL_TABLES.bonos.levels, stats), empleados: progressFor(GOAL_TABLES.empleados.levels, stats) };
+        return { row: r, stats, progress, p: progress[table] };
       });
     list.sort((a, b) => {
       if (sort === "nombre") return (a.row.creatorName ?? a.row.username).localeCompare(b.row.creatorName ?? b.row.username);
@@ -128,7 +176,7 @@ export default function GoalsClient() {
       return rb - ra || b.row.diamonds - a.row.diamonds;
     });
     return list;
-  }, [data, levels, q, sort]);
+  }, [data, q, sort, table]);
 
   const byLevel = useMemo(() => {
     const c = new Map<number, number>();
@@ -175,12 +223,16 @@ export default function GoalsClient() {
             ))}
           </select>
         </Field>
-        <Field label="Tabla de metas">
-          <select className={inputClass} value={table} onChange={(e) => {
+        <Field label="Filtrar y ordenar por">
+          <select
+            className={inputClass}
+            value={table}
+            onChange={(e) => {
               setTable(e.target.value as GoalTableId);
               setLevelFilter(null);
-            }}>
-            {(Object.keys(GOAL_TABLES) as GoalTableId[]).map((k) => (
+            }}
+          >
+            {TABLE_IDS.map((k) => (
               <option key={k} value={k}>
                 {GOAL_TABLES[k].label}
               </option>
@@ -208,7 +260,8 @@ export default function GoalsClient() {
       <Panel className="mb-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-text-muted">
-            {GOAL_TABLES[table].hint} Se calcula con lo importado en{" "}
+            Cada creador aparece en las dos tablas. Los botones de abajo filtran por el nivel de <b className="text-text">{GOAL_TABLES[table].label}</b>. Se calcula con lo
+            importado en{" "}
             <Link href={path("/control-diamantes")} className="text-cyan underline-offset-2 hover:underline">
               Control de diamantes
             </Link>
@@ -271,57 +324,28 @@ export default function GoalsClient() {
         </Panel>
       ) : items.length === 0 ? (
         <Panel className="py-10 text-center text-sm text-text-muted">
-          {levelFilter !== null ? `Nadie está en ${levelFilter === 0 ? "“Sin nivel”" : `el Nivel ${levelFilter}`} este mes.` : "Ningún creador coincide con la búsqueda."}
+          {levelFilter !== null
+            ? `Nadie está en ${levelFilter === 0 ? "“Sin nivel”" : `el Nivel ${levelFilter}`} de ${GOAL_TABLES[table].label} este mes.`
+            : "Ningún creador coincide con la búsqueda."}
         </Panel>
       ) : (
-        <ul className="grid gap-4 lg:grid-cols-2">
-          {items.map(({ row, p }) => {
-            const t = p.next ?? levels[levels.length - 1];
-            const parts = [
-              p.missing.diamonds > 0 ? `${formatNumber(p.missing.diamonds)} diamantes` : null,
-              p.missing.days > 0 ? `${p.missing.days} ${p.missing.days === 1 ? "día" : "días"}` : null,
-              p.missing.hours > 0 ? fmtHours(p.missing.hours) : null,
-            ].filter(Boolean);
-            return (
-              <li key={row.id} className="rounded-xl border border-white/10 bg-bg-elevated/80 p-4">
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <TikTokAvatar username={row.username} name={row.creatorName ?? row.username} size={44} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{row.creatorName ?? `@${row.username}`}</p>
-                      <p className="truncate text-xs text-text-muted">@{row.username}</p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold",
-                        p.level > 0 ? "border-success/40 bg-success/10 text-success" : "border-border text-text-muted"
-                      )}
-                    >
-                      <Trophy className="h-3 w-3" />
-                      {p.level > 0 ? `Nivel ${p.level}` : "Sin nivel"}
-                    </span>
-                    <span className="text-[11px] text-text-muted">{p.next ? `Siguiente: Nivel ${p.next.level}` : `Nivel máximo (${maxLevel})`}</span>
-                  </div>
+        <ul className="space-y-4">
+          {items.map(({ row, stats, progress }) => (
+            <li key={row.id} className="rounded-xl border border-white/10 bg-bg-elevated/80 p-4">
+              <div className="mb-3 flex items-center gap-3">
+                <TikTokAvatar username={row.username} name={row.creatorName ?? row.username} size={44} />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{row.creatorName ?? `@${row.username}`}</p>
+                  <p className="truncate text-xs text-text-muted">@{row.username}</p>
                 </div>
-
-                <div className="space-y-3">
-                  <Bar label="Diamantes" have={row.diamonds} want={t.diamonds} ratio={p.ratio.diamonds} missing={p.missing.diamonds} format={formatNumber} />
-                  <Bar label="Días LIVE" have={row.days} want={t.days} ratio={p.ratio.days} missing={p.missing.days} format={(n) => String(Math.round(n))} unit=" d" />
-                  <Bar label="Horas LIVE" have={row.hours} want={t.hours} ratio={p.ratio.hours} missing={p.missing.hours} format={fmtHours} />
-                </div>
-
-                <p className={cn("mt-3 rounded-lg px-3 py-2 text-xs", p.next ? "bg-white/5 text-text-muted" : "bg-success/10 text-success")}>
-                  {!p.next
-                    ? "¡Llegó al nivel máximo!"
-                    : parts.length === 0
-                      ? `Ya cumple todo para el Nivel ${p.next.level}.`
-                      : `Para el Nivel ${p.next.level} le faltan: ${parts.join(" · ")}.`}
-                </p>
-              </li>
-            );
-          })}
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {TABLE_IDS.map((id) => (
+                  <GoalBlock key={id} title={GOAL_TABLES[id].label} levels={GOAL_TABLES[id].levels} stats={stats} p={progress[id]} />
+                ))}
+              </div>
+            </li>
+          ))}
         </ul>
       )}
     </div>
