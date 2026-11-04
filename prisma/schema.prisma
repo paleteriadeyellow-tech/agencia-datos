@@ -613,3 +613,23 @@ model RecruitmentSettings {
 
   @@unique([agencySlug])
 }
+
+/// Usuario publicado por el admin para que un manager lo contacte y trate de reclutarlo.
+/// Cuando un manager marca quién lo contacta queda bloqueado: solo el admin puede cambiarlo.
+model Prospect {
+  id            String    @id @default(cuid())
+  agencySlug    String    @default("streamersfederation")
+  username      String // sin @, en minúsculas
+  year          Int
+  month         Int
+  publishedAt   DateTime  @default(now())
+  claimedById   String? // quién lo va a contactar
+  claimedByName String?
+  claimedAt     DateTime?
+  markedById    String? // quién hizo el marcado
+  createdById   String?
+  createdAt     DateTime  @default(now())
+
+  @@unique([agencySlug, year, month, username])
+  @@index([agencySlug, year, month])
+}
