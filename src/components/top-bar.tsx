@@ -6,6 +6,7 @@ import { useAgency } from "@/lib/use-agency";
 import { isAdmin } from "@/lib/permissions";
 import { ViewAsSelect } from "@/components/view-as";
 import { writeViewAsCookie } from "@/lib/view-as";
+import { clearPanelCaches } from "@/lib/swr";
 
 export function TopBar({ title, subtitle }: { title: string; subtitle?: string }) {
   const { data } = useSession();
@@ -37,6 +38,7 @@ export function TopBar({ title, subtitle }: { title: string; subtitle?: string }
           type="button"
           onClick={() => {
             writeViewAsCookie(null);
+            clearPanelCaches();
             void signOut({ callbackUrl: path("/login") });
           }}
           className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg-panel px-3 py-2 text-sm text-text-muted transition hover:border-accent hover:text-accent"

@@ -34,8 +34,10 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Cache-Control",
-            value: "private, max-age=60, stale-while-revalidate=600",
+            value: "private, max-age=60, stale-while-revalidate=120",
           },
+          // La respuesta depende de la sesión (agencia y persona): el navegador la guarda por separado para cada una
+          { key: "Vary", value: "Cookie, X-View-As, X-Skip-View-As" },
         ],
       },
     ];

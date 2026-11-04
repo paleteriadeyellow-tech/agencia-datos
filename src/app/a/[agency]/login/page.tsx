@@ -8,7 +8,7 @@ import { Radio } from "lucide-react";
 import { Button, Field, inputClass } from "@/components/ui";
 import { useAgency } from "@/lib/use-agency";
 import { writeViewAsCookie } from "@/lib/view-as";
-import { bindPanelAgency } from "@/lib/swr";
+import { bindPanelAgency, clearPanelCaches } from "@/lib/swr";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,6 +33,8 @@ export default function LoginPage() {
       return;
     }
     writeViewAsCookie(null);
+    // Sesión nueva: se parte sin datos guardados de ninguna agencia ni persona anterior
+    clearPanelCaches();
     bindPanelAgency(slug);
     router.push(path("/dashboard"));
     router.refresh();

@@ -6,22 +6,85 @@ import { currentMonth } from "@/lib/utils";
 import { mondayOf, ymd } from "@/lib/weekly-schedule";
 import { useAgency } from "@/lib/use-agency";
 
-const CACHE_PREFIX = "panel-cache-v3:";
+const CACHE_PREFIX = "panel-cache-v4:";
+const OLD_CACHE_PREFIXES = ["panel-cache-v3:", "panel-cache-v2:", "panel-cache:"];
+const USER_KEY = "panel-user";
 /** Mostrar datos guardados hasta 24h; se refrescan en segundo plano. */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 let boundAgency = "";
+// Persona de la sesión: la caché es de agencia Y persona, para que nadie vea datos guardados de otra sesión
+let boundUser = "";
+if (typeof window !== "undefined") {
+  try {
+    boundUser = localStorage.getItem(USER_KEY) ?? "";
+    // Limpieza única de las cachés de versiones anteriores
+    const old: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && OLD_CACHE_PREFIXES.some((p) => k.startsWith(p))) old.push(k);
+    }
+    old.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    /* sin almacenamiento */
+  }
+}
 
 export function bindPanelAgency(slug: string) {
   boundAgency = slug;
 }
 
+/**
+ * Se llama con la persona de la sesión cuando se conoce. Si es otra distinta a la de la última vez
+ * se borra toda la caché guardada (disco y memoria) antes de mostrar nada.
+ */
+export function switchPanelUser(id: string) {
+  if (!id) return;
+  if (boundUser && boundUser !== id) clearPanelCaches();
+  boundUser = id;
+  try {
+    localStorage.setItem(USER_KEY, id);
+  } catch {
+    /* sin almacenamiento */
+  }
+}
+
+/** Borra toda la caché del panel (disco y memoria). Al salir o entrar a otra sesión. */
+export function clearPanelCaches() {
+  clearPanelDiskCache();
+  void mutate(() => true, undefined, { revalidate: false });
+  boundUser = "";
+  try {
+    localStorage.removeItem(USER_KEY);
+  } catch {
+    /* sin almacenamiento */
+  }
+}
+
 export function panelSWRKey(url: string, agency = boundAgency) {
-  return [agency || "x", url] as const;
+  return [`${agency || "x"}:${boundUser || "anon"}`, url] as const;
 }
 
 function storageKey(url: string) {
-  return `${CACHE_PREFIX}${boundAgency || "x"}:${url}`;
+  return `${CACHE_PREFIX}${boundAgency || "x"}:${boundUser || "anon"}:${url}`;
+}
+
+/** Momento de la última escritura (POST/PUT/PATCH/DELETE): justo después, las lecturas saltan la caché HTTP del navegador. */
+let lastMutation = 0;
+if (typeof window !== "undefined") {
+  const w = window as unknown as { __panelFetchPatched?: boolean };
+  if (!w.__panelFetchPatched) {
+    w.__panelFetchPatched = true;
+    const original = window.fetch.bind(window);
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+      if (method === "GET" || method === "HEAD") return original(input, init);
+      lastMutation = Date.now();
+      return original(input, init).finally(() => {
+        lastMutation = Date.now();
+      });
+    };
+  }
 }
 
 type CacheEntry = { t: number; d: unknown };
@@ -85,8 +148,8 @@ function writeCache(url: string, data: unknown) {
 export async function panelFetcher(url: string) {
   const res = await fetch(url, {
     headers: { "x-skip-view-as": "1" },
-    // Permite caché HTTP del navegador / Electron cuando el server lo autoriza
-    cache: "default",
+    // Caché HTTP del navegador salvo que se acabe de guardar algo: ahí se pide lo nuevo (los últimos 15 s)
+    cache: Date.now() - lastMutation < 15_000 ? "no-store" : "default",
   });
   if (!res.ok) {
     let message = "Error al cargar";
@@ -173,6 +236,7 @@ export function mutatePanel(
 }
 
 export function invalidatePanel(...keys: string[]) {
+  lastMutation = Date.now();
   for (const k of keys) {
     void mutate(
       (key) => {

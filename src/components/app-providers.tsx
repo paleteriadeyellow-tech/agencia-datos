@@ -3,12 +3,14 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SWRConfig } from "swr";
+import { useSession } from "next-auth/react";
 import { QuickCreateProvider } from "@/components/quick-create";
 import {
   PANEL_SWR_DEFAULTS,
   bindPanelAgency,
   hydratePanelCacheFromStorage,
   panelWarmUrls,
+  switchPanelUser,
 } from "@/lib/swr";
 import { ViewAsProvider } from "@/components/view-as";
 import { PanelWarmup } from "@/components/panel-warmup";
@@ -43,6 +45,15 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { slug, path } = useAgency();
   bindPanelAgency(slug);
+  const { data: session } = useSession();
+  const userId = session?.user?.id ?? "";
+
+  // Con la persona de la sesión: si es otra distinta a la última, se borra la caché guardada y se vuelve a pintar
+  useEffect(() => {
+    if (!userId) return;
+    switchPanelUser(userId);
+    hydratePanelCacheFromStorage(panelWarmUrls());
+  }, [userId]);
 
   useEffect(() => {
     PREFETCH_ROUTES.forEach((href) => router.prefetch(path(href)));

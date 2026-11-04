@@ -37,6 +37,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { writeViewAsCookie } from "@/lib/view-as";
+import { clearPanelCaches } from "@/lib/swr";
 import { cn } from "@/lib/utils";
 import { filterNavByRole } from "@/lib/permissions";
 import { useAgency } from "@/lib/use-agency";
@@ -153,6 +154,7 @@ export function Sidebar() {
           href="/"
           onClick={() => {
             writeViewAsCookie(null);
+            clearPanelCaches();
             void signOut({ redirect: false });
           }}
           className="flex items-center gap-2 text-xs text-text-muted transition hover:text-accent"
