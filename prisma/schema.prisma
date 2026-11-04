@@ -564,3 +564,15 @@ model BonusWelcome {
 
   @@unique([agencySlug, username])
 }
+
+/// Nivel fijado a mano por el admin para un creador, válido desde un mes en adelante (hasta quitarlo).
+model BonusLevelOverride {
+  id         String   @id @default(cuid())
+  agencySlug String   @default("streamersfederation")
+  username   String
+  level      String // E | D | C | B | A
+  fromPeriod String // YYYY-MM desde el que aplica
+  updatedAt  DateTime @updatedAt
+
+  @@unique([agencySlug, username])
+}

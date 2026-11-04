@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
-import { LEVELS, awardsFor, levelFor, nextLevelHint, payoutMode, type Level, type MonthMetrics } from "@/lib/level-bonuses";
+import { LEVELS, awardsFor, levelFor, nextLevelHint, payoutMode, type BonusKind, type Level, type MonthMetrics } from "@/lib/level-bonuses";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -37,13 +37,18 @@ async function loadMonth(agencySlug: string, period: string) {
     ? await prisma.creator.findMany({ where: { id: { in: creatorIds }, agencySlug }, select: { id: true, name: true, joinDate: true } })
     : [];
   const byId = new Map(creators.map((c) => [c.id, c]));
+  // Niveles fijados a mano: aplican desde su mes en adelante
+  const overrides = new Map((await prisma.bonusLevelOverride.findMany({ where: { agencySlug } })).map((o) => [o.username.toLowerCase(), o]));
 
   return target
     .map((r) => {
       const c = r.creatorId ? byId.get(r.creatorId) : undefined;
       const metrics = { diamonds: r.diamonds, days: r.days, hours: r.hours };
-      const level = levelFor(history.get(r.username.toLowerCase()) ?? [], period, c?.joinDate ?? null);
-      return { username: r.username, creatorId: r.creatorId, creatorName: c?.name ?? null, join: c?.joinDate ?? null, metrics, level };
+      const levelAuto = levelFor(history.get(r.username.toLowerCase()) ?? [], period, c?.joinDate ?? null);
+      const ov = overrides.get(r.username.toLowerCase());
+      const manual = !!ov && ov.fromPeriod <= period && (LEVELS as string[]).includes(ov.level);
+      const level = manual ? (ov!.level as Level) : levelAuto;
+      return { username: r.username, creatorId: r.creatorId, creatorName: c?.name ?? null, join: c?.joinDate ?? null, metrics, level, levelAuto, manual, manualFrom: manual ? ov!.fromPeriod : null };
     })
     .sort((a, b) => b.metrics.diamonds - a.metrics.diamonds);
 }
@@ -74,19 +79,31 @@ export async function GET(req: NextRequest) {
       creatorId: r.creatorId,
       creatorName: r.creatorName,
       level: r.level,
+      levelAuto: r.levelAuto,
+      manual: r.manual,
+      manualFrom: r.manualFrom,
       metrics: r.metrics,
       payout: payoutMode(r.level),
       hint: nextLevelHint(r.level, r.metrics, r.join, period),
       welcome: welcomeMap.get(r.username.toLowerCase())?.reward ?? null,
-      bonuses: computed.map((c) => {
-        const a = awardMap.get(`${r.username.toLowerCase()}|${c.kind}`);
-        return {
-          ...c,
-          award: a
-            ? { id: a.id, status: a.status, scheduledFor: a.scheduledFor, method: a.method, paidAt: a.paidAt, note: a.note, saved: true }
-            : null,
-        };
-      }),
+      bonuses: [
+        ...computed.map((c) => {
+          const a = awardMap.get(`${r.username.toLowerCase()}|${c.kind}`);
+          return { ...c, outdated: false, award: a ? { id: a.id, status: a.status, scheduledFor: a.scheduledFor, method: a.method, paidAt: a.paidAt, note: a.note, saved: true } : null };
+        }),
+        // Premios ya programados o pagados que con el nivel actual ya no corresponden: se muestran para no perderlos de vista
+        ...awards
+          .filter((a) => a.username.toLowerCase() === r.username.toLowerCase() && !computed.some((c) => c.kind === a.kind))
+          .map((a) => ({
+            kind: a.kind as BonusKind,
+            tier: a.tier,
+            coins: a.coins,
+            usd: a.usd,
+            advisory: a.advisory,
+            outdated: true,
+            award: { id: a.id, status: a.status, scheduledFor: a.scheduledFor, method: a.method, paidAt: a.paidAt, note: a.note, saved: true as const },
+          })),
+      ],
     };
   });
 
@@ -115,36 +132,10 @@ export async function GET(req: NextRequest) {
   );
 }
 
-const postSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("calculate"), period: z.string().regex(PERIOD) }),
-  z.object({ action: z.literal("welcome"), username: z.string().min(1).max(80), reward: z.enum(["osito", "cofres"]).nullable() }),
-]);
-
-export async function POST(req: NextRequest) {
-  const g = await adminGate(req);
-  if (g.error) return g.error;
-  const parsed = postSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400, headers: NO_STORE });
-  const body = parsed.data;
-
-  if (body.action === "welcome") {
-    const username = body.username.toLowerCase();
-    if (body.reward === null) {
-      await prisma.bonusWelcome.deleteMany({ where: { agencySlug: g.agencySlug, username } });
-    } else {
-      await prisma.bonusWelcome.upsert({
-        where: { agencySlug_username: { agencySlug: g.agencySlug, username } },
-        update: { reward: body.reward },
-        create: { agencySlug: g.agencySlug, username, reward: body.reward },
-      });
-    }
-    return NextResponse.json({ ok: true }, { headers: NO_STORE });
-  }
-
-  // Calcular y guardar el mes: crea los premios nuevos y actualiza los que aún no se pagan
-  const { period } = body;
-  const rows = await loadMonth(g.agencySlug, period);
-  const existing = await prisma.bonusAward.findMany({ where: { agencySlug: g.agencySlug, period } });
+/** Calcula y guarda los premios del mes: crea los nuevos y actualiza los que aún no se pagan (todo el mes, o solo un usuario). */
+async function calculatePeriod(agencySlug: string, period: string, onlyUser?: string) {
+  const rows = (await loadMonth(agencySlug, period)).filter((r) => !onlyUser || r.username.toLowerCase() === onlyUser);
+  const existing = await prisma.bonusAward.findMany({ where: { agencySlug, period, ...(onlyUser ? { username: onlyUser } : {}) } });
   const existingMap = new Map(existing.map((a) => [`${a.username.toLowerCase()}|${a.kind}`, a]));
 
   const ops: ReturnType<typeof prisma.bonusAward.create>[] = [];
@@ -160,7 +151,7 @@ export async function POST(req: NextRequest) {
       const ex = existingMap.get(key);
       if (!ex) {
         created++;
-        ops.push(prisma.bonusAward.create({ data: { agencySlug: g.agencySlug, period, username: r.username.toLowerCase(), kind: c.kind, ...data } }));
+        ops.push(prisma.bonusAward.create({ data: { agencySlug: agencySlug, period, username: r.username.toLowerCase(), kind: c.kind, ...data } }));
       } else if (ex.status === "pagado") {
         locked++; // lo ya pagado no se modifica aunque cambien las métricas
       } else {
@@ -174,7 +165,55 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < ops.length; i += 50) await prisma.$transaction(ops.slice(i, i + 50));
   if (stale.length) await prisma.bonusAward.deleteMany({ where: { id: { in: stale.map((a) => a.id) } } });
 
-  return NextResponse.json({ ok: true, created, updated, locked, removed: stale.length }, { headers: NO_STORE });
+  return { created, updated, locked, removed: stale.length };
+}
+
+const postSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("calculate"), period: z.string().regex(PERIOD) }),
+  z.object({ action: z.literal("level"), period: z.string().regex(PERIOD), username: z.string().min(1).max(80), level: z.enum(["E", "D", "C", "B", "A"]).nullable() }),
+  z.object({ action: z.literal("welcome"), username: z.string().min(1).max(80), reward: z.enum(["osito", "cofres"]).nullable() }),
+]);
+
+export async function POST(req: NextRequest) {
+  const g = await adminGate(req);
+  if (g.error) return g.error;
+  const parsed = postSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400, headers: NO_STORE });
+  const body = parsed.data;
+
+  if (body.action === "level") {
+    const username = body.username.toLowerCase();
+    if (body.level === null) {
+      await prisma.bonusLevelOverride.deleteMany({ where: { agencySlug: g.agencySlug, username } });
+    } else {
+      await prisma.bonusLevelOverride.upsert({
+        where: { agencySlug_username: { agencySlug: g.agencySlug, username } },
+        update: { level: body.level, fromPeriod: body.period },
+        create: { agencySlug: g.agencySlug, username, level: body.level, fromPeriod: body.period },
+      });
+    }
+    // Con otro nivel cambian los bonos que le tocan: se recalculan solo los de esa persona
+    const r = await calculatePeriod(g.agencySlug, body.period, username);
+    return NextResponse.json({ ok: true, ...r }, { headers: NO_STORE });
+  }
+
+  if (body.action === "welcome") {
+    const username = body.username.toLowerCase();
+    if (body.reward === null) {
+      await prisma.bonusWelcome.deleteMany({ where: { agencySlug: g.agencySlug, username } });
+    } else {
+      await prisma.bonusWelcome.upsert({
+        where: { agencySlug_username: { agencySlug: g.agencySlug, username } },
+        update: { reward: body.reward },
+        create: { agencySlug: g.agencySlug, username, reward: body.reward },
+      });
+    }
+    return NextResponse.json({ ok: true }, { headers: NO_STORE });
+  }
+
+  const { period } = body;
+  const r = await calculatePeriod(g.agencySlug, period);
+  return NextResponse.json({ ok: true, ...r }, { headers: NO_STORE });
 }
 
 const patchSchema = z.object({

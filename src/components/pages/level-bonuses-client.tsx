@@ -23,12 +23,15 @@ import { cn, formatNumber } from "@/lib/utils";
 const API = "/api/panel/level-bonuses";
 
 type AwardState = { id: string; status: string; scheduledFor: string | null; method: string | null; paidAt: string | null; note: string | null; saved: true } | null;
-type Bonus = { kind: BonusKind; tier: string; coins: number; usd: number | null; advisory: boolean; award: AwardState };
+type Bonus = { kind: BonusKind; tier: string; coins: number; usd: number | null; advisory: boolean; outdated: boolean; award: AwardState };
 type Item = {
   username: string;
   creatorId: string | null;
   creatorName: string | null;
   level: Level;
+  levelAuto: Level;
+  manual: boolean;
+  manualFrom: string | null;
   metrics: { diamonds: number; days: number; hours: number };
   payout: string;
   hint: string | null;
@@ -161,6 +164,15 @@ export default function LevelBonusesClient() {
     );
     const r = await call("PATCH", { id, ...patch });
     if (!r) await load(); // se revierte
+  }
+
+  /** Fija el nivel a mano desde este mes (o vuelve al automático) y recalcula los premios de esa persona. */
+  async function changeLevel(username: string, value: string) {
+    const r = await call("POST", { action: "level", period, username, level: value === "auto" ? null : value });
+    if (r) {
+      setMsg(value === "auto" ? `@${username} vuelve al nivel automático.` : `@${username} queda en Nivel ${value} desde ${MESES_NOMBRE[month]} ${year}.`);
+      await load();
+    }
   }
 
   async function setWelcome(username: string, reward: string) {
@@ -340,9 +352,27 @@ export default function LevelBonusesClient() {
                   <span className="text-text-muted">
                     <b className="text-text">{formatNumber(i.metrics.diamonds)}</b> 💎 · <b className="text-text">{i.metrics.days}</b> días · <b className="text-text">{fmtHours(i.metrics.hours)}</b>
                   </span>
-                  <span className={cn("rounded-md border px-2 py-1 font-semibold", LEVEL_STYLE[i.level])}>
-                    Nivel {i.level} · {LEVEL_LABEL[i.level]}
-                  </span>
+                  <select
+                    value={i.manual ? i.level : "auto"}
+                    onChange={(e) => void changeLevel(i.username, e.target.value)}
+                    className={cn("rounded-md border px-2 py-1 text-xs font-semibold outline-none", LEVEL_STYLE[i.level])}
+                    aria-label={`Nivel de ${i.username}`}
+                    title="Cambiar el nivel a mano"
+                  >
+                    <option value="auto" className="text-black">
+                      Automático · Nivel {i.levelAuto}
+                    </option>
+                    {LEVELS.map((l) => (
+                      <option key={l} value={l} className="text-black">
+                        Nivel {l} · {LEVEL_LABEL[l]}
+                      </option>
+                    ))}
+                  </select>
+                  {i.manual && (
+                    <span className="rounded border border-amber-400/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200" title={`Nivel fijado a mano desde ${i.manualFrom}`}>
+                      Manual
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -359,6 +389,7 @@ export default function LevelBonusesClient() {
                         </p>
                         <p className="text-sm font-bold text-accent">{reward(b, i.level)}</p>
                       </div>
+                      {b.outdated && <span className="text-[11px] text-amber-300">Ya no corresponde con su nivel actual</span>}
                       {b.award ? (
                         <span className={cn("rounded-md border px-2 py-0.5 text-[11px] font-semibold", STATUS_STYLE[b.award.status])}>{STATUS_LABEL[b.award.status]}</span>
                       ) : (
@@ -420,7 +451,7 @@ export default function LevelBonusesClient() {
               </div>
 
               <p className="mt-2 text-[11px] text-text-muted">
-                Pago: {i.payout}.{i.hint ? ` ${i.hint}` : ""}
+                {i.manual ? `Nivel fijado a mano desde ${i.manualFrom} (el automático sería ${i.levelAuto}). ` : ""}Pago: {i.payout}.{i.hint && !i.manual ? ` ${i.hint}` : ""}
               </p>
             </li>
           ))}
