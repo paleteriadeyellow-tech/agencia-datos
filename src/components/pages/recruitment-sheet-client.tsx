@@ -91,14 +91,15 @@ function coerce(col: Col, raw: string): string {
   return v;
 }
 
-function colWidth(c: Col) {
-  if (c.key === "creatorName") return 170;
-  if (c.key === "recruiter") return 130;
-  if (c.type === "date") return 140;
-  if (c.type === "number") return 120;
-  if (c.type === "check") return 90;
-  if (c.type === "select") return 170;
-  return c.label.length > 22 ? 190 : 150;
+/** Peso relativo de cada columna: la hoja reparte todo el ancho disponible entre ellas, sin scroll lateral. */
+function colWeight(c: Col) {
+  if (c.key === "creatorName") return 1.5;
+  if (c.key === "recruiter") return 1.1;
+  if (c.type === "date") return 1.25;
+  if (c.type === "number") return 0.85;
+  if (c.type === "check") return 0.6;
+  if (c.type === "select") return 1.15;
+  return c.label.length > 22 ? 1.4 : 1;
 }
 
 const HEADER_TONE: Record<string, string> = {
@@ -123,7 +124,7 @@ function focusCell(r: number, c: number) {
   return true;
 }
 
-const CELL = "h-9 w-full bg-transparent px-2 text-[13px] outline-none transition focus:bg-white/10 focus:ring-1 focus:ring-inset focus:ring-accent disabled:opacity-60";
+const CELL = "h-8 w-full min-w-0 truncate text-ellipsis bg-transparent px-1.5 text-[12px] outline-none transition focus:bg-white/10 focus:ring-1 focus:ring-inset focus:ring-accent disabled:opacity-60";
 
 const Cell = memo(function Cell({
   row,
@@ -152,7 +153,7 @@ const Cell = memo(function Cell({
 
   if (col.type === "check") {
     return (
-      <label className="flex h-9 items-center justify-center">
+      <label className="flex h-8 items-center justify-center">
         <input data-cell={`${r}-${c}`} type="checkbox" disabled={disabled} checked={value === "1"} onChange={(e) => onCommit(row, col, e.target.checked ? "1" : "")} className="h-4 w-4 accent-accent" />
       </label>
     );
@@ -174,7 +175,18 @@ const Cell = memo(function Cell({
     );
   }
   if (col.type === "date") {
-    return <input data-cell={`${r}-${c}`} type="date" disabled={disabled} value={value} onChange={(e) => onCommit(row, col, e.target.value)} className={CELL} />;
+    return (
+      <input
+        data-cell={`${r}-${c}`}
+        type="date"
+        disabled={disabled}
+        value={value}
+        onChange={(e) => onCommit(row, col, e.target.value)}
+        onDoubleClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
+        title={value ? undefined : "Escribe la fecha o haz doble clic para abrir el calendario"}
+        className={cn(CELL, "[&::-webkit-calendar-picker-indicator]:hidden")}
+      />
+    );
   }
   return (
     <input
@@ -218,7 +230,6 @@ const SheetRow = memo(function SheetRow({
   row,
   r,
   cols,
-  offsets,
   status,
   onCommit,
   onPasteGrid,
@@ -227,7 +238,6 @@ const SheetRow = memo(function SheetRow({
   row: Lead;
   r: number;
   cols: Col[];
-  offsets: number[];
   status: string | undefined;
   onCommit: (row: Lead, col: Col, value: string) => void;
   onPasteGrid: (r: number, c: number, text: string) => void;
@@ -237,20 +247,16 @@ const SheetRow = memo(function SheetRow({
   const temp = row.id.startsWith("tmp-");
   return (
     <tr className={cn("group", tone)}>
-      <td className="sticky left-0 z-10 w-11 min-w-11 border-b border-r border-white/10 bg-bg-elevated px-1 text-center text-[11px] text-text-muted">
+      <td className="border-b border-r border-white/10 bg-bg-elevated px-0.5 text-center text-[10px] text-text-muted">
         {status === "…" ? "…" : status === "Error" ? <span className="text-danger">!</span> : r + 1}
       </td>
       {cols.map((col, c) => (
-        <td
-          key={col.key}
-          className={cn("border-b border-r border-white/10 p-0", c < 2 && "sticky z-10 bg-bg-elevated")}
-          style={{ width: colWidth(col), minWidth: colWidth(col), left: c < 2 ? offsets[c] : undefined }}
-        >
+        <td key={col.key} className="border-b border-r border-white/10 p-0" title={getVal(row, col.key) || undefined}>
           <Cell row={row} col={col} r={r} c={c} value={getVal(row, col.key)} disabled={temp} onCommit={onCommit} onPasteGrid={onPasteGrid} />
         </td>
       ))}
-      <td className="border-b border-white/10 px-1 text-center">
-        <button type="button" onClick={() => onRemove(row.id)} title="Eliminar fila" className="rounded p-1.5 text-text-muted opacity-0 transition hover:text-danger group-hover:opacity-100 focus:opacity-100">
+      <td className="border-b border-white/10 px-0.5 text-center">
+        <button type="button" onClick={() => onRemove(row.id)} title="Eliminar fila" className="rounded p-1 text-text-muted opacity-0 transition hover:text-danger group-hover:opacity-100 focus:opacity-100">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </td>
@@ -290,8 +296,9 @@ export default function RecruitmentSheetClient() {
   const managers = useMemo(() => payload?.managers ?? [], [payload?.managers]);
   const allCols = useMemo(() => [...(payload?.columns ?? [])].sort((a, b) => a.sortOrder - b.sortOrder), [payload?.columns]);
   const cols = useMemo(() => allCols.filter((c) => !c.hidden), [allCols]);
-  const offsets = useMemo(() => [44, 44 + (cols[0] ? colWidth(cols[0]) : 0)], [cols]);
-  const totalWidth = 44 + cols.reduce((a, c) => a + colWidth(c), 0) + 40;
+  const weightSum = useMemo(() => cols.reduce((a, c) => a + colWeight(c), 0) || 1, [cols]);
+  // Si hay demasiadas columnas para que se lean, la hoja se desplaza en lugar de apretarlas más
+  const minTableWidth = 36 + 30 + cols.length * 66;
 
   const rows = useMemo(() => {
     let list = payload?.rows ?? [];
@@ -665,26 +672,32 @@ export default function RecruitmentSheetClient() {
         <div className="glass-panel h-64 animate-pulse rounded-2xl" />
       ) : (
         <div className="max-h-[calc(100vh-19rem)] min-h-[16rem] overflow-auto rounded-xl border border-white/10">
-          <table className="border-separate border-spacing-0 text-sm" style={{ minWidth: totalWidth }}>
+          <table className="w-full border-separate border-spacing-0 text-sm" style={{ tableLayout: "fixed", minWidth: minTableWidth }}>
+            <colgroup>
+              <col style={{ width: 36 }} />
+              {cols.map((col) => (
+                <col key={col.key} style={{ width: `calc((100% - 66px) * ${colWeight(col) / weightSum})` }} />
+              ))}
+              <col style={{ width: 30 }} />
+            </colgroup>
             <thead>
               <tr>
-                <th className="sticky left-0 top-0 z-30 w-11 min-w-11 border-b border-r border-white/10 bg-bg-elevated px-1 py-2 text-[11px] text-text-muted">#</th>
-                {cols.map((col, c) => (
+                <th className="sticky top-0 z-20 border-b border-r border-white/10 bg-bg-elevated px-0.5 py-1.5 text-[10px] text-text-muted">#</th>
+                {cols.map((col) => (
                   <th
                     key={col.key}
-                    className={cn("sticky top-0 border-b border-r border-white/10 px-2 py-2 text-left text-[11px] font-semibold uppercase leading-tight tracking-wide", c < 2 ? "z-30" : "z-20", headerTone(col))}
-                    style={{ width: colWidth(col), minWidth: colWidth(col), left: c < 2 ? offsets[c] : undefined }}
+                    className={cn("sticky top-0 z-20 border-b border-r border-white/10 px-1.5 py-1.5 text-left text-[10px] font-semibold uppercase leading-tight tracking-wide", headerTone(col))}
                     title={col.label}
                   >
                     {col.label}
                   </th>
                 ))}
-                <th className="sticky top-0 z-20 w-10 border-b border-white/10 bg-bg-elevated" />
+                <th className="sticky top-0 z-20 border-b border-white/10 bg-bg-elevated" />
               </tr>
             </thead>
             <tbody>
               {rows.map((row, r) => (
-                <SheetRow key={row.id} row={row} r={r} cols={cols} offsets={offsets} status={saveMap[row.id]} onCommit={onCommit} onPasteGrid={pasteGrid} onRemove={removeRow} />
+                <SheetRow key={row.id} row={row} r={r} cols={cols} status={saveMap[row.id]} onCommit={onCommit} onPasteGrid={pasteGrid} onRemove={removeRow} />
               ))}
               <tr>
                 <td colSpan={cols.length + 2} className="p-0">
