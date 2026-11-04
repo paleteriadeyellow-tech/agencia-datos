@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import {
   STEP_KEYS,
   dateParts,
+  defaultSheetColumns,
   matchManagerId,
 } from "@/lib/recruitment";
 
@@ -34,6 +35,18 @@ function asSteps(value: unknown): Record<string, string> {
   return out;
 }
 
+/** Valores de las columnas personalizadas: llaves simples y texto corto. */
+function asExtra(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (!/^[a-zA-Z0-9_]{1,40}$/.test(k)) continue;
+    const s = v == null ? "" : String(v).slice(0, 500);
+    if (s) out[k] = s;
+  }
+  return out;
+}
+
 function serialize(row: {
   id: string;
   recruiter: string;
@@ -49,6 +62,7 @@ function serialize(row: {
   recontact: string;
   integrationDate: Date | null;
   steps: Prisma.JsonValue;
+  extra: Prisma.JsonValue;
   updatedAt: Date;
 }) {
   return {
@@ -66,6 +80,7 @@ function serialize(row: {
     recontact: row.recontact,
     integrationDate: isoDate(row.integrationDate),
     steps: asSteps(row.steps),
+    extra: asExtra(row.extra),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -133,7 +148,7 @@ export async function GET(req: NextRequest) {
   const [rows, users, yearRows] = await Promise.all([
     prisma.recruitmentLead.findMany({
       where,
-      orderBy: [{ requestDate: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ requestDate: "asc" }, { createdAt: "asc" }],
     }),
     prisma.user.findMany({
       where: { agencySlug },
@@ -146,6 +161,16 @@ export async function GET(req: NextRequest) {
       distinct: ["year"],
     }),
   ]);
+
+  // Primera vez: se crean las columnas de la hoja (las de siempre + las de la hoja de cálculo de la agencia)
+  let columns = await prisma.recruitmentColumn.findMany({ where: { agencySlug }, orderBy: { sortOrder: "asc" } });
+  if (columns.length === 0) {
+    await prisma.recruitmentColumn.createMany({
+      data: defaultSheetColumns().map((c, i) => ({ agencySlug, key: c.key, label: c.label, type: c.type, options: c.options ?? null, sortOrder: i, hidden: c.hidden, builtin: c.builtin })),
+      skipDuplicates: true,
+    });
+    columns = await prisma.recruitmentColumn.findMany({ where: { agencySlug }, orderBy: { sortOrder: "asc" } });
+  }
 
   const years = [
     ...new Set(
@@ -160,6 +185,7 @@ export async function GET(req: NextRequest) {
     rows: rows.map(serialize),
     managers: users.map((u) => ({ id: u.id, name: u.name, role: u.role })),
     years,
+    columns: columns.map((c) => ({ id: c.id, key: c.key, label: c.label, type: c.type, options: c.options, sortOrder: c.sortOrder, hidden: c.hidden, builtin: c.builtin })),
   });
 }
 
@@ -179,6 +205,7 @@ const rowSchema = z.object({
   integrationDate: cellSchema.nullable().optional(),
   managerId: z.string().nullable().optional(),
   steps: z.record(z.string(), cellSchema).optional(),
+  extra: z.record(z.string(), cellSchema).optional(),
 });
 
 const postSchema = z.object({
@@ -258,6 +285,7 @@ async function postRecruitment(req: NextRequest) {
         recontact: data.recontact ?? "",
         integrationDate: toDate(data.integrationDate ?? null),
         steps: asSteps(data.steps),
+        extra: asExtra(data.extra),
         createdById: userId,
       },
     });
@@ -283,10 +311,9 @@ async function postRecruitment(req: NextRequest) {
         ? toDate(data.requestDate)
         : existing.requestDate;
     const parts = dateParts(isoDate(requestDate));
-    const mergedSteps = {
-      ...asSteps(existing.steps),
-      ...asSteps(data.steps),
-    };
+    const mergedSteps = asSteps({ ...asSteps(existing.steps), ...(data.steps ?? {}) });
+    // Los valores vacíos de las columnas personalizadas se quitan (asExtra los descarta)
+    const mergedExtra = asExtra({ ...asExtra(existing.extra), ...(data.extra ?? {}) });
     const row = await prisma.recruitmentLead.update({
       where: { id: existing.id },
       data: {
@@ -310,6 +337,7 @@ async function postRecruitment(req: NextRequest) {
             ? toDate(data.integrationDate)
             : existing.integrationDate,
         steps: mergedSteps,
+        extra: mergedExtra,
       },
     });
     return NextResponse.json({ ok: true, row: serialize(row) });
@@ -373,6 +401,7 @@ async function postRecruitment(req: NextRequest) {
       recontact: item.recontact ?? "",
       integrationDate: toDate(item.integrationDate || null),
       steps: asSteps(item.steps) as Prisma.InputJsonValue,
+      extra: asExtra(item.extra) as Prisma.InputJsonValue,
     };
     const key = `${creatorName.toLowerCase()}|${recruiter.toLowerCase()}`;
     const found = byKey.get(key);

@@ -459,6 +459,8 @@ export type RecruitmentParsedRow = {
   recontact: string;
   integrationDate: string | null;
   steps: Record<string, string>;
+  /** Valores de columnas personalizadas (llave → texto). */
+  extra?: Record<string, string>;
 };
 
 export function cellText(value: unknown) {
@@ -521,9 +523,9 @@ export function parseExcelDate(value: unknown): string | null {
     const a = Number(m[1]);
     const b = Number(m[2]);
     const y = Number(m[3]) < 100 ? 2000 + Number(m[3]) : Number(m[3]);
-    if (a > 12) return toDateInput(new Date(y, b - 1, a));
+    // Formato día/mes/año (México): 03/11/2026 es 3 de noviembre. Solo si el segundo número es mayor a 12 se lee mes/día.
     if (b > 12) return toDateInput(new Date(y, a - 1, b));
-    return toDateInput(new Date(y, a - 1, b));
+    return toDateInput(new Date(y, b - 1, a));
   }
   const parsed = new Date(s);
   if (Number.isNaN(parsed.getTime())) return null;
@@ -640,7 +642,7 @@ function isHeaderLike(text: string) {
   );
 }
 
-export function parseRecruitmentSheet(sheetRows: unknown[][]) {
+export function parseRecruitmentSheet(sheetRows: unknown[][], customColumns: { key: string; label: string }[] = []) {
   if (!sheetRows.length) {
     return {
       rows: [] as RecruitmentParsedRow[],
@@ -654,6 +656,18 @@ export function parseRecruitmentSheet(sheetRows: unknown[][]) {
       ? detected.headers
       : (sheetRows[detected.index] ?? []).map((h) => cellText(h));
   const indexes = mapRecruitmentHeaders(headers);
+  // Columnas personalizadas: se reconocen por el nombre del encabezado (sin acentos ni mayúsculas)
+  const usedIdx = new Set(Object.values(indexes));
+  const customIdx: Record<string, number> = {};
+  const norms = headers.map((h) => normalizeRecruitmentHeader(h));
+  for (const c of customColumns) {
+    const want = normalizeRecruitmentHeader(c.label);
+    const i = norms.findIndex((n, idx) => !usedIdx.has(idx) && n && n === want);
+    if (i >= 0) {
+      customIdx[c.key] = i;
+      usedIdx.add(i);
+    }
+  }
   const mapped = Object.keys(indexes).length;
   const rows: RecruitmentParsedRow[] = [];
   let lastRecruiter = "";
@@ -679,6 +693,12 @@ export function parseRecruitmentSheet(sheetRows: unknown[][]) {
       if (v) steps[key] = v;
     }
 
+    const extra: Record<string, string> = {};
+    for (const [key, i] of Object.entries(customIdx)) {
+      const v = cellText(raw[i]);
+      if (v) extra[key] = v;
+    }
+
     rows.push({
       recruiter,
       requestDate: parseExcelDate(get("requestDate")),
@@ -690,10 +710,11 @@ export function parseRecruitmentSheet(sheetRows: unknown[][]) {
       recontact: cellText(get("recontact")),
       integrationDate: parseExcelDate(get("integrationDate")),
       steps,
+      extra,
     });
   }
 
-  return { rows, mapped, indexes, headers, score: detected.score };
+  return { rows, mapped: mapped + Object.keys(customIdx).length, indexes, headers, score: detected.score };
 }
 
 export function situationTone(situation: string) {
@@ -729,4 +750,82 @@ export function dateParts(iso: string | null | undefined) {
 
 export function templateHeaders() {
   return RECRUITMENT_COLUMNS.map((c) => c.label);
+}
+
+/** Llaves que viven en columnas propias de la tabla (el resto va en steps o en extra). */
+export const CORE_KEYS = [
+  "recruiter",
+  "requestDate",
+  "creatorName",
+  "situation",
+  "phone",
+  "comment",
+  "comment2",
+  "recontact",
+  "integrationDate",
+] as const;
+
+export type SheetColType = "text" | "date" | "number" | "check" | "select";
+export const SHEET_COL_TYPES: { id: SheetColType; label: string }[] = [
+  { id: "text", label: "Texto" },
+  { id: "date", label: "Fecha" },
+  { id: "number", label: "Número" },
+  { id: "check", label: "Casilla (sí/no)" },
+  { id: "select", label: "Lista de opciones" },
+];
+
+export type SheetColumnDef = { key: string; label: string; type: SheetColType; options?: string; builtin: boolean; hidden: boolean };
+
+const byKey = (key: string) => {
+  const c = RECRUITMENT_COLUMNS.find((x) => x.key === key);
+  if (!c) throw new Error("columna base desconocida: " + key);
+  return c;
+};
+
+/**
+ * Columnas iniciales de la hoja, en el orden de la hoja de cálculo de la agencia.
+ * Las que no existían como dato (Atendió, Diamantes, Se envió invitación, Días para que venza, Solicitud vencida)
+ * nacen como columnas personalizadas; las demás de siempre quedan al final, ocultas, por si se necesitan.
+ */
+export function defaultSheetColumns(): SheetColumnDef[] {
+  const core = (key: string, type: SheetColType = "text", label?: string, options?: string): SheetColumnDef => ({
+    key,
+    label: label ?? byKey(key).label,
+    type,
+    options,
+    builtin: true,
+    hidden: false,
+  });
+  const custom = (key: string, label: string, type: SheetColType, options?: string): SheetColumnDef => ({ key, label, type, options, builtin: false, hidden: false });
+
+  const visible: SheetColumnDef[] = [
+    core("recruiter"),
+    custom("atendio", "Atendió", "text"),
+    core("requestDate", "date", "Solicitud"),
+    core("creatorName"),
+    custom("diamantes", "Diamantes", "number"),
+    core("situation", "select", "Situación", SITUATION_OPTIONS.join(",")),
+    custom("seEnvioInvitacion", "Se envió invitación", "select", "Sí,No"),
+    core("mensaje"),
+    core("comment"),
+    core("phone"),
+    core("visitarLive"),
+    core("integracion"),
+    core("mensajeAceptacion"),
+    core("mensajeImagen"),
+    core("comment2", "text", "Comentario 2"),
+    custom("diasVenceInvitacion", "Días para que venza la invitación", "number"),
+    custom("solicitudVencida", "Solicitud vencida", "select", "Sí,No"),
+    core("recontact", "text", "Volver a contactar en caso de no haber entrado"),
+    core("integrationDate", "date", "Fecha de integración"),
+  ];
+  const shown = new Set(visible.map((c) => c.key));
+  const rest = RECRUITMENT_COLUMNS.filter((c) => !shown.has(c.key)).map((c) => ({
+    key: c.key,
+    label: c.label,
+    type: (c.type === "date" ? "date" : "text") as SheetColType,
+    builtin: true,
+    hidden: true,
+  }));
+  return [...visible, ...rest];
 }

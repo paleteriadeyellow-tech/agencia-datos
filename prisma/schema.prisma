@@ -332,6 +332,7 @@ model RecruitmentLead {
   recontact       String    @default("")
   integrationDate DateTime?
   steps           Json      @default("{}")
+  extra           Json      @default("{}") // valores de las columnas que agrega el admin
   createdById     String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -575,4 +576,22 @@ model BonusLevelOverride {
   updatedAt  DateTime @updatedAt
 
   @@unique([agencySlug, username])
+}
+
+/// Columnas de la hoja de reclutamiento: las de siempre (builtin) y las que agrega el admin. Define orden, tipo y si se ven.
+model RecruitmentColumn {
+  id         String   @id @default(cuid())
+  agencySlug String   @default("streamersfederation")
+  key        String // llave del dato (las de siempre usan la misma de antes)
+  label      String
+  type       String   @default("text") // text | date | number | check | select
+  options    String? // para tipo select: opciones separadas por coma
+  sortOrder  Int      @default(0)
+  hidden     Boolean  @default(false)
+  builtin    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([agencySlug, key])
+  @@index([agencySlug, sortOrder])
 }
