@@ -39,13 +39,13 @@ export async function applyViewAs(
   }
   const manager = await prisma.user.findFirst({
     where: { id: viewAsId, agencySlug, role: "manager" },
-    select: { id: true, name: true, canViewAll: true },
+    select: { id: true, name: true, canViewAll: true, canEditAll: true },
   });
   if (!manager) {
     return { scope, viewingAs: null as { id: string; name: string } | null };
   }
   return {
-    scope: { admin: false, userId: manager.id, viewAll: manager.canViewAll } satisfies ManagerScope,
+    scope: { admin: false, userId: manager.id, viewAll: manager.canViewAll || manager.canEditAll } satisfies ManagerScope,
     viewingAs: manager,
   };
 }

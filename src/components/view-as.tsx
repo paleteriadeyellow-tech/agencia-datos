@@ -19,7 +19,7 @@ import {
   writeViewAsCookie,
 } from "@/lib/view-as";
 
-type ManagerOpt = { id: string; name: string; role: string; canViewAll?: boolean };
+type ManagerOpt = { id: string; name: string; role: string; canViewAll?: boolean; canEditAll?: boolean };
 
 type ViewAsCtx = {
   viewAsId: string | null;
@@ -80,7 +80,7 @@ export function ViewAsProvider({ children }: { children: React.ReactNode }) {
     () => ({
       viewAsId: admin ? viewAsId : null,
       viewAsName: admin ? resolvedName : null,
-      viewAsCanViewAll: admin && !!managers.find((m) => m.id === viewAsId)?.canViewAll,
+      viewAsCanViewAll: admin && !!managers.find((m) => m.id === viewAsId && (m.canViewAll || m.canEditAll)),
       setViewAs,
     }),
     [admin, viewAsId, resolvedName, managers, setViewAs]

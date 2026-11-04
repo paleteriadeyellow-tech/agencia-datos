@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
       role: true,
       position: true,
       canViewAll: true,
+      canEditAll: true,
       createdAt: true,
       _count: { select: { creators: { where: { agencySlug } } } },
     },
@@ -34,7 +35,8 @@ export async function GET(req: NextRequest) {
       email: m.email,
       role: m.role,
       position: m.position,
-      canViewAll: m.canViewAll,
+      canViewAll: m.canViewAll || m.canEditAll,
+      canEditAll: m.canEditAll,
       createdAt: m.createdAt,
       creatorsCount: m._count.creators,
     })),
@@ -48,17 +50,21 @@ export async function PATCH(req: NextRequest) {
   if (!auth.isAdmin || !auth.scope.admin) {
     return NextResponse.json({ error: "Solo un admin puede cambiar este permiso" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   }
-  const body = (await req.json().catch(() => null)) as { id?: unknown; canViewAll?: unknown } | null;
-  if (!body || typeof body.id !== "string" || typeof body.canViewAll !== "boolean") {
+  const body = (await req.json().catch(() => null)) as { id?: unknown; access?: unknown } | null;
+  if (!body || typeof body.id !== "string" || (body.access !== "own" && body.access !== "view" && body.access !== "edit")) {
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
   try {
-    const res = await prisma.user.updateMany({ where: { id: body.id, agencySlug: auth.agencySlug }, data: { canViewAll: body.canViewAll } });
+    // own = solo los suyos · view = ve todos · edit = ve y edita todos (crear, cambiar y eliminar creadores)
+    const res = await prisma.user.updateMany({
+      where: { id: body.id, agencySlug: auth.agencySlug },
+      data: { canViewAll: body.access !== "own", canEditAll: body.access === "edit" },
+    });
     if (res.count === 0) {
       return NextResponse.json({ error: "Persona no encontrada" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
     forgetAccess(body.id, auth.agencySlug);
-    return NextResponse.json({ ok: true, canViewAll: body.canViewAll }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, access: body.access }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     // Se devuelve el motivo real (por ejemplo, que falta la columna en la base de datos) para poder corregirlo
     const detail = e instanceof Error ? e.message.split("\n").filter(Boolean).slice(-1)[0] : "";

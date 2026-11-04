@@ -28,7 +28,12 @@ export default async function CreatorDetailPage({
     notFound();
   }
 
-  const canEdit = isAdmin(session?.user?.role);
+  let canEdit = isAdmin(session?.user?.role);
+  if (!canEdit && session?.user?.id) {
+    // Quien tiene el permiso de editar todos los creadores también ve las herramientas de edición
+    const me = await prisma.user.findFirst({ where: { id: session.user.id, agencySlug: agency }, select: { canEditAll: true } });
+    canEdit = !!me?.canEditAll;
+  }
   const creator = await prisma.creator.findFirst({
     where: { id, agencySlug: agency },
     include: {

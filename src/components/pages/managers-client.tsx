@@ -19,6 +19,7 @@ type ManagerRow = {
   role: string;
   position: string | null;
   canViewAll: boolean;
+  canEditAll: boolean;
   createdAt: string;
   creatorsCount: number;
 };
@@ -95,22 +96,28 @@ export default function ManagersClient() {
     invalidatePanel("/api/panel/mi-dia", PANEL.tasks);
   }
 
-  async function onViewAll(m: ManagerRow, value: boolean) {
+  async function onAccess(m: ManagerRow, access: "own" | "view" | "edit") {
     setErr("");
     setMsg("");
     await mutate(
-      (cur?: { managers: ManagerRow[] }) => cur && { managers: cur.managers.map((x) => (x.id === m.id ? { ...x, canViewAll: value } : x)) },
+      (cur?: { managers: ManagerRow[] }) => cur && { managers: cur.managers.map((x) => (x.id === m.id ? { ...x, canViewAll: access !== "own", canEditAll: access === "edit" } : x)) },
       { revalidate: false }
     );
     try {
       const res = await fetch(PANEL.managers, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-skip-view-as": "1" },
-        body: JSON.stringify({ id: m.id, canViewAll: value }),
+        body: JSON.stringify({ id: m.id, access }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(json.error || "No se pudo guardar el permiso.");
-      setMsg(value ? `${m.name} ahora ve todos los creadores (puede tardar unos segundos).` : `${m.name} vuelve a ver solo sus creadores.`);
+      setMsg(
+        access === "edit"
+          ? `${m.name} ahora ve y puede editar a todos los creadores (puede tardar unos segundos).`
+          : access === "view"
+            ? `${m.name} ahora ve todos los creadores, sin editar los de otros (puede tardar unos segundos).`
+            : `${m.name} vuelve a ver solo sus creadores.`
+      );
     } catch (e) {
       setErr(e instanceof Error && e.message ? e.message : "No se pudo guardar el permiso.");
     }
@@ -247,7 +254,7 @@ export default function ManagersClient() {
               <th className="px-4 py-2.5 font-medium">Email</th>
               <th className="px-4 py-2.5 font-medium">Rol</th>
               <th className="px-4 py-2.5 font-medium">Puesto</th>
-              <th className="px-4 py-2.5 font-medium" title="Si lo activas, esta persona ve todos los creadores y no solo los suyos">Ve todos los creadores</th>
+              <th className="px-4 py-2.5 font-medium" title="Qué puede hacer esta persona con los creadores de los demás">Acceso a creadores</th>
               <th className="px-4 py-2.5 font-medium">Creadores</th>
               <th className="px-4 py-2.5 font-medium">Alta</th>
               <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
@@ -288,16 +295,16 @@ export default function ManagersClient() {
                   {m.role === "admin" ? (
                     <span className="text-xs text-text-muted">Siempre</span>
                   ) : (
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-accent"
-                        checked={m.canViewAll}
-                        onChange={(e) => void onViewAll(m, e.target.checked)}
-                        aria-label={`Que ${m.name} vea todos los creadores`}
-                      />
-                      <span className={m.canViewAll ? "text-success" : "text-text-muted"}>{m.canViewAll ? "Sí, todos" : "Solo los suyos"}</span>
-                    </label>
+                    <select
+                      value={m.canEditAll ? "edit" : m.canViewAll ? "view" : "own"}
+                      onChange={(e) => void onAccess(m, e.target.value as "own" | "view" | "edit")}
+                      className={`${inputClass} !py-1 text-xs`}
+                      aria-label={`Acceso de ${m.name} a los creadores`}
+                    >
+                      <option value="own">Solo los suyos</option>
+                      <option value="view">Ve todos</option>
+                      <option value="edit">Ve y edita todos</option>
+                    </select>
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-text-muted">

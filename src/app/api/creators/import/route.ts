@@ -77,8 +77,8 @@ async function runInChunks<T>(
 export async function POST(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug, token } = auth;
-  if (token.role !== "admin") {
+  const { agencySlug } = auth;
+  if (!auth.canManageCreators) {
     return NextResponse.json(
       { error: "Solo un admin puede importar creadores." },
       { status: 403 }

@@ -9,7 +9,9 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth(req);
   if (auth.error) return auth.error;
-  const { agencySlug, scope, isAdmin } = auth;
+  const { agencySlug, scope, isAdmin: isAdminUser, canManageCreators } = auth;
+  // Admin o quien tiene el permiso de editar todos: ve las herramientas de edición y la lista de managers
+  const isAdmin = isAdminUser || canManageCreators;
   // Con el permiso de "ver todos" la lista sale completa; sin él, solo los creadores del manager
   const scopeFilter = creatorWhere(readScope(scope), agencySlug);
 
@@ -117,5 +119,6 @@ export async function GET(req: NextRequest) {
       ),
     managers,
     month,
+    canEdit: canManageCreators,
   });
 }

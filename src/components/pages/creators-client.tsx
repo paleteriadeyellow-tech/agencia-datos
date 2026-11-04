@@ -73,7 +73,7 @@ function cell(row: Record<string, unknown>, ...keys: string[]) {
 export default function CreatorsClient() {
   const { data: session } = useSession();
   const { path } = useAgency();
-  const canEditCreators = isAdmin(session?.user?.role);
+  const adminRole = isAdmin(session?.user?.role);
   const { openCreateCreator } = useQuickCreate();
   const { viewAsId, viewAsCanViewAll } = useViewAs();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -92,10 +92,14 @@ export default function CreatorsClient() {
       niches: string[];
       groups: string[];
       managers: { id: string; name: string; role?: string }[];
+      /** El servidor dice si puedes editar (admin o permiso de editar todos). */
+      canEdit?: boolean;
     };
     error?: Error;
     mutate: () => void;
   };
+
+  const canEditCreators = data?.canEdit ?? adminRole;
 
   const filtered = useMemo(() => {
     // Si la persona que se simula tiene el permiso de ver todos los creadores, la lista no se recorta

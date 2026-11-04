@@ -33,6 +33,21 @@ async function requireSession() {
   };
 }
 
+/** Admin, o quien tiene el permiso de editar todos los creadores (lo da el admin en Managers). */
+async function canManageCreators(session: { user: { id: string; role: string; agencySlug: string } }) {
+  if (isAdmin(session.user.role)) return true;
+  const me = await prisma.user.findFirst({ where: { id: session.user.id, agencySlug: session.user.agencySlug }, select: { canEditAll: true } });
+  return !!me?.canEditAll;
+}
+
+async function requireCreatorManager() {
+  const session = await requireSession();
+  if (!(await canManageCreators(session))) {
+    return { error: "No tienes permiso para editar creadores.", session: null as null };
+  }
+  return { error: null as null, session };
+}
+
 async function requireAdmin() {
   const session = await requireSession();
   if (session.user.role !== "admin") {
@@ -151,7 +166,8 @@ export async function createCreator(formData: FormData) {
   const groupName = String(formData.get("groupName") || "").trim() || null;
   const notes = String(formData.get("notes") || "").trim() || null;
   let managerId = String(formData.get("managerId") || "") || null;
-  if (!isAdmin(session.user.role)) {
+  const manage = await canManageCreators(session);
+  if (!manage) {
     managerId = session.user.id;
   } else if (!managerId) {
     const viewAsId = parseViewAsId(
@@ -169,7 +185,7 @@ export async function createCreator(formData: FormData) {
       where: { id: managerId, agencySlug },
     });
     if (!mgr) return { error: "Manager no válido para esta agencia.", ok: undefined, id: undefined };
-  } else if (isAdmin(session.user.role)) {
+  } else if (manage) {
     const managers = await prisma.user.findMany({
       where: { agencySlug, role: "manager" },
       select: {
@@ -206,7 +222,7 @@ export async function createCreator(formData: FormData) {
 }
 
 export async function updateCreator(id: string, formData: FormData) {
-  const gate = await requireAdmin();
+  const gate = await requireCreatorManager();
   if (gate.error) return { error: gate.error, ok: undefined, id: undefined };
   const agencySlug = gate.session!.user.agencySlug;
 
@@ -245,7 +261,7 @@ export async function updateCreator(id: string, formData: FormData) {
 }
 
 export async function deleteCreator(id: string) {
-  const gate = await requireAdmin();
+  const gate = await requireCreatorManager();
   if (gate.error) return { error: gate.error };
   const agencySlug = gate.session!.user.agencySlug;
   const existing = await prisma.creator.findFirst({ where: { id, agencySlug } });

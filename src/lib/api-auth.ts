@@ -23,7 +23,7 @@ function viewAsIdFromRequest(req: NextRequest) {
 
 /** Rol leído de la base, reutilizado 30s por instancia: ahorra una consulta por petición. */
 const ROLE_TTL_MS = 30_000;
-const roleCache = new Map<string, { role: string | null; viewAll: boolean; t: number }>();
+const roleCache = new Map<string, { role: string | null; viewAll: boolean; editAll: boolean; t: number }>();
 
 /** Olvida lo guardado de una persona para que su rol o permiso nuevo se aplique de inmediato en esta instancia. */
 export function forgetAccess(userId: string, agencySlug: string) {
@@ -37,9 +37,11 @@ async function cachedAccess(userId: string, agencySlug: string) {
   if (hit && Date.now() - hit.t < ROLE_TTL_MS) return hit;
   const dbUser = await prisma.user.findFirst({
     where: { id: userId, agencySlug },
-    select: { role: true, canViewAll: true },
+    select: { role: true, canViewAll: true, canEditAll: true },
   });
-  const value = { role: dbUser?.role ?? null, viewAll: dbUser?.canViewAll ?? false, t: Date.now() };
+  const editAll = dbUser?.canEditAll ?? false;
+  // Quien puede editar a todos también los ve
+  const value = { role: dbUser?.role ?? null, viewAll: (dbUser?.canViewAll ?? false) || editAll, editAll, t: Date.now() };
   roleCache.set(key, value);
   return value;
 }
@@ -85,10 +87,12 @@ export async function requireApiAuth(req: NextRequest) {
 
   const userId = userIdFromToken(token);
   let viewAll = false;
+  let editAll = false;
   if (userId) {
     const access = await cachedAccess(userId, agencySlug);
     if (access.role) token.role = access.role;
     viewAll = access.viewAll;
+    editAll = access.editAll;
   }
 
   const isAdminUser = isAdmin(token.role as string | undefined);
@@ -122,6 +126,8 @@ export async function requireApiAuth(req: NextRequest) {
     agencySlug: agencySlug as AgencySlug,
     scope: viewed.scope,
     isAdmin: isAdminUser,
+    /** Puede crear, editar y eliminar creadores: admin, o quien tiene el permiso de editar todos. */
+    canManageCreators: isAdminUser || editAll,
     viewingAs: viewed.viewingAs,
   };
 }

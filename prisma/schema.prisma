@@ -17,6 +17,7 @@ model User {
   role         String    @default("manager") // admin | manager
   position     String?   // puesto: administracion | mentor | reclutador | creador (define sus tareas fijas)
   canViewAll   Boolean   @default(false) // el admin le dio permiso de ver todos los creadores (no solo los suyos)
+  canEditAll   Boolean   @default(false) // además puede crear, editar y eliminar cualquier creador, como un admin
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   creators     Creator[] @relation("ManagerCreators")
