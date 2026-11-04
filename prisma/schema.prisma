@@ -595,3 +595,17 @@ model RecruitmentColumn {
   @@unique([agencySlug, key])
   @@index([agencySlug, sortOrder])
 }
+
+/// Reglas de la pestaña Seguimiento de reclutamiento: qué columnas se revisan y cuántos días dura una solicitud.
+model RecruitmentSettings {
+  id           String   @id @default(cuid())
+  agencySlug   String   @default("streamersfederation")
+  expiryMode   String   @default("fixed") // fixed (días desde la solicitud) | column (columna Días para que venza) | off
+  validityDays Int      @default(7)
+  soonDays     Int      @default(2) // "vence pronto" = faltan este número de días o menos
+  messageKey   String   @default("mensaje") // columna que dice si ya se mandó mensaje
+  videoKey     String   @default("comment") // columna que dice si ya se comentó su video
+  updatedAt    DateTime @updatedAt
+
+  @@unique([agencySlug])
+}

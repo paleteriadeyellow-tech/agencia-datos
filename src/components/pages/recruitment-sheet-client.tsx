@@ -24,6 +24,8 @@ import {
   type SheetColType,
 } from "@/lib/recruitment";
 import { nickKey } from "@/lib/scope-view";
+import { FollowUpView } from "@/components/pages/recruitment-followup";
+import { DEFAULT_FOLLOW_SETTINGS, computeFollowUp, type FollowSettings } from "@/lib/recruitment-followup";
 
 type Col = { id: string; key: string; label: string; type: SheetColType; options: string | null; sortOrder: number; hidden: boolean; builtin: boolean };
 
@@ -51,6 +53,7 @@ type Payload = {
   managers: { id: string; name: string; role: string }[];
   years: number[];
   columns: Col[];
+  settings?: FollowSettings;
 };
 
 const CORE = new Set<string>(CORE_KEYS);
@@ -290,9 +293,16 @@ export default function RecruitmentSheetClient() {
   const pending = useRef<Record<string, Partial<Lead>>>({});
   const focusAfter = useRef<{ id: string; c: number } | null>(null);
 
+  const [tab, setTab] = useState<"captura" | "seguimiento">("captura");
+
   const url = `${PANEL.recruitment}?year=${year}&month=${month}`;
   const { data, error, mutate } = usePanelData(url);
   const payload = data as Payload | undefined;
+
+  // El seguimiento revisa todo el historial (para no perder solicitudes de otros meses por vencer)
+  const allUrl = `${PANEL.recruitment}?year=all&month=all`;
+  const { data: allData, mutate: mutateAll } = usePanelData(tab === "seguimiento" ? allUrl : null);
+  const allPayload = allData as Payload | undefined;
 
   const years = useMemo(() => {
     const y0 = new Date().getFullYear();
@@ -304,19 +314,29 @@ export default function RecruitmentSheetClient() {
   const cols = useMemo(() => allCols.filter((c) => !c.hidden), [allCols]);
   const minTableWidth = 36 + 30 + cols.reduce((a, c) => a + colWidth(c), 0);
 
-  const rows = useMemo(() => {
-    let list = payload?.rows ?? [];
-    const mid = viewAsId || (managerFilter !== "all" ? managerFilter : null);
-    if (mid) {
+  const byManager = useCallback(
+    (list: Lead[]) => {
+      const mid = viewAsId || (managerFilter !== "all" ? managerFilter : null);
+      if (!mid) return list;
       const name = nickKey(viewAsName || managers.find((m) => m.id === mid)?.name || "");
-      list = list.filter((r) => r.managerId === mid || (name && nickKey(r.recruiter) === name) || (name && nickKey(r.recruiter).startsWith(name.split(" ")[0] ?? name)));
-    }
+      return list.filter((r) => r.managerId === mid || (name && nickKey(r.recruiter) === name) || (name && nickKey(r.recruiter).startsWith(name.split(" ")[0] ?? name)));
+    },
+    [viewAsId, viewAsName, managerFilter, managers]
+  );
+
+  const rows = useMemo(() => {
+    let list = byManager(payload?.rows ?? []);
     const query = q.trim().toLowerCase();
     if (query) {
       list = list.filter((r) => r.creatorName.toLowerCase().includes(query) || r.recruiter.toLowerCase().includes(query) || r.phone.toLowerCase().includes(query) || r.situation.toLowerCase().includes(query));
     }
     return list;
-  }, [payload?.rows, viewAsId, viewAsName, managerFilter, managers, q]);
+  }, [payload?.rows, byManager, q]);
+
+  const settings = payload?.settings ?? DEFAULT_FOLLOW_SETTINGS;
+  const followRows = useMemo(() => byManager(allPayload?.rows ?? []), [allPayload?.rows, byManager]);
+  // Aviso en la pestaña: urgentes y altas del mes que estás viendo
+  const badge = useMemo(() => computeFollowUp(rows, settings).filter((i) => i.severity <= 2).length, [rows, settings]);
 
   // Siempre con lo último, sin la caché del navegador (las rutas del panel se guardan 60 s)
   const refresh = useCallback(async () => {
@@ -335,6 +355,37 @@ export default function RecruitmentSheetClient() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (tab !== "seguimiento") return;
+    void (async () => {
+      try {
+        const res = await fetch(allUrl, { cache: "no-store", headers: { "x-skip-view-as": "1" } });
+        if (res.ok) await mutateAll(await res.json(), { revalidate: false });
+      } catch {
+        /* se queda lo que ya se ve */
+      }
+    })();
+  }, [tab, allUrl, mutateAll]);
+
+  async function saveSettings(patch: Partial<FollowSettings>) {
+    const res = await fetch("/api/panel/recruitment-settings", { method: "PATCH", headers: { "Content-Type": "application/json", "x-skip-view-as": "1" }, body: JSON.stringify(patch) });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setHint(j.error ?? "No se pudieron guardar las reglas");
+      return;
+    }
+    await refresh();
+  }
+
+  function openInSheet(row: Lead) {
+    const parts = dateParts(row.requestDate);
+    setManagerFilter("all");
+    if (parts.year) setYear(String(parts.year));
+    if (parts.month) setMonth(String(parts.month));
+    setQ(row.creatorName);
+    setTab("captura");
+  }
 
   useEffect(() => {
     const t = timers.current;
@@ -606,6 +657,23 @@ export default function RecruitmentSheetClient() {
     <div className="space-y-4">
       <TopBar title="Reclutamiento y seguimiento" subtitle={`${monthLabel} ${year === "all" ? "" : year} · edita directo en la hoja, se guarda solo`} />
 
+      <div className="flex gap-2 border-b border-white/10 pb-3">
+        {([
+          ["captura", "Captura"],
+          ["seguimiento", "Seguimiento"],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={cn("rounded-lg border px-4 py-2 text-sm font-medium transition", tab === id ? "border-accent bg-accent-soft text-white" : "border-border text-text-muted hover:border-white/25 hover:text-text")}
+          >
+            {label}
+            {id === "seguimiento" && badge > 0 && <span className="ml-2 rounded-full bg-danger px-1.5 py-0.5 text-[10px] font-bold text-white">{badge}</span>}
+          </button>
+        ))}
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Año">
           <select className={inputClass} value={year} onChange={(e) => setYear(e.target.value)}>
@@ -640,79 +708,98 @@ export default function RecruitmentSheetClient() {
             </select>
           </Field>
         )}
-        <Field label="Buscar">
-          <input className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Creador, reclutador o teléfono…" />
-        </Field>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => void addRow()}>
-          <Plus className="h-4 w-4" /> Fila
-        </Button>
-        {admin && (
-          <Button variant="secondary" onClick={() => setColsOpen(true)}>
-            <SlidersHorizontal className="h-4 w-4" /> Columnas
-          </Button>
+        {tab === "captura" && (
+          <Field label="Buscar">
+            <input className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Creador, reclutador o teléfono…" />
+          </Field>
         )}
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.tsv" className="hidden" onChange={(e) => e.target.files?.[0] && void importXlsx(e.target.files[0])} />
-          <Button variant="secondary" disabled={busy} onClick={() => fileRef.current?.click()}>
-            <Upload className="h-4 w-4" /> {busy ? "Importando…" : "Importar Excel"}
-          </Button>
-          <Button variant="ghost" onClick={() => void downloadTemplate()}>
-            <Download className="h-4 w-4" /> Plantilla
-          </Button>
-          <Button variant="ghost" onClick={() => void exportXlsx()}>
-            <Download className="h-4 w-4" /> Exportar
-          </Button>
-        </div>
       </div>
-      <p className="text-xs text-text-muted">
-        {rows.length} {rows.length === 1 ? "registro" : "registros"} · Enter baja a la celda de abajo · Puedes pegar celdas copiadas de Excel.
-        {hint ? <span className="ml-2 text-text">{hint}</span> : null}
-      </p>
 
-      {!payload ? (
-        <div className="glass-panel h-64 animate-pulse rounded-2xl" />
+      {tab === "seguimiento" ? (
+        <FollowUpView
+          rows={followRows}
+          settings={settings}
+          columns={allCols.map((c) => ({ key: c.key, label: c.label }))}
+          admin={admin}
+          year={year}
+          month={month}
+          loading={!allPayload}
+          onSaveSettings={saveSettings}
+          onOpen={(r) => openInSheet(r as Lead)}
+        />
       ) : (
-        <div className="max-h-[calc(100vh-19rem)] min-h-[16rem] overflow-auto rounded-xl border border-white/10">
-          <table className="w-full border-separate border-spacing-0 text-sm" style={{ tableLayout: "fixed", minWidth: minTableWidth }}>
-            <colgroup>
-              <col style={{ width: 36 }} />
-              {cols.map((col) => (
-                <col key={col.key} style={{ width: colWidth(col) }} />
-              ))}
-              <col style={{ width: 30 }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th className="sticky left-0 top-0 z-30 border-b border-r border-white/10 bg-bg-elevated px-0.5 py-2 text-[11px] text-text-muted">#</th>
-                {cols.map((col) => (
-                  <th
-                    key={col.key}
-                    className={cn("sticky top-0 border-b border-r border-white/10 px-2.5 py-2 text-left text-[11px] font-semibold uppercase leading-tight tracking-wide", col.key === "creatorName" ? "left-9 z-30" : "z-20", headerTone(col))}
-                    title={col.label}
-                  >
-                    {col.label}
-                  </th>
-                ))}
-                <th className="sticky top-0 z-20 border-b border-white/10 bg-bg-elevated" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, r) => (
-                <SheetRow key={row.id} row={row} r={r} cols={cols} status={saveMap[row.id]} onCommit={onCommit} onPasteGrid={pasteGrid} onRemove={removeRow} />
-              ))}
-              <tr>
-                <td colSpan={cols.length + 2} className="p-0">
-                  <button type="button" onClick={() => void addRow()} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs text-text-muted transition hover:bg-white/5 hover:text-text">
-                    <Plus className="h-3.5 w-3.5" /> {rows.length === 0 ? "No hay filas en este mes. Agrega la primera" : "Agregar fila"}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => void addRow()}>
+              <Plus className="h-4 w-4" /> Fila
+            </Button>
+            {admin && (
+              <Button variant="secondary" onClick={() => setColsOpen(true)}>
+                <SlidersHorizontal className="h-4 w-4" /> Columnas
+              </Button>
+            )}
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.tsv" className="hidden" onChange={(e) => e.target.files?.[0] && void importXlsx(e.target.files[0])} />
+              <Button variant="secondary" disabled={busy} onClick={() => fileRef.current?.click()}>
+                <Upload className="h-4 w-4" /> {busy ? "Importando…" : "Importar Excel"}
+              </Button>
+              <Button variant="ghost" onClick={() => void downloadTemplate()}>
+                <Download className="h-4 w-4" /> Plantilla
+              </Button>
+              <Button variant="ghost" onClick={() => void exportXlsx()}>
+                <Download className="h-4 w-4" /> Exportar
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-text-muted">
+            {rows.length} {rows.length === 1 ? "registro" : "registros"} · Enter baja a la celda de abajo · Puedes pegar celdas copiadas de Excel.
+            {hint ? <span className="ml-2 text-text">{hint}</span> : null}
+          </p>
+
+          {!payload ? (
+            <div className="glass-panel h-64 animate-pulse rounded-2xl" />
+          ) : (
+            <div className="max-h-[calc(100vh-19rem)] min-h-[16rem] overflow-auto rounded-xl border border-white/10">
+              <table className="w-full border-separate border-spacing-0 text-sm" style={{ tableLayout: "fixed", minWidth: minTableWidth }}>
+                <colgroup>
+                  <col style={{ width: 36 }} />
+                  {cols.map((col) => (
+                    <col key={col.key} style={{ width: colWidth(col) }} />
+                  ))}
+                  <col style={{ width: 30 }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th className="sticky left-0 top-0 z-30 border-b border-r border-white/10 bg-bg-elevated px-0.5 py-2 text-[11px] text-text-muted">#</th>
+                    {cols.map((col) => (
+                      <th
+                        key={col.key}
+                        className={cn("sticky top-0 border-b border-r border-white/10 px-2.5 py-2 text-left text-[11px] font-semibold uppercase leading-tight tracking-wide", col.key === "creatorName" ? "left-9 z-30" : "z-20", headerTone(col))}
+                        title={col.label}
+                      >
+                        {col.label}
+                      </th>
+                    ))}
+                    <th className="sticky top-0 z-20 border-b border-white/10 bg-bg-elevated" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, r) => (
+                    <SheetRow key={row.id} row={row} r={r} cols={cols} status={saveMap[row.id]} onCommit={onCommit} onPasteGrid={pasteGrid} onRemove={removeRow} />
+                  ))}
+                  <tr>
+                    <td colSpan={cols.length + 2} className="p-0">
+                      <button type="button" onClick={() => void addRow()} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs text-text-muted transition hover:bg-white/5 hover:text-text">
+                        <Plus className="h-3.5 w-3.5" /> {rows.length === 0 ? "No hay filas en este mes. Agrega la primera" : "Agregar fila"}
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+        </>
       )}
 
       {admin && payload && <ColumnsModal open={colsOpen} onClose={() => setColsOpen(false)} columns={allCols} onChanged={refresh} />}

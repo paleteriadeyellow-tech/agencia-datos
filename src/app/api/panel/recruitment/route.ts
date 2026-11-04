@@ -172,6 +172,9 @@ export async function GET(req: NextRequest) {
     columns = await prisma.recruitmentColumn.findMany({ where: { agencySlug }, orderBy: { sortOrder: "asc" } });
   }
 
+  // Reglas del seguimiento (se crean con los valores de siempre la primera vez)
+  const settingsRow = await prisma.recruitmentSettings.upsert({ where: { agencySlug }, update: {}, create: { agencySlug } });
+
   const years = [
     ...new Set(
       yearRows
@@ -185,6 +188,13 @@ export async function GET(req: NextRequest) {
     rows: rows.map(serialize),
     managers: users.map((u) => ({ id: u.id, name: u.name, role: u.role })),
     years,
+    settings: {
+      expiryMode: settingsRow.expiryMode,
+      validityDays: settingsRow.validityDays,
+      soonDays: settingsRow.soonDays,
+      messageKey: settingsRow.messageKey,
+      videoKey: settingsRow.videoKey,
+    },
     columns: columns.map((c) => ({ id: c.id, key: c.key, label: c.label, type: c.type, options: c.options, sortOrder: c.sortOrder, hidden: c.hidden, builtin: c.builtin })),
   });
 }
