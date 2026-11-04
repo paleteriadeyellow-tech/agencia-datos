@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, CircleDot, Calendar, Camera, Clock, User, Sparkles, AlertTriangle } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { TopBar } from "@/components/top-bar";
@@ -205,6 +205,11 @@ export default function MiDiaClient() {
     }
   }
 
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+
   const titleName = data?.user?.name?.split(" ")[0];
   const subtitle = viewUser && titleName ? `Lo que tiene asignado ${titleName}` : "Lo que te toca hoy · se renueva cada día a las 6:00 a.m.";
 
@@ -218,12 +223,17 @@ export default function MiDiaClient() {
   }
 
   const today = data?.today ?? "";
-  const overdue = data?.open.filter((t) => t.dueDate && t.dueDate < today) ?? [];
-  const dueToday = data?.open.filter((t) => t.dueDate === today) ?? [];
-  const upcoming = data?.open.filter((t) => t.dueDate && t.dueDate > today) ?? [];
-  const undated = data?.open.filter((t) => !t.dueDate) ?? [];
+  const isOverdue = (t: Row) => !!t.dueDate && t.dueDate < today;
+  const open = data?.open ?? [];
+  const overdue = open.filter(isOverdue);
+  // Lo que dirección te asigna a mano (no es tarea fija) va arriba, con o sin fecha límite
+  const assigned = open.filter((t) => !t.fixed && !isOverdue(t));
+  const fixedOpen = open.filter((t) => t.fixed && !isOverdue(t));
+  const dueToday = fixedOpen.filter((t) => t.dueDate === today);
+  const upcoming = fixedOpen.filter((t) => t.dueDate && t.dueDate > today);
+  const undated = fixedOpen.filter((t) => !t.dueDate);
   const done = data?.doneToday ?? [];
-  const pendingNow = overdue.length + dueToday.length + undated.length;
+  const pendingNow = overdue.length + assigned.length + dueToday.length + undated.length;
   const totalToday = pendingNow + done.length;
   const pct = totalToday ? Math.round((done.length / totalToday) * 100) : 0;
   const readOnly = !!viewUser; // el admin viendo el día de otra persona solo mira
@@ -403,6 +413,7 @@ export default function MiDiaClient() {
           )}
 
           {renderSection("Atrasadas", overdue, "overdue")}
+          {renderSection("Asignadas por dirección", assigned, "today")}
           {renderSection("Para hoy", dueToday, "today")}
           {renderSection("Sin fecha", undated, "other", "hazlas cuando puedas")}
           {renderSection("Próximas", upcoming, "other")}
