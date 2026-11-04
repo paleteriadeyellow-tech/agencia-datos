@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Search, Trophy, RefreshCw } from "lucide-react";
+import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Field, Panel, inputClass } from "@/components/ui";
@@ -74,6 +75,7 @@ export default function GoalsClient() {
   const [table, setTable] = useState<GoalTableId>("bonos");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("cerca");
+  const [levelFilter, setLevelFilter] = useState<number | null>(null); // null = todos
   const [refreshing, setRefreshing] = useState(false);
 
   const period = periodKey(year, month);
@@ -108,7 +110,7 @@ export default function GoalsClient() {
   const levels = GOAL_TABLES[table].levels;
   const maxLevel = levels[levels.length - 1].level;
 
-  const items = useMemo(() => {
+  const everyone = useMemo(() => {
     const term = q.trim().toLowerCase();
     const list = (data?.rows ?? [])
       .filter((r) => !term || r.username.toLowerCase().includes(term) || (r.creatorName ?? "").toLowerCase().includes(term))
@@ -130,9 +132,11 @@ export default function GoalsClient() {
 
   const byLevel = useMemo(() => {
     const c = new Map<number, number>();
-    for (const i of items) c.set(i.p.level, (c.get(i.p.level) ?? 0) + 1);
+    for (const i of everyone) c.set(i.p.level, (c.get(i.p.level) ?? 0) + 1);
     return c;
-  }, [items]);
+  }, [everyone]);
+
+  const items = useMemo(() => (levelFilter === null ? everyone : everyone.filter((i) => i.p.level === levelFilter)), [everyone, levelFilter]);
 
   const lastUpdate = useMemo(() => {
     const t = (data?.rows ?? []).map((r) => new Date(r.updatedAt).getTime());
@@ -172,7 +176,10 @@ export default function GoalsClient() {
           </select>
         </Field>
         <Field label="Tabla de metas">
-          <select className={inputClass} value={table} onChange={(e) => setTable(e.target.value as GoalTableId)}>
+          <select className={inputClass} value={table} onChange={(e) => {
+              setTable(e.target.value as GoalTableId);
+              setLevelFilter(null);
+            }}>
             {(Object.keys(GOAL_TABLES) as GoalTableId[]).map((k) => (
               <option key={k} value={k}>
                 {GOAL_TABLES[k].label}
@@ -217,17 +224,38 @@ export default function GoalsClient() {
           </button>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {[0, ...levels.map((l) => l.level)].map((lv) => (
-            <span
-              key={lv}
-              className={cn(
-                "rounded-md border px-2 py-1 text-[11px]",
-                (byLevel.get(lv) ?? 0) > 0 ? "border-accent/40 bg-accent-soft text-white" : "border-border text-text-muted"
-              )}
-            >
-              {lv === 0 ? "Sin nivel" : `Nivel ${lv}`} · {byLevel.get(lv) ?? 0}
-            </span>
-          ))}
+          <button
+            type="button"
+            onClick={() => setLevelFilter(null)}
+            className={cn(
+              "rounded-md border px-2.5 py-1 text-[11px] font-semibold transition",
+              levelFilter === null ? "border-white/60 bg-white/15 text-white" : "border-border text-text-muted hover:border-white/30 hover:text-text"
+            )}
+          >
+            Todos · {everyone.length}
+          </button>
+          {[0, ...levels.map((l) => l.level)].map((lv) => {
+            const n = byLevel.get(lv) ?? 0;
+            const active = levelFilter === lv;
+            return (
+              <button
+                key={lv}
+                type="button"
+                onClick={() => setLevelFilter(active ? null : lv)}
+                aria-pressed={active}
+                className={cn(
+                  "rounded-md border px-2.5 py-1 text-[11px] transition",
+                  active
+                    ? "border-accent bg-accent text-white"
+                    : n > 0
+                      ? "border-accent/40 bg-accent-soft text-white hover:border-accent"
+                      : "border-border text-text-muted hover:border-white/30"
+                )}
+              >
+                {lv === 0 ? "Sin nivel" : `Nivel ${lv}`} · {n}
+              </button>
+            );
+          })}
         </div>
       </Panel>
 
@@ -242,7 +270,9 @@ export default function GoalsClient() {
           y aparecerán aquí.
         </Panel>
       ) : items.length === 0 ? (
-        <Panel className="py-10 text-center text-sm text-text-muted">Ningún creador coincide con la búsqueda.</Panel>
+        <Panel className="py-10 text-center text-sm text-text-muted">
+          {levelFilter !== null ? `Nadie está en ${levelFilter === 0 ? "“Sin nivel”" : `el Nivel ${levelFilter}`} este mes.` : "Ningún creador coincide con la búsqueda."}
+        </Panel>
       ) : (
         <ul className="grid gap-4 lg:grid-cols-2">
           {items.map(({ row, p }) => {
@@ -255,9 +285,12 @@ export default function GoalsClient() {
             return (
               <li key={row.id} className="rounded-xl border border-white/10 bg-bg-elevated/80 p-4">
                 <div className="mb-3 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{row.creatorName ?? `@${row.username}`}</p>
-                    <p className="truncate text-xs text-text-muted">@{row.username}</p>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <TikTokAvatar username={row.username} name={row.creatorName ?? row.username} size={44} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{row.creatorName ?? `@${row.username}`}</p>
+                      <p className="truncate text-xs text-text-muted">@{row.username}</p>
+                    </div>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <span
