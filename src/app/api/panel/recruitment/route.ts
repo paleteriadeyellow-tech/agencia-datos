@@ -229,6 +229,7 @@ const postSchema = z.object({
   action: z.enum(["create", "upsert", "import"]),
   id: z.string().optional(),
   rows: z.array(rowSchema).max(2000).optional(),
+  replace: z.boolean().optional(),
   ...rowSchema.shape,
 });
 
@@ -374,10 +375,14 @@ async function postRecruitment(req: NextRequest) {
     );
   }
 
-  const existing = await prisma.recruitmentLead.findMany({
-    where: { agencySlug },
-    select: { id: true, creatorName: true, recruiter: true, managerId: true },
-  });
+  // replace: la hoja queda exactamente como el archivo (se borra lo que había y se carga lo nuevo)
+  const replaceAll = data.replace === true;
+  const existing = replaceAll
+    ? []
+    : await prisma.recruitmentLead.findMany({
+        where: { agencySlug },
+        select: { id: true, creatorName: true, recruiter: true, managerId: true },
+      });
   const byKey = new Map(
     existing.map((row) => [
       `${row.creatorName.trim().toLowerCase()}|${row.recruiter.trim().toLowerCase()}`,
@@ -464,10 +469,22 @@ async function postRecruitment(req: NextRequest) {
     }
   }
 
-  for (let i = 0; i < toCreate.length; i += 80) {
-    await prisma.recruitmentLead.createMany({
-      data: toCreate.slice(i, i + 80),
-    });
+  if (replaceAll) {
+    // Borrar y cargar en una sola transacción: si algo falla, no se pierde lo que había
+    await prisma.$transaction(
+      [
+        prisma.recruitmentLead.deleteMany({ where: { agencySlug } }),
+        ...Array.from({ length: Math.ceil(toCreate.length / 80) }, (_, k) =>
+          prisma.recruitmentLead.createMany({ data: toCreate.slice(k * 80, k * 80 + 80) })
+        ),
+      ],
+    );
+  } else {
+    for (let i = 0; i < toCreate.length; i += 80) {
+      await prisma.recruitmentLead.createMany({
+        data: toCreate.slice(i, i + 80),
+      });
+    }
   }
   for (let i = 0; i < toUpdate.length; i += 20) {
     const chunk = toUpdate.slice(i, i + 20);

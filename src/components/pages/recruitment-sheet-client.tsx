@@ -623,11 +623,15 @@ export default function RecruitmentSheetClient() {
         setHint("El archivo no tiene filas con nombre de creador.");
         return;
       }
+      if (!confirm(`Se va a REEMPLAZAR toda la hoja de Reclutamiento (todos los meses) por las ${parsed.rows.length} filas de este archivo.
+
+Lo que hay ahora se borra y no se puede recuperar. ¿Continuar?`)) return;
+      // Todo el archivo va en una sola petición para que el borrado y la carga sean atómicos
+      const chunks = [parsed.rows];
       let upserted = 0;
       let skipped = 0;
-      for (let i = 0; i < parsed.rows.length; i += 80) {
-        const chunk = parsed.rows.slice(i, i + 80);
-        const res = await fetch(PANEL.recruitment, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", rows: chunk }) });
+      for (const chunk of chunks) {
+        const res = await fetch(PANEL.recruitment, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", replace: true, rows: chunk }) });
         const json = (await res.json().catch(() => ({}))) as { error?: string; upserted?: number; skipped?: number };
         if (!res.ok) {
           setHint(json.error || "No se pudo importar");
@@ -636,7 +640,7 @@ export default function RecruitmentSheetClient() {
         upserted += json.upserted ?? chunk.length;
         skipped += json.skipped ?? 0;
       }
-      setHint(`Importadas ${upserted} filas${skipped ? ` · ${skipped} omitidas` : ""} · ${parsed.mapped} columnas reconocidas.`);
+      setHint(`Hoja reemplazada: ${upserted} filas${skipped ? ` · ${skipped} omitidas` : ""} · ${parsed.mapped} columnas reconocidas.`);
       await refresh();
     } catch (e) {
       setHint(e instanceof Error ? e.message : "No se pudo leer el archivo.");
