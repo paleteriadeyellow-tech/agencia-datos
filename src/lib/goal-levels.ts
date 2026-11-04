@@ -8,8 +8,8 @@ export type GoalTableId = "bonos" | "empleados";
 
 export const GOAL_TABLES: Record<GoalTableId, { label: string; hint: string; levels: GoalLevel[] }> = {
   bonos: {
-    label: "Bonos (Nivel 1–10)",
-    hint: "Cada nivel pide diamantes, 20 horas y 10 días.",
+    label: "Objetivo de diamantes",
+    hint: "Niveles 1–10: cada nivel pide más diamantes, con 20 horas y 10 días.",
     levels: [
       { level: 1, diamonds: 40_000, hours: 20, days: 10 },
       { level: 2, diamonds: 50_000, hours: 20, days: 10 },
@@ -24,8 +24,8 @@ export const GOAL_TABLES: Record<GoalTableId, { label: string; hint: string; lev
     ],
   },
   empleados: {
-    label: "App de empleados (Nivel 1–5)",
-    hint: "Cada nivel pide más días y horas con 1,000 diamantes.",
+    label: "Objetivo de días y horas",
+    hint: "Niveles 1–5: cada nivel pide más días y horas, con 1,000 diamantes.",
     levels: [
       { level: 1, diamonds: 1_000, days: 10, hours: 25 },
       { level: 2, diamonds: 1_000, days: 12, hours: 40 },
