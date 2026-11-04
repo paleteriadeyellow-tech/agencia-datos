@@ -714,7 +714,21 @@ export function parseRecruitmentSheet(sheetRows: unknown[][], customColumns: { k
     });
   }
 
-  return { rows, mapped: mapped + Object.keys(customIdx).length, indexes, headers, score: detected.score };
+  // Encabezados del archivo que no corresponden a ninguna columna de la hoja y sí traen datos (para no perderlos al importar)
+  const unmatched: string[] = [];
+  headers.forEach((h, i) => {
+    const label = cellText(h).trim();
+    if (!label || usedIdx.has(i) || /^#$|^no.?$/i.test(label)) return;
+    if (unmatched.some((u) => normalizeRecruitmentHeader(u) === normalizeRecruitmentHeader(label))) return;
+    for (let r = start; r < sheetRows.length; r++) {
+      if (cellText((sheetRows[r] ?? [])[i])) {
+        unmatched.push(label);
+        break;
+      }
+    }
+  });
+
+  return { rows, mapped: mapped + Object.keys(customIdx).length, indexes, headers, score: detected.score, unmatched };
 }
 
 export function situationTone(situation: string) {

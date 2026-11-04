@@ -270,7 +270,7 @@ const SheetRow = memo(function SheetRow({
   return (
     <tr className={cn("group", !rc && tone)} style={rc ? { backgroundColor: `${rc}40` } : undefined}>
       <td style={stickyStyle} className={cn("sticky left-0 z-10 border-b border-r border-white/10 px-0 text-center text-[11px] text-text-muted", stickyBg)}>
-        <RowColorMenu row={row} label={status === "…" ? "…" : status === "Error" ? "!" : String(r + 1)} onColor={onColor} />
+        <RowColorMenu row={row} label={status === "…" ? "…" : status === "Error" ? "!" : String(r + 1)} onColor={onColor} onRemove={onRemove} />
       </td>
       {cols.map((col, c) => (
         <td
@@ -607,12 +607,31 @@ export default function RecruitmentSheetClient() {
       }
       const custom = allCols.filter((c) => !c.builtin).map((c) => ({ key: c.key, label: c.label }));
       let parsed = parseRecruitmentSheet([], custom);
+      let bestRows: unknown[][] = [];
       for (const sheetName of book.SheetNames) {
         const sheet = book.Sheets[sheetName];
         if (!sheet) continue;
         const sheetRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: false, blankrows: false });
         const next = parseRecruitmentSheet(sheetRows, custom);
-        if (next.mapped > parsed.mapped || (next.mapped === parsed.mapped && next.rows.length > parsed.rows.length)) parsed = next;
+        if (next.mapped > parsed.mapped || (next.mapped === parsed.mapped && next.rows.length > parsed.rows.length)) {
+          parsed = next;
+          bestRows = sheetRows;
+        }
+      }
+      // Columnas del archivo que la hoja no tiene (y traen datos): se crean para no perder nada
+      const extraLabels = (parsed as { unmatched?: string[] }).unmatched ?? [];
+      let createdCols = 0;
+      if (extraLabels.length && parsed.mapped >= 2 && admin) {
+        const added: { key: string; label: string }[] = [];
+        for (const label of extraLabels) {
+          const res = await fetch("/api/panel/recruitment-columns", { method: "POST", headers: { "Content-Type": "application/json", "x-skip-view-as": "1" }, body: JSON.stringify({ label, type: "text" }) });
+          const json = (await res.json().catch(() => ({}))) as { key?: string };
+          if (res.ok && json.key) added.push({ key: json.key, label });
+        }
+        if (added.length) {
+          createdCols = added.length;
+          parsed = parseRecruitmentSheet(bestRows, [...custom, ...added]);
+        }
       }
       if (parsed.mapped < 2) {
         const sample = (parsed.headers ?? []).filter(Boolean).slice(0, 8).join(" · ");
@@ -640,7 +659,7 @@ Lo que hay ahora se borra y no se puede recuperar. ¿Continuar?`)) return;
         upserted += json.upserted ?? chunk.length;
         skipped += json.skipped ?? 0;
       }
-      setHint(`Hoja reemplazada: ${upserted} filas${skipped ? ` · ${skipped} omitidas` : ""} · ${parsed.mapped} columnas reconocidas.`);
+      setHint(`Hoja reemplazada: ${upserted} filas${createdCols ? ` · ${createdCols} columnas nuevas creadas` : ""}${skipped ? ` · ${skipped} omitidas` : ""} · ${parsed.mapped} columnas reconocidas.`);
       await refresh();
     } catch (e) {
       setHint(e instanceof Error ? e.message : "No se pudo leer el archivo.");
@@ -1057,7 +1076,7 @@ function ColorPick({ value, onCommit }: { value: string | null; onCommit: (v: st
 const ROW_PALETTE = ["#22c55e", "#3b82f6", "#38bdf8", "#a855f7", "#ec4899", "#ef4444", "#f97316", "#eab308", "#94a3b8"];
 
 /** Número de fila que, al tocarlo, deja pintar la fila completa de un color (o quitarlo). */
-function RowColorMenu({ row, label, onColor }: { row: Lead; label: string; onColor: (row: Lead, color: string | null) => void }) {
+function RowColorMenu({ row, label, onColor, onRemove }: { row: Lead; label: string; onColor: (row: Lead, color: string | null) => void; onRemove: (id: string) => void }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [custom, setCustom] = useState(row.rowColor ?? "#3b82f6");
   const btn = useRef<HTMLButtonElement>(null);
@@ -1086,7 +1105,7 @@ function RowColorMenu({ row, label, onColor }: { row: Lead; label: string; onCol
       <button
         ref={btn}
         type="button"
-        title="Pintar esta fila"
+        title="Pintar o eliminar esta fila"
         disabled={row.id.startsWith("tmp-")}
         onClick={() => {
           const r = btn.current?.getBoundingClientRect();
@@ -1116,6 +1135,9 @@ function RowColorMenu({ row, label, onColor }: { row: Lead; label: string; onCol
               </button>
             )}
           </div>
+          <button type="button" onClick={() => { setPos(null); onRemove(row.id); }} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-md border border-danger/40 px-2 py-1.5 text-xs text-danger hover:bg-danger/10">
+            <Trash2 className="h-3.5 w-3.5" /> Eliminar fila completa
+          </button>
         </div>
       )}
     </>
