@@ -669,6 +669,10 @@ export function parseRecruitmentSheet(sheetRows: unknown[][], customColumns: { k
     }
   }
   const mapped = Object.keys(indexes).length;
+  // Formato anterior del Excel (sin columnas Diamantes ni Se envió invitación): sus datos van corridos respecto a la hoja actual
+  //   Situación→Diamantes · Mensaje→Situación · Teléfono→Mensaje · Comentario→Se envió invitación
+  const hasCol = (k: string) => customColumns.some((c) => c.key === k);
+  const legacy = hasCol("diamantes") && hasCol("seEnvioInvitacion") && !("diamantes" in customIdx) && !("seEnvioInvitacion" in customIdx) && indexes.situation != null;
   const rows: RecruitmentParsedRow[] = [];
   let lastRecruiter = "";
   const start = detected.index + detected.span;
@@ -699,13 +703,28 @@ export function parseRecruitmentSheet(sheetRows: unknown[][], customColumns: { k
       if (v) extra[key] = v;
     }
 
+    let situation = cellText(get("situation"));
+    let phone = cellText(get("phone"));
+    let comment = cellText(get("comment"));
+    if (legacy) {
+      const fMensaje = steps.mensaje ?? "";
+      const fInvitacion = comment.trim().toLowerCase();
+      if (situation) extra.diamantes = situation.replace(/[^d.]/g, "");
+      if (!extra.diamantes) delete extra.diamantes;
+      if (fInvitacion) extra.seEnvioInvitacion = /^(si|sí|s)$/.test(fInvitacion) ? "Sí" : /^no?$/.test(fInvitacion) ? "No" : comment;
+      if (phone) steps.mensaje = phone;
+      else delete steps.mensaje;
+      situation = fMensaje;
+      phone = "";
+      comment = "";
+    }
     rows.push({
       recruiter,
       requestDate: parseExcelDate(get("requestDate")),
       creatorName,
-      situation: cellText(get("situation")),
-      phone: cellText(get("phone")),
-      comment: cellText(get("comment")),
+      situation,
+      phone,
+      comment,
       comment2: cellText(get("comment2")),
       recontact: cellText(get("recontact")),
       integrationDate: parseExcelDate(get("integrationDate")),
