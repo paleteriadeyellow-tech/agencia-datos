@@ -29,6 +29,11 @@ export async function generateTasksForAgency(agencySlug: string, force = false) 
   if (!force && now - (lastRun.get(agencySlug) ?? 0) < 60_000) return 0;
   lastRun.set(agencySlug, now);
 
+  // Una tarea fija pausada ya no debe aparecer: se quitan las generadas que siguen sin hacerse (las hechas o con evidencia se conservan)
+  await prisma.task.deleteMany({
+    where: { agencySlug, status: { not: "hecha" }, evidenceAt: null, template: { is: { active: false } } },
+  });
+
   const today = todayKey();
   const noon = new Date(`${today}T12:00:00Z`);
   const isoWeekday = noon.getUTCDay() || 7; // 1 = lunes … 7 = domingo

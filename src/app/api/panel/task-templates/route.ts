@@ -136,6 +136,10 @@ export async function PATCH(req: NextRequest) {
     where: { id },
     data: { ...rest, ...(weekdays ? { weekdays: [...new Set(weekdays)].sort().join(",") } : {}) },
   });
+  // Al pausarla se quitan de Mi día las que ya se generaron y siguen sin hacerse
+  if (rest.active === false) {
+    await prisma.task.deleteMany({ where: { agencySlug: g.agencySlug, templateId: id, status: { not: "hecha" }, evidenceAt: null } });
+  }
   return NextResponse.json({ ok: true });
 }
 
