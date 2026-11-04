@@ -410,6 +410,28 @@ async function postRecruitment(req: NextRequest) {
         skipped += 1;
         continue;
       }
+      if (found.id.startsWith("new-")) {
+        // Misma persona repetida dentro del archivo: aún no existe en la base, así que se junta con la fila que se va a crear
+        const idx = Number(found.id.slice(4)) - 1;
+        const prev = toCreate[idx];
+        if (prev) {
+          const pick = (a: string | null | undefined, b: string) => (b ? b : a ?? "");
+          toCreate[idx] = {
+            ...prev,
+            ...payload,
+            situation: pick(prev.situation, payload.situation),
+            phone: pick(prev.phone, payload.phone),
+            comment: pick(prev.comment, payload.comment),
+            comment2: pick(prev.comment2, payload.comment2),
+            recontact: pick(prev.recontact, payload.recontact),
+            requestDate: payload.requestDate ?? prev.requestDate ?? null,
+            integrationDate: payload.integrationDate ?? prev.integrationDate ?? null,
+            steps: { ...(prev.steps as Record<string, string>), ...(payload.steps as Record<string, string>) },
+            extra: { ...(prev.extra as Record<string, string>), ...(payload.extra as Record<string, string>) },
+          };
+        }
+        continue;
+      }
       toUpdate.push({ id: found.id, data: payload });
     } else {
       toCreate.push({ agencySlug, createdById: userId, ...payload });
