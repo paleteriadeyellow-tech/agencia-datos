@@ -80,6 +80,21 @@ export default function TemplatesClient() {
     if (r) setMsg(r.created ? `Se cargaron ${r.created} tareas de Administración.` : "Las tareas iniciales ya estaban cargadas.");
   }
 
+  /** Pausar o activar todas las tareas de este puesto de una vez. */
+  async function setAll(activate: boolean) {
+    const name = POSITION_LABEL[position];
+    const msg = activate
+      ? `¿Activar todas las tareas fijas de ${name}? Volverán a llegar a Mi día.`
+      : `¿Pausar todas las tareas fijas de ${name}?
+
+También se quitarán de Mi día las que ya se generaron y siguen sin hacerse (las hechas se conservan). Podrás activarlas otra vez.`;
+    if (!confirm(msg)) return;
+    setBusy(true);
+    const r = await call("POST", { action: activate ? "activate_all" : "pause_all", position, clean: !activate });
+    setBusy(false);
+    if (r) setMsg(activate ? `Se activaron ${r.changed} tareas de ${name}.` : `Se pausaron ${r.changed} tareas de ${name}${r.removed ? ` y se quitaron ${r.removed} pendientes de Mi día` : ""}.`);
+  }
+
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -116,6 +131,7 @@ export default function TemplatesClient() {
 
   const templates = (data?.templates ?? []).filter((t) => t.position === position);
   const people = data?.peopleByPosition[position] ?? 0;
+  const activeCount = templates.filter((t) => t.active).length;
 
   return (
     <div>
@@ -153,6 +169,16 @@ export default function TemplatesClient() {
                 <Download className="h-4 w-4" /> Cargar tareas iniciales
               </Button>
             )}
+            {templates.length > 0 &&
+              (activeCount > 0 ? (
+                <Button variant="secondary" disabled={busy} onClick={() => void setAll(false)}>
+                  Pausar todas ({activeCount})
+                </Button>
+              ) : (
+                <Button variant="secondary" disabled={busy} onClick={() => void setAll(true)}>
+                  Activar todas ({templates.length})
+                </Button>
+              ))}
             <Button onClick={() => setOpen((v) => !v)}>
               <Plus className="h-4 w-4" /> Nueva tarea fija
             </Button>

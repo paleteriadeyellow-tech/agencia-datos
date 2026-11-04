@@ -58,6 +58,26 @@ export async function POST(req: NextRequest) {
   if (g.error) return g.error;
   const body = await req.json().catch(() => null);
 
+  // Pausar o activar TODAS las tareas fijas de un puesto. Al pausar se pueden quitar también las ya generadas que siguen sin hacerse.
+  if (body?.action === "pause_all" || body?.action === "activate_all") {
+    const position = String(body.position ?? "");
+    if (!(POSITIONS as readonly string[]).includes(position)) {
+      return NextResponse.json({ error: "Puesto inválido" }, { status: 400 });
+    }
+    const activate = body.action === "activate_all";
+    const changed = await prisma.taskTemplate.updateMany({ where: { agencySlug: g.agencySlug, position }, data: { active: activate } });
+    let removed = 0;
+    if (!activate && body.clean === true) {
+      // Solo pendientes o en progreso; las hechas (con su evidencia) se conservan
+      const del = await prisma.task.deleteMany({
+        where: { agencySlug: g.agencySlug, status: { not: "hecha" }, template: { is: { position } } },
+      });
+      removed = del.count;
+    }
+    if (activate) await generateTasksForAgency(g.agencySlug, true).catch(() => 0);
+    return NextResponse.json({ ok: true, changed: changed.count, removed });
+  }
+
   // Cargar las tareas iniciales (las del manual real de Administración); no pisa las que ya existen.
   if (body?.action === "seed") {
     let created = 0;
