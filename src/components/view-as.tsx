@@ -19,17 +19,20 @@ import {
   writeViewAsCookie,
 } from "@/lib/view-as";
 
-type ManagerOpt = { id: string; name: string; role: string };
+type ManagerOpt = { id: string; name: string; role: string; canViewAll?: boolean };
 
 type ViewAsCtx = {
   viewAsId: string | null;
   viewAsName: string | null;
+  /** La persona que se está viendo tiene el permiso de ver todos los creadores. */
+  viewAsCanViewAll: boolean;
   setViewAs: (id: string | null, name?: string | null) => void;
 };
 
 const Ctx = createContext<ViewAsCtx>({
   viewAsId: null,
   viewAsName: null,
+  viewAsCanViewAll: false,
   setViewAs: () => {},
 });
 
@@ -77,9 +80,10 @@ export function ViewAsProvider({ children }: { children: React.ReactNode }) {
     () => ({
       viewAsId: admin ? viewAsId : null,
       viewAsName: admin ? resolvedName : null,
+      viewAsCanViewAll: admin && !!managers.find((m) => m.id === viewAsId)?.canViewAll,
       setViewAs,
     }),
-    [admin, viewAsId, resolvedName, setViewAs]
+    [admin, viewAsId, resolvedName, managers, setViewAs]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -123,7 +127,7 @@ export function ViewAsSelect() {
 }
 
 export function ViewAsBanner() {
-  const { viewAsId, viewAsName, setViewAs } = useViewAs();
+  const { viewAsId, viewAsName, viewAsCanViewAll, setViewAs } = useViewAs();
   if (!viewAsId) return null;
 
   return (
@@ -133,7 +137,7 @@ export function ViewAsBanner() {
         <span className="font-semibold">{viewAsName ?? "manager"}</span>
         <span className="text-text-muted">
           {" "}
-          · solo sus creadores y diamantes
+          · {viewAsCanViewAll ? "ve todos los creadores (sus diamantes y datos siguen siendo solo los suyos)" : "solo sus creadores y diamantes"}
         </span>
       </p>
       <button

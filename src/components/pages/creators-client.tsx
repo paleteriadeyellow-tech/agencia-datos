@@ -75,7 +75,7 @@ export default function CreatorsClient() {
   const { path } = useAgency();
   const canEditCreators = isAdmin(session?.user?.role);
   const { openCreateCreator } = useQuickCreate();
-  const { viewAsId } = useViewAs();
+  const { viewAsId, viewAsCanViewAll } = useViewAs();
   const fileRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
   const [niche, setNiche] = useState("");
@@ -98,7 +98,8 @@ export default function CreatorsClient() {
   };
 
   const filtered = useMemo(() => {
-    const list = filterByManagerId(data?.creators ?? [], viewAsId);
+    // Si la persona que se simula tiene el permiso de ver todos los creadores, la lista no se recorta
+    const list = filterByManagerId(data?.creators ?? [], viewAsCanViewAll ? null : viewAsId);
     const query = q.trim().toLowerCase();
     return list
       .filter((c) => {
@@ -122,7 +123,7 @@ export default function CreatorsClient() {
         if (db !== da) return db - da;
         return a.name.localeCompare(b.name);
       });
-  }, [data, q, niche, status, managerFilter, viewAsId]);
+  }, [data, q, niche, status, managerFilter, viewAsId, viewAsCanViewAll]);
 
   const niches = (data?.niches ?? []).filter(Boolean);
   const managers = data?.managers ?? [];
