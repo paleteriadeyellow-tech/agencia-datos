@@ -35,6 +35,11 @@ function asSteps(value: unknown): Record<string, string> {
   return out;
 }
 
+/** Color de fila válido (#RRGGBB) o nada. */
+function validColor(v: string | undefined | null) {
+  return v && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null;
+}
+
 /** Valores de las columnas personalizadas: llaves simples y texto corto. */
 function asExtra(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -63,6 +68,7 @@ function serialize(row: {
   integrationDate: Date | null;
   steps: Prisma.JsonValue;
   extra: Prisma.JsonValue;
+  rowColor: string | null;
   updatedAt: Date;
 }) {
   return {
@@ -81,6 +87,7 @@ function serialize(row: {
     integrationDate: isoDate(row.integrationDate),
     steps: asSteps(row.steps),
     extra: asExtra(row.extra),
+    rowColor: row.rowColor,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -215,6 +222,7 @@ const rowSchema = z.object({
   managerId: z.string().nullable().optional(),
   steps: z.record(z.string(), cellSchema).optional(),
   extra: z.record(z.string(), cellSchema).optional(),
+  rowColor: cellSchema.optional(),
 });
 
 const postSchema = z.object({
@@ -296,6 +304,7 @@ async function postRecruitment(req: NextRequest) {
         integrationDate: toDate(data.integrationDate ?? null),
         steps: asSteps(data.steps),
         extra: asExtra(data.extra),
+        rowColor: validColor(data.rowColor),
         createdById: userId,
       },
     });
@@ -348,6 +357,7 @@ async function postRecruitment(req: NextRequest) {
             : existing.integrationDate,
         steps: mergedSteps,
         extra: mergedExtra,
+        rowColor: data.rowColor !== undefined ? validColor(data.rowColor) : existing.rowColor,
       },
     });
     return NextResponse.json({ ok: true, row: serialize(row) });

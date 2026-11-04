@@ -55,6 +55,7 @@ type Lead = {
   integrationDate: string | null;
   steps: Record<string, string>;
   extra: Record<string, string>;
+  rowColor: string | null;
 };
 
 type Payload = {
@@ -249,6 +250,7 @@ const SheetRow = memo(function SheetRow({
   onCommit,
   onPasteGrid,
   onRemove,
+  onColor,
 }: {
   row: Lead;
   r: number;
@@ -257,19 +259,23 @@ const SheetRow = memo(function SheetRow({
   onCommit: (row: Lead, col: Col, value: string) => void;
   onPasteGrid: (r: number, c: number, text: string) => void;
   onRemove: (id: string) => void;
+  onColor: (row: Lead, color: string | null) => void;
 }) {
   const tone = row.integrationDate ? "bg-emerald-500/10" : situationTone(row.situation);
   const temp = row.id.startsWith("tmp-");
+  const rc = row.rowColor;
   const stickyBg = row.integrationDate ? "bg-[#12301f]" : "bg-bg-elevated";
+  // La fila pintada a mano manda sobre el verde de integrada y el tono de la situación
+  const stickyStyle = rc ? { backgroundImage: `linear-gradient(${rc}59,${rc}59)` } : undefined;
   return (
-    <tr className={cn("group", tone)}>
-      <td className={cn("sticky left-0 z-10 border-b border-r border-white/10 px-0.5 text-center text-[11px] text-text-muted", stickyBg)}>
-        {status === "…" ? "…" : status === "Error" ? <span className="text-danger">!</span> : r + 1}
+    <tr className={cn("group", !rc && tone)} style={rc ? { backgroundColor: `${rc}40` } : undefined}>
+      <td style={stickyStyle} className={cn("sticky left-0 z-10 border-b border-r border-white/10 px-0 text-center text-[11px] text-text-muted", stickyBg)}>
+        <RowColorMenu row={row} label={status === "…" ? "…" : status === "Error" ? "!" : String(r + 1)} onColor={onColor} />
       </td>
       {cols.map((col, c) => (
         <td
           key={col.key}
-          style={col.color && col.key !== "creatorName" ? { backgroundColor: `${col.color}14` } : undefined}
+          style={col.key === "creatorName" ? stickyStyle : col.color ? { backgroundColor: `${col.color}14` } : undefined}
           className={cn("border-b border-r border-white/10 p-0", col.key === "creatorName" && cn("sticky left-9 z-10 shadow-[2px_0_0_rgba(255,255,255,0.08)]", stickyBg))}
           title={getVal(row, col.key) || undefined}
         >
@@ -458,6 +464,7 @@ export default function RecruitmentSheetClient() {
   );
 
   const onCommit = useCallback((row: Lead, col: Col, value: string) => autosave(row, patchFor(col.key, value)), [autosave]);
+  const onColor = useCallback((row: Lead, color: string | null) => autosave(row, { rowColor: color }), [autosave]);
 
   /** Crea una fila (al instante en pantalla; el servidor la confirma después). */
   const createRow = useCallback(
@@ -484,6 +491,7 @@ export default function RecruitmentSheetClient() {
         integrationDate: init.integrationDate ?? null,
         steps: init.steps ?? {},
         extra: init.extra ?? {},
+        rowColor: null,
       };
       writeList((list) => [...list, base]);
       try {
@@ -800,7 +808,7 @@ export default function RecruitmentSheetClient() {
                 </thead>
                 <tbody>
                   {rows.map((row, r) => (
-                    <SheetRow key={row.id} row={row} r={r} cols={cols} status={saveMap[row.id]} onCommit={onCommit} onPasteGrid={pasteGrid} onRemove={removeRow} />
+                    <SheetRow key={row.id} row={row} r={r} cols={cols} status={saveMap[row.id]} onCommit={onCommit} onPasteGrid={pasteGrid} onRemove={removeRow} onColor={onColor} />
                   ))}
                   <tr>
                     <td colSpan={cols.length + 2} className="p-0">
@@ -1039,5 +1047,73 @@ function ColorPick({ value, onCommit }: { value: string | null; onCommit: (v: st
         </button>
       )}
     </div>
+  );
+}
+
+const ROW_PALETTE = ["#22c55e", "#3b82f6", "#38bdf8", "#a855f7", "#ec4899", "#ef4444", "#f97316", "#eab308", "#94a3b8"];
+
+/** Número de fila que, al tocarlo, deja pintar la fila completa de un color (o quitarlo). */
+function RowColorMenu({ row, label, onColor }: { row: Lead; label: string; onColor: (row: Lead, color: string | null) => void }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [custom, setCustom] = useState(row.rowColor ?? "#3b82f6");
+  const btn = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!pos) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-row-color-menu]") && e.target !== btn.current) setPos(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setPos(null);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [pos]);
+
+  function pick(color: string | null) {
+    onColor(row, color);
+    setPos(null);
+  }
+
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        title="Pintar esta fila"
+        disabled={row.id.startsWith("tmp-")}
+        onClick={() => {
+          const r = btn.current?.getBoundingClientRect();
+          if (r) setPos({ x: Math.min(r.right + 6, window.innerWidth - 250), y: Math.min(r.top, window.innerHeight - 150) });
+        }}
+        className="flex h-9 w-full items-center justify-center gap-1 hover:text-text"
+      >
+        {row.rowColor && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.rowColor }} />}
+        {label === "!" ? <span className="text-danger">!</span> : label}
+      </button>
+      {pos && (
+        <div data-row-color-menu className="fixed z-[90] w-60 rounded-xl border border-white/15 bg-bg-elevated p-3 shadow-2xl" style={{ left: pos.x, top: pos.y }}>
+          <p className="mb-2 text-xs font-semibold text-text">Pintar la fila completa</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {ROW_PALETTE.map((c) => (
+              <button key={c} type="button" onClick={() => pick(c)} title={c} className={cn("h-6 w-6 rounded-full border border-white/20 transition hover:scale-110", row.rowColor?.toLowerCase() === c && "ring-2 ring-white")} style={{ backgroundColor: c }} />
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <input type="color" value={custom} onChange={(e) => setCustom(e.target.value)} aria-label="Elegir otro color" className="h-7 w-9 cursor-pointer rounded border border-white/20 bg-transparent p-0" />
+            <button type="button" onClick={() => pick(custom)} className="rounded-md border border-white/20 px-2 py-1 text-xs text-text-muted hover:text-text">
+              Usar este color
+            </button>
+            {row.rowColor && (
+              <button type="button" onClick={() => pick(null)} className="ml-auto rounded-md px-2 py-1 text-xs text-text-muted hover:text-danger">
+                Quitar
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

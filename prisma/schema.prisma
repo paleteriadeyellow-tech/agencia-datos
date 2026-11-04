@@ -333,6 +333,7 @@ model RecruitmentLead {
   integrationDate DateTime?
   steps           Json      @default("{}")
   extra           Json      @default("{}") // valores de las columnas que agrega el admin
+  rowColor        String? // color con el que se pinta la fila completa (#RRGGBB)
   createdById     String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
