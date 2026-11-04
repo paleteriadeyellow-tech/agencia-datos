@@ -194,7 +194,7 @@ export async function GET(req: NextRequest) {
       soonDays: settingsRow.soonDays,
       requiredKeys: settingsRow.requiredKeys.split(",").filter(Boolean),
     },
-    columns: columns.map((c) => ({ id: c.id, key: c.key, label: c.label, type: c.type, options: c.options, sortOrder: c.sortOrder, hidden: c.hidden, builtin: c.builtin })),
+    columns: columns.map((c) => ({ id: c.id, key: c.key, label: c.label, type: c.type, options: c.options, sortOrder: c.sortOrder, hidden: c.hidden, builtin: c.builtin, color: c.color })),
   });
 }
 

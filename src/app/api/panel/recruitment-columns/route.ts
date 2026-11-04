@@ -70,18 +70,30 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, id: col.id, key: col.key }, { headers: NO_STORE });
 }
 
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
 const patchSchema = z.object({
   id: z.string().min(1),
   label: z.string().trim().min(1).max(80).optional(),
   type: z.enum(TYPES).optional(),
   options: z.string().max(600).nullable().optional(),
   hidden: z.boolean().optional(),
+  color: z.string().regex(HEX).nullable().optional(),
 });
+
+/** Pintar todas las columnas del mismo color (o quitar el color de todas con null). */
+const allColorSchema = z.object({ applyAll: z.literal(true), color: z.string().regex(HEX).nullable() });
 
 export async function PATCH(req: NextRequest) {
   const g = await adminGate(req);
   if (g.error) return g.error;
-  const parsed = patchSchema.safeParse(await req.json().catch(() => null));
+  const body = await req.json().catch(() => null);
+  const all = allColorSchema.safeParse(body);
+  if (all.success) {
+    await prisma.recruitmentColumn.updateMany({ where: { agencySlug: g.agencySlug }, data: { color: all.data.color } });
+    return NextResponse.json({ ok: true }, { headers: NO_STORE });
+  }
+  const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400, headers: NO_STORE });
   const { id, type, options, ...rest } = parsed.data;
   const col = await prisma.recruitmentColumn.findFirst({ where: { id, agencySlug: g.agencySlug } });

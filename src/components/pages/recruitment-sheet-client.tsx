@@ -27,7 +27,17 @@ import { nickKey } from "@/lib/scope-view";
 import { FollowUpView } from "@/components/pages/recruitment-followup";
 import { DEFAULT_FOLLOW_SETTINGS, computeFollowUp, type FollowSettings } from "@/lib/recruitment-followup";
 
-type Col = { id: string; key: string; label: string; type: SheetColType; options: string | null; sortOrder: number; hidden: boolean; builtin: boolean };
+type Col = { id: string; key: string; label: string; type: SheetColType; options: string | null; sortOrder: number; hidden: boolean; builtin: boolean; color: string | null };
+
+/** Colores listos para elegir (además del selector libre). */
+const PALETTE = ["#1f7a4d", "#2563eb", "#38a3d6", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#ca8a04", "#475569"];
+
+/** Texto blanco u oscuro según qué tan claro es el color de fondo. */
+function textOn(hex: string) {
+  const n = parseInt(hex.slice(1), 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.62 ? "#0b0f19" : "#ffffff";
+}
 
 type Lead = {
   id: string;
@@ -259,6 +269,7 @@ const SheetRow = memo(function SheetRow({
       {cols.map((col, c) => (
         <td
           key={col.key}
+          style={col.color && col.key !== "creatorName" ? { backgroundColor: `${col.color}14` } : undefined}
           className={cn("border-b border-r border-white/10 p-0", col.key === "creatorName" && cn("sticky left-9 z-10 shadow-[2px_0_0_rgba(255,255,255,0.08)]", stickyBg))}
           title={getVal(row, col.key) || undefined}
         >
@@ -777,7 +788,8 @@ export default function RecruitmentSheetClient() {
                     {cols.map((col) => (
                       <th
                         key={col.key}
-                        className={cn("sticky top-0 border-b border-r border-white/10 px-2.5 py-2 text-left text-[11px] font-semibold uppercase leading-tight tracking-wide", col.key === "creatorName" ? "left-9 z-30" : "z-20", headerTone(col))}
+                        className={cn("sticky top-0 border-b border-r border-white/10 px-2.5 py-2 text-left text-[11px] font-semibold uppercase leading-tight tracking-wide", col.key === "creatorName" ? "left-9 z-30" : "z-20", !col.color && headerTone(col))}
+                    style={col.color ? { backgroundColor: col.color, color: textOn(col.color) } : undefined}
                         title={col.label}
                       >
                         {col.label}
@@ -817,6 +829,7 @@ function ColumnsModal({ open, onClose, columns, onChanged }: { open: boolean; on
   const [options, setOptions] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [bulk, setBulk] = useState("#1f7a4d");
 
   async function call(method: string, path: string, body?: unknown) {
     setErr("");
@@ -878,11 +891,23 @@ function ColumnsModal({ open, onClose, columns, onChanged }: { open: boolean; on
           </div>
         )}
       </form>
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+        <p className="text-sm font-semibold">Color de la barra de encabezados</p>
+        <ColorPick value={bulk} onCommit={(v) => setBulk(v ?? "#1f7a4d")} />
+        <Button type="button" variant="secondary" onClick={() => void call("PATCH", "", { applyAll: true, color: bulk })}>
+          Pintar todas
+        </Button>
+        <Button type="button" variant="ghost" onClick={() => void call("PATCH", "", { applyAll: true, color: null })}>
+          Quitar colores
+        </Button>
+        <p className="w-full text-xs text-text-muted">También puedes elegir un color distinto en cada columna de la lista de abajo.</p>
+      </div>
+
       {err && <p className="mb-3 text-sm text-danger">{err}</p>}
 
       <ul className="space-y-1.5">
         {columns.map((c, i) => (
-          <li key={c.id} className={cn("grid items-center gap-2 rounded-lg border border-white/10 px-2.5 py-1.5 sm:grid-cols-[auto_1fr_9rem_auto]", c.hidden && "opacity-55")}>
+          <li key={c.id} className={cn("grid items-center gap-2 rounded-lg border border-white/10 px-2.5 py-1.5 sm:grid-cols-[auto_1fr_auto_9rem_auto]", c.hidden && "opacity-55")}>
             <button type="button" title={c.hidden ? "Mostrar" : "Ocultar"} onClick={() => void call("PATCH", "", { id: c.id, hidden: !c.hidden })} className="rounded p-1.5 text-text-muted hover:text-text">
               {c.hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
@@ -910,6 +935,7 @@ function ColumnsModal({ open, onClose, columns, onChanged }: { open: boolean; on
                 />
               )}
             </div>
+            <ColorPick value={c.color} onCommit={(v) => void call("PATCH", "", { id: c.id, color: v })} />
             {c.builtin ? (
               <span className="text-xs text-text-muted">{SHEET_COL_TYPES.find((t) => t.id === c.type)?.label ?? "Texto"} · de siempre</span>
             ) : (
@@ -979,5 +1005,39 @@ function GuideBox() {
         <li>La fila se pone en verde cuando se llena la fecha de integración.</li>
       </ul>
     </details>
+  );
+}
+
+/** Elegir un color: colores listos, selector libre y "automático" (quita el color). */
+function ColorPick({ value, onCommit }: { value: string | null; onCommit: (v: string | null) => void }) {
+  const [local, setLocal] = useState(value ?? "#475569");
+  useEffect(() => setLocal(value ?? "#475569"), [value]);
+  return (
+    <div className="flex items-center gap-1">
+      {PALETTE.map((c) => (
+        <button
+          key={c}
+          type="button"
+          title={c}
+          onClick={() => onCommit(c)}
+          className={cn("h-4 w-4 rounded-full border border-white/20 transition hover:scale-110", value?.toLowerCase() === c && "ring-2 ring-white")}
+          style={{ backgroundColor: c }}
+        />
+      ))}
+      <input
+        type="color"
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => local.toLowerCase() !== (value ?? "").toLowerCase() && onCommit(local)}
+        title="Elegir otro color"
+        aria-label="Elegir otro color"
+        className="h-6 w-6 cursor-pointer rounded border border-white/20 bg-transparent p-0"
+      />
+      {value && (
+        <button type="button" onClick={() => onCommit(null)} title="Quitar el color (automático)" className="rounded px-1 text-xs text-text-muted hover:text-text">
+          ✕
+        </button>
+      )}
+    </div>
   );
 }
