@@ -98,7 +98,7 @@ export async function createManager(formData: FormData) {
   return { ok: true };
 }
 
-/** Asigna (o quita) el puesto de una persona: define qué tareas fijas le llegan en "Mi día". */
+/** Asigna (o quita) el puesto de una persona: define qué tareas fijas le llegan en "Tareas diarias". */
 export async function setUserPosition(id: string, position: string | null) {
   const gate = await requireAdmin();
   if (gate.error) return { error: gate.error };
@@ -367,7 +367,7 @@ export async function updateTaskStatus(id: string, status: string) {
   const task = await prisma.task.findFirst({ where: { id, agencySlug } });
   if (!task) return { error: "Tarea no encontrada." };
   if (status === "hecha" && !isAdmin(session.user.role) && !task.evidenceAt) {
-    return { error: "Para terminarla sube la evidencia desde Mi día." };
+    return { error: "Para terminarla sube la evidencia desde Tareas diarias." };
   }
   // Puede moverla: admin, la persona a quien se asignó, o quien lleva al creador de la tarea.
   if (!isAdmin(session.user.role) && task.assigneeId !== session.user.id) {

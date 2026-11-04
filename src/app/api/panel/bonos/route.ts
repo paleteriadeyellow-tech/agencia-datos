@@ -271,6 +271,18 @@ export async function DELETE(req: NextRequest) {
   const period = req.nextUrl.searchParams.get("period");
   const clearPeriod = req.nextUrl.searchParams.get("clearPeriod") === "1";
 
+  // Borrar todos los "sin pagar" del periodo (los ya pagados no se tocan). Solo admin.
+  if (req.nextUrl.searchParams.get("clearUnpaid") === "1") {
+    if (!auth.isAdmin || !auth.scope.admin) {
+      return NextResponse.json({ error: "Solo un admin puede borrar bonos" }, { status: 403 });
+    }
+    if (!period || !/^d{4}-d{2}$/.test(period)) {
+      return NextResponse.json({ error: "Periodo inválido" }, { status: 400 });
+    }
+    const res = await prisma.bonoRecord.deleteMany({ where: { agencySlug, period, pagado: false } });
+    return NextResponse.json({ ok: true, deleted: res.count });
+  }
+
   if (clearPeriod && period && /^\d{4}-\d{2}$/.test(period)) {
     const res = await prisma.bonoRecord.deleteMany({
       where: { agencySlug, period },

@@ -108,9 +108,9 @@ export async function PATCH(req: NextRequest) {
   if (!existing) {
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   }
-  // Una tarea solo queda hecha con evidencia (la sube la persona desde Mi día); el admin sí puede cerrarla
+  // Una tarea solo queda hecha con evidencia (la sube la persona desde Tareas diarias); el admin sí puede cerrarla
   if (parsed.data.status === "hecha" && !scope.admin && !existing.evidenceAt) {
-    return NextResponse.json({ error: "Para terminarla sube la evidencia desde Mi día." }, { status: 400 });
+    return NextResponse.json({ error: "Para terminarla sube la evidencia desde Tareas diarias." }, { status: 400 });
   }
   // Admin, la persona asignada, o quien lleva al creador de la tarea
   if (!scope.admin && existing.assigneeId !== scope.userId) {

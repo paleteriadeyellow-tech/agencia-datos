@@ -84,15 +84,15 @@ export default function TemplatesClient() {
   async function setAll(activate: boolean) {
     const name = POSITION_LABEL[position];
     const msg = activate
-      ? `¿Activar todas las tareas fijas de ${name}? Volverán a llegar a Mi día.`
+      ? `¿Activar todas las tareas fijas de ${name}? Volverán a llegar a Tareas diarias.`
       : `¿Pausar todas las tareas fijas de ${name}?
 
-También se quitarán de Mi día las que ya se generaron y siguen sin hacerse (las hechas se conservan). Podrás activarlas otra vez.`;
+También se quitarán de Tareas diarias las que ya se generaron y siguen sin hacerse (las hechas se conservan). Podrás activarlas otra vez.`;
     if (!confirm(msg)) return;
     setBusy(true);
     const r = await call("POST", { action: activate ? "activate_all" : "pause_all", position, clean: !activate });
     setBusy(false);
-    if (r) setMsg(activate ? `Se activaron ${r.changed} tareas de ${name}.` : `Se pausaron ${r.changed} tareas de ${name}${r.removed ? ` y se quitaron ${r.removed} pendientes de Mi día` : ""}.`);
+    if (r) setMsg(activate ? `Se activaron ${r.changed} tareas de ${name}.` : `Se pausaron ${r.changed} tareas de ${name}${r.removed ? ` y se quitaron ${r.removed} pendientes de Tareas diarias` : ""}.`);
   }
 
   async function create(e: React.FormEvent) {
@@ -135,7 +135,7 @@ También se quitarán de Mi día las que ya se generaron y siguen sin hacerse (l
 
   return (
     <div>
-      <TopBar title="Tareas fijas" subtitle="Lo que se repite solo y llega a “Mi día” según el puesto" />
+      <TopBar title="Tareas fijas" subtitle="Lo que se repite solo y llega a “Tareas diarias” según el puesto" />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {POSITIONS.map((p) => (

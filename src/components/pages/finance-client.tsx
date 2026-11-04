@@ -8,6 +8,7 @@ import {
   Gift,
   Check,
   Undo2,
+  Trash2,
 } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { KpiCard } from "@/components/kpi-card";
@@ -330,6 +331,30 @@ export default function FinanceClient() {
     }
   }
 
+  async function clearUnpaid() {
+    if (
+      !confirm(
+        `¿Borrar los ${sinPagar.length} bonos SIN PAGAR de ${MESES_NOMBRE[mes]} ${anio}?
+
+Los ya pagados no se tocan. Esto no se puede deshacer.`
+      )
+    )
+      return;
+    setPayingId("all");
+    setPayError("");
+    try {
+      const res = await fetch(`${PANEL.bonos}?period=${pk}&clearUnpaid=1`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as { error?: string }).error || "No se pudo borrar");
+      mutateBonos();
+      invalidatePanel(PANEL.bonos);
+    } catch (err) {
+      setPayError(err instanceof Error ? err.message : "No se pudo borrar");
+    } finally {
+      setPayingId(null);
+    }
+  }
+
   function onSettlementSaved() {
     mutate();
     mutateBonos();
@@ -449,14 +474,27 @@ export default function FinanceClient() {
 
       <div className="mb-6 grid gap-6 xl:grid-cols-2">
         <Panel className="overflow-hidden p-0">
-          <div className="border-b border-border-soft px-3 py-3">
-            <h2 className="font-[family-name:var(--font-syne)] text-base font-semibold">
-              Bonos sin pagar · {MESES_NOMBRE[mes]} {anio}
-            </h2>
-            <p className="text-[11px] text-text-muted">
-              Pestaña Bonos + liquidaciones · total{" "}
-              {formatCurrency(totalSinPagar)}
-            </p>
+          <div className="flex items-start justify-between gap-3 border-b border-border-soft px-3 py-3">
+            <div>
+              <h2 className="font-[family-name:var(--font-syne)] text-base font-semibold">
+                Bonos sin pagar · {MESES_NOMBRE[mes]} {anio}
+              </h2>
+              <p className="text-[11px] text-text-muted">
+                Pestaña Bonos + liquidaciones · total{" "}
+                {formatCurrency(totalSinPagar)}
+              </p>
+            </div>
+            {!viewAsId && sinPagar.length > 0 && (
+              <Button
+                variant="ghost"
+                className="shrink-0 text-danger"
+                disabled={payingId === "all"}
+                onClick={() => void clearUnpaid()}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {payingId === "all" ? "Borrando…" : "Borrar todos"}
+              </Button>
+            )}
           </div>
           <BonosTable
             rows={sinPagar}

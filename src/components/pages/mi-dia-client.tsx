@@ -216,7 +216,7 @@ export default function MiDiaClient() {
   if (error) {
     return (
       <div>
-        <TopBar title="Mi día" subtitle={subtitle} />
+        <TopBar title="Tareas diarias" subtitle={subtitle} />
         <PanelLoadError onRetry={() => void mutate()} />
       </div>
     );
@@ -357,7 +357,7 @@ export default function MiDiaClient() {
 
   return (
     <div>
-      <TopBar title="Mi día" subtitle={subtitle} />
+      <TopBar title="Tareas diarias" subtitle={subtitle} />
 
       {admin && (data?.users.length ?? 0) > 0 && (
         <div className="mb-4 max-w-xs">

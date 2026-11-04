@@ -45,7 +45,7 @@ import { useViewAs } from "@/components/view-as";
 import { apisForRoute, warmApis } from "@/lib/nav-prefetch";
 
 const nav = [
-  { href: "/mi-dia", label: "Mi día", icon: Sun },
+  { href: "/mi-dia", label: "Tareas diarias", icon: Sun },
   { href: "/metas-creadores", label: "Metas de creadores", icon: Target },
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/creadores", label: "Creadores", icon: Users },
