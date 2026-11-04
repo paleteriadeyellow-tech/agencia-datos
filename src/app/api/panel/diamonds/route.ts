@@ -376,6 +376,58 @@ export async function DELETE(req: NextRequest) {
     );
   }
 
+  // Borrar TODO lo importado de un mes (filas + historial de importaciones)
+  if (req.nextUrl.searchParams.get("all") === "1") {
+    const period = req.nextUrl.searchParams.get("period") ?? "";
+    if (!/^d{4}-d{2}$/.test(period)) {
+      return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
+    }
+    if (req.nextUrl.searchParams.get("confirm") !== "BORRAR") {
+      return NextResponse.json({ error: "Falta la confirmación" }, { status: 400 });
+    }
+    // Solo un admin real: en modo "ver como" otra persona no se puede borrar en bloque
+    if (!scope.admin) {
+      return NextResponse.json({ error: "Solo el admin puede borrar lo importado" }, { status: 403 });
+    }
+
+    const rows = await prisma.diamondControl.findMany({
+      where: { agencySlug, period },
+      select: { creatorId: true, diamonds: true },
+    });
+    const imported = new Map<string, number>();
+    for (const r of rows) if (r.creatorId) imported.set(r.creatorId, r.diamonds);
+    const creatorIds = [...imported.keys()];
+
+    const [deletedRows] = await prisma.$transaction([
+      prisma.diamondControl.deleteMany({ where: { agencySlug, period } }),
+      prisma.diamondImportLog.deleteMany({ where: { agencySlug, period } }),
+    ]);
+
+    // La importación también copió los diamantes al creador: si todavía tiene ese mismo valor, vuelve al
+    // del mes anterior que quede (o a 0 si no hay otro). Si alguien lo cambió a mano, no se toca.
+    if (creatorIds.length) {
+      const [creators, remaining] = await Promise.all([
+        prisma.creator.findMany({ where: { id: { in: creatorIds }, agencySlug }, select: { id: true, diamonds: true } }),
+        prisma.diamondControl.findMany({
+          where: { agencySlug, creatorId: { in: creatorIds } },
+          orderBy: { period: "desc" },
+          select: { creatorId: true, diamonds: true },
+        }),
+      ]);
+      const latest = new Map<string, number>();
+      for (const r of remaining) if (r.creatorId && !latest.has(r.creatorId)) latest.set(r.creatorId, r.diamonds);
+      const stale = creators.filter((c) => imported.get(c.id) === c.diamonds);
+      for (let i = 0; i < stale.length; i += 25) {
+        await prisma.$transaction(
+          stale.slice(i, i + 25).map((c) =>
+            prisma.creator.update({ where: { id: c.id }, data: { diamonds: latest.get(c.id) ?? 0 } })
+          )
+        );
+      }
+    }
+    return NextResponse.json({ ok: true, deleted: deletedRows.count, period });
+  }
+
   const id = req.nextUrl.searchParams.get("id");
   if (!id) {
     return NextResponse.json({ error: "Falta id" }, { status: 400 });

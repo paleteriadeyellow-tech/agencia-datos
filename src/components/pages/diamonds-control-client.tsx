@@ -16,7 +16,7 @@ import {
   parseNumericCell,
   parseLiveDurationHours,
 } from "@/lib/bonos";
-import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
+import { PANEL, invalidatePanel, mutatePanel, usePanelData } from "@/lib/swr";
 import { useViewAs } from "@/components/view-as";
 import { nickKey } from "@/lib/scope-view";
 import { useCreatorsRoster } from "@/lib/use-creators-roster";
@@ -149,6 +149,40 @@ export default function DiamondsControlClient() {
       setNewDiamonds(0);
       await reload();
       invalidatePanel(PANEL.creators, PANEL.ops);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Borra todo lo importado del mes elegido (con confirmación escrita). */
+  async function removeAll() {
+    const label = `${MESES_NOMBRE[mes]} ${anio}`;
+    const n = data?.totalUsers ?? 0;
+    const typed = prompt(
+      `Vas a borrar TODO lo importado de ${label}: ${n} usuarios con sus diamantes, horas y días, y el historial de importaciones de ese mes.
+
+No se puede deshacer. Para confirmar escribe BORRAR`
+    );
+    if (typed?.trim().toUpperCase() !== "BORRAR") return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const res = await fetch(`${PANEL.diamonds}?all=1&period=${period}&confirm=BORRAR`, {
+        method: "DELETE",
+        headers: { "x-skip-view-as": "1" },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "No se pudo borrar.");
+      setMsg(`Se borró lo importado de ${label}: ${json.deleted} registros.`);
+      // Se recarga sin la caché del navegador para que la lista quede vacía al instante
+      const hubUrl = `${PANEL.hub}?period=${period}`;
+      const opts = { cache: "no-store" as const, headers: { "x-skip-view-as": "1" } };
+      const [d, h] = await Promise.all([fetch(url, opts), fetch(hubUrl, opts)]);
+      if (d.ok) await mutatePanel(url, await d.json(), { revalidate: false });
+      if (h.ok) await mutatePanel(hubUrl, await h.json(), { revalidate: false });
+      invalidatePanel(PANEL.creators, PANEL.dashboard, PANEL.ops, PANEL.metrics);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "No se pudo borrar.");
     } finally {
       setBusy(false);
     }
@@ -393,6 +427,12 @@ export default function DiamondsControlClient() {
           <Upload className="h-4 w-4" />
           {busy ? "Importando…" : "Importar XLSX"}
         </Button>
+        {(data?.totalUsers ?? 0) > 0 && (
+          <Button type="button" variant="danger" disabled={busy} onClick={() => void removeAll()}>
+            <Trash2 className="h-4 w-4" />
+            Borrar todo lo importado
+          </Button>
+        )}
         <p className="text-xs text-text-muted">
           ES/EN: usuario, Diamantes/Diamonds, Duración de LIVE / LIVE duration,
           Días válidos / Valid days
