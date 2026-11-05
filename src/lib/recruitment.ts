@@ -709,7 +709,7 @@ export function parseRecruitmentSheet(sheetRows: unknown[][], customColumns: { k
     if (legacy) {
       const fMensaje = steps.mensaje ?? "";
       const fInvitacion = comment.trim().toLowerCase();
-      if (situation) extra.diamantes = situation.replace(/[^d.]/g, "");
+      if (situation) extra.diamantes = situation.replace(/[^\d.]/g, "");
       if (!extra.diamantes) delete extra.diamantes;
       if (fInvitacion) extra.seEnvioInvitacion = /^(si|sí|s)$/.test(fInvitacion) ? "Sí" : /^no?$/.test(fInvitacion) ? "No" : comment;
       if (phone) steps.mensaje = phone;
@@ -737,7 +737,7 @@ export function parseRecruitmentSheet(sheetRows: unknown[][], customColumns: { k
   const unmatched: string[] = [];
   headers.forEach((h, i) => {
     const label = cellText(h).trim();
-    if (!label || usedIdx.has(i) || /^#$|^no.?$/i.test(label)) return;
+    if (!label || usedIdx.has(i) || /^#$|^no\.?$/i.test(label)) return;
     if (unmatched.some((u) => normalizeRecruitmentHeader(u) === normalizeRecruitmentHeader(label))) return;
     for (let r = start; r < sheetRows.length; r++) {
       if (cellText((sheetRows[r] ?? [])[i])) {
