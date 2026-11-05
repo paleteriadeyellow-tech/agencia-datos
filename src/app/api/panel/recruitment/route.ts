@@ -287,19 +287,39 @@ async function postRecruitment(req: NextRequest) {
       const men = (steps.mensaje ?? "").trim().toLowerCase();
       const numeric = /^\d+([.,]\d+)?$/.test(sit);
       const shifted = numeric || (!sit && known.has(men));
-      if (!shifted || extra.diamantes || extra.seEnvioInvitacion) continue;
-      if (numeric) extra.diamantes = sit.replace(",", ".");
-      const inv = (lead.comment ?? "").trim().toLowerCase();
-      if (inv) extra.seEnvioInvitacion = /^(si|sí|s)$/.test(inv) ? "Sí" : /^no?$/.test(inv) ? "No" : lead.comment;
-      const newSituation = steps.mensaje ?? "";
-      if (lead.phone) steps.mensaje = lead.phone;
-      else delete steps.mensaje;
+      let newSituation = lead.situation ?? "";
+      let newComment = lead.comment ?? "";
+      let newPhone = lead.phone ?? "";
+      let changed = false;
+      if (shifted && !extra.diamantes && !extra.seEnvioInvitacion) {
+        if (numeric) extra.diamantes = sit.replace(",", ".");
+        const inv = newComment.trim().toLowerCase();
+        if (inv) extra.seEnvioInvitacion = /^(si|sí|s)$/.test(inv) ? "Sí" : /^no?$/.test(inv) ? "No" : newComment;
+        newSituation = steps.mensaje ?? "";
+        if (newPhone) steps.mensaje = newPhone;
+        else delete steps.mensaje;
+        newPhone = "";
+        newComment = "";
+        changed = true;
+      }
+      // Mensaje aceptación → Teléfono · Visitarlo en LIVE → Comentario (solo si esas celdas están vacías)
+      if (!newPhone && steps.mensajeAceptacion) {
+        newPhone = steps.mensajeAceptacion;
+        delete steps.mensajeAceptacion;
+        changed = true;
+      }
+      if (!newComment && steps.visitarLive) {
+        newComment = steps.visitarLive;
+        delete steps.visitarLive;
+        changed = true;
+      }
+      if (!changed) continue;
       await prisma.recruitmentLead.update({
         where: { id: lead.id },
         data: {
           situation: newSituation,
-          comment: "",
-          phone: "",
+          comment: newComment,
+          phone: newPhone,
           steps: steps as Prisma.InputJsonValue,
           extra: extra as Prisma.InputJsonValue,
         },

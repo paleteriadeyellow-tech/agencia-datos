@@ -789,7 +789,7 @@ Lo que hay ahora se borra y no se puede recuperar. ¿Continuar?`)) return;
                   disabled={busy}
                   title="Arregla filas importadas con los datos corridos de columna"
                   onClick={async () => {
-                    if (!confirm("Se acomodarán las filas con los datos corridos:\nSituación (números) → Diamantes · Mensaje → Situación · Teléfono → Mensaje · Comentario → Se envió invitación.\n\nSolo se tocan las filas que tienen números en Situación. ¿Continuar?")) return;
+                    if (!confirm("Se acomodarán las filas con los datos corridos:\nSituación (números) → Diamantes · Mensaje → Situación · Teléfono → Mensaje · Comentario → Se envió invitación · Mensaje aceptación → Teléfono · Visitarlo en LIVE → Comentario.\n\nSolo se tocan las filas que aún están corridas. ¿Continuar?")) return;
                     setBusy(true);
                     try {
                       const res = await fetch(PANEL.recruitment, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "fixShift" }) });

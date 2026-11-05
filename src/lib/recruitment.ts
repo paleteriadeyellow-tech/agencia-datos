@@ -715,8 +715,11 @@ export function parseRecruitmentSheet(sheetRows: unknown[][], customColumns: { k
       if (phone) steps.mensaje = phone;
       else delete steps.mensaje;
       situation = fMensaje;
-      phone = "";
-      comment = "";
+      // Mensaje aceptación → Teléfono · Visitarlo en LIVE → Comentario
+      phone = steps.mensajeAceptacion ?? "";
+      comment = steps.visitarLive ?? "";
+      delete steps.mensajeAceptacion;
+      delete steps.visitarLive;
     }
     rows.push({
       recruiter,
