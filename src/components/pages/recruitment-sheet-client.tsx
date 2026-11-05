@@ -528,7 +528,14 @@ export default function RecruitmentSheetClient() {
   );
 
   async function addRow() {
-    const created = await createRow({ creatorName: "" });
+    // La fila nueva ya viene con el Reclutador y el Atendió de la última fila (se pueden editar)
+    const last = [...rows].reverse().find((r) => r.recruiter || r.extra?.atendio);
+    const init: Partial<Lead> = { creatorName: "" };
+    if (last) {
+      if (admin && !viewAsId && managerFilter === "all" && last.recruiter) init.recruiter = last.recruiter;
+      if (last.extra?.atendio) init.extra = { atendio: last.extra.atendio };
+    }
+    const created = await createRow(init);
     if (created) focusAfter.current = { id: created.id, c: Math.max(0, cols.findIndex((c) => c.key === "creatorName")) };
   }
 
