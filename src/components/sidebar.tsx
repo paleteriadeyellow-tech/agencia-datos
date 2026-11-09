@@ -30,6 +30,7 @@ import {
   Swords,
   Clapperboard,
   Medal,
+  Gavel,
   Menu,
   X,
   ArrowLeftRight,
@@ -71,6 +72,7 @@ const nav = [
   { href: "/contratos", label: "Contratos", icon: FileText },
   { href: "/managers", label: "Managers", icon: UserCog },
   { href: "/evidencias", label: "Evidencias", icon: ImageIcon },
+  { href: "/subastas", label: "Sistema de subastas", icon: Gavel },
 ];
 
 export function Sidebar() {
