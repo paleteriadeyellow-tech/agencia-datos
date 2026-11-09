@@ -633,3 +633,21 @@ model Prospect {
   @@unique([agencySlug, year, month, username])
   @@index([agencySlug, year, month])
 }
+
+/// Edición de la Subasta de Creadores (una fecha del calendario maestro). Sección 1 del módulo de subastas.
+model AuctionEdition {
+  id            String   @id @default(cuid())
+  agencySlug    String   @default("streamersfederation")
+  number        Int // número de edición, consecutivo por agencia
+  date          String // YYYY-MM-DD
+  time          String   @default("20:00") // HH:MM
+  host          String   @default("Majo")
+  status        String   @default("programada") // programada | realizada | cancelada
+  dateConfirmed Boolean  @default(false) // la dirección autorizó la fecha
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([agencySlug, number])
+  @@index([agencySlug, date])
+}
