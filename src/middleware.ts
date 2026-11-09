@@ -21,6 +21,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  if (rest === "/subasta/registro") {
+    return NextResponse.next(); // formulario público de inscripción a la subasta
+  }
+
   if (rest.startsWith("/p/")) {
     return NextResponse.next();
   }

@@ -154,10 +154,14 @@ model Task {
   evidenceAt   DateTime?
   reviewedAt   DateTime? // el admin la aprobó
   reviewNote   String? // motivo si el admin la devolvió
+  auctionEditionId String? // si viene del flujo de una edición de la subasta
+  auctionKey       String? // paso del flujo (para no duplicarlo al regenerar)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@unique([templateId, assigneeId, genKey])
+  @@unique([auctionEditionId, auctionKey])
+  @@index([auctionEditionId])
   @@index([agencySlug])
   @@index([agencySlug, period])
   @@index([assigneeId, status])
@@ -644,10 +648,39 @@ model AuctionEdition {
   host          String   @default("Majo")
   status        String   @default("programada") // programada | realizada | cancelada
   dateConfirmed Boolean  @default(false) // la dirección autorizó la fecha
+  registrationOpen Boolean @default(false) // el formulario público de inscripción acepta registros
   notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@unique([agencySlug, number])
   @@index([agencySlug, date])
+}
+
+/// Inscripción de un creador a una edición de la subasta. Sección 2 del módulo.
+model AuctionRegistration {
+  id              String   @id @default(cuid())
+  agencySlug      String   @default("streamersfederation")
+  editionId       String
+  folio           String   @unique
+  name            String
+  tiktokUser      String // sin @, en minúsculas
+  profileUrl      String?
+  creatorAgency   String // agencia a la que pertenece
+  photoUrl        String? // enlace a su foto o imagen representativa
+  bio             String
+  contentType     String
+  availability    String
+  canChangeName   Boolean
+  cameraMode      String // camara | imagen
+  acceptedRules   Boolean
+  imageConsent    Boolean  @default(false)
+  status          String   @default("registrado")
+  responsibleId   String?
+  comment         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([editionId, tiktokUser])
+  @@index([agencySlug, editionId, status])
 }

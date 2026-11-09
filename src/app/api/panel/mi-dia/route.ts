@@ -49,6 +49,8 @@ export async function GET(req: NextRequest) {
   // (Semanales y mensuales sí se siguen mostrando como atrasadas hasta hacerlas.)
   const open = openAll
     .filter((t) => !(t.template?.recurrence === "diaria" && t.genKey && t.genKey < today))
+    // Los pasos de una subasta aparecen en "Mi día" cuando llega su fecha (no todos de golpe al crear la edición).
+    .filter((t) => !(t.auctionEditionId && t.dueDate && t.dueDate.toISOString().slice(0, 10) > today))
     .sort((x, y) => {
       const dx = x.dueDate ? x.dueDate.getTime() : Infinity;
       const dy = y.dueDate ? y.dueDate.getTime() : Infinity;
