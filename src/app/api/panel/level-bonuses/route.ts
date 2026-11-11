@@ -89,7 +89,9 @@ export async function GET(req: NextRequest) {
       bonuses: [
         ...computed.map((c) => {
           const a = awardMap.get(`${r.username.toLowerCase()}|${c.kind}`);
-          return { ...c, outdated: false, award: a ? { id: a.id, status: a.status, scheduledFor: a.scheduledFor, method: a.method, paidAt: a.paidAt, note: a.note, saved: true } : null };
+          // Si ya está guardado, se muestra lo guardado (puede estar editado a mano)
+          const shown = a ? { ...c, tier: a.tier, coins: a.coins, usd: a.usd, advisory: a.advisory } : c;
+          return { ...shown, outdated: false, award: a ? { id: a.id, status: a.status, scheduledFor: a.scheduledFor, method: a.method, paidAt: a.paidAt, note: a.note, saved: true } : null };
         }),
         // Premios ya programados o pagados que con el nivel actual ya no corresponden: se muestran para no perderlos de vista
         ...awards
@@ -133,7 +135,9 @@ export async function GET(req: NextRequest) {
 }
 
 const MANUAL_NOTE = "Adeudo manual";
-const isManual = (a: { note: string | null }) => !!a.note?.startsWith(MANUAL_NOTE);
+const EDITED_NOTE = "Editado a mano";
+/** Premios capturados o editados a mano: "Calcular el mes" no los sobrescribe ni los borra. */
+const isManual = (a: { note: string | null }) => !!a.note && (a.note.startsWith(MANUAL_NOTE) || a.note.startsWith(EDITED_NOTE));
 
 /** Calcula y guarda los premios del mes: crea los nuevos y actualiza los que aún no se pagan (todo el mes, o solo un usuario). */
 async function calculatePeriod(agencySlug: string, period: string, onlyUser?: string) {
@@ -285,6 +289,11 @@ const patchSchema = z.object({
   scheduledFor: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   method: z.enum(["batalla", "live_normal", "tiktok_shop", "transferencia"]).nullable().optional(),
   note: z.string().trim().max(500).nullable().optional(),
+  // Edición de la categoría y el monto (no aplica a premios ya pagados)
+  tier: z.string().trim().min(1).max(40).optional(),
+  coins: z.number().int().min(0).max(10_000_000).optional(),
+  usd: z.number().min(0).max(1_000_000).nullable().optional(),
+  advisory: z.boolean().optional(),
 });
 
 export async function PATCH(req: NextRequest) {
@@ -293,8 +302,18 @@ export async function PATCH(req: NextRequest) {
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400, headers: NO_STORE });
   const { id, ...rest } = parsed.data;
-  const found = await prisma.bonusAward.findFirst({ where: { id, agencySlug: g.agencySlug }, select: { id: true } });
+  const found = await prisma.bonusAward.findFirst({ where: { id, agencySlug: g.agencySlug }, select: { id: true, status: true, note: true } });
   if (!found) return NextResponse.json({ error: "No encontrado" }, { status: 404, headers: NO_STORE });
+
+  const editsAmount = rest.tier !== undefined || rest.coins !== undefined || rest.usd !== undefined || rest.advisory !== undefined;
+  if (editsAmount && found.status === "pagado" && rest.status === undefined) {
+    return NextResponse.json({ error: "Este bono ya está pagado: cámbialo primero a otro estado para editar el monto." }, { status: 409, headers: NO_STORE });
+  }
+  // Lo editado a mano se marca para que "Calcular el mes" no lo pise
+  if (editsAmount || (rest.note !== undefined && isManual(found))) {
+    const text = (rest.note !== undefined ? rest.note : found.note) ?? "";
+    rest.note = isManual({ note: text }) ? text : `${EDITED_NOTE}${text ? `: ${text}` : ""}`;
+  }
   await prisma.bonusAward.update({
     where: { id },
     data: {
@@ -303,5 +322,18 @@ export async function PATCH(req: NextRequest) {
       ...(rest.status ? { paidAt: rest.status === "pagado" ? new Date() : null } : {}),
     },
   });
+  return NextResponse.json({ ok: true }, { headers: NO_STORE });
+}
+
+/** Elimina un bono guardado (no los ya pagados). */
+export async function DELETE(req: NextRequest) {
+  const g = await adminGate(req);
+  if (g.error) return g.error;
+  const parsed = z.object({ id: z.string().min(1) }).safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400, headers: NO_STORE });
+  const found = await prisma.bonusAward.findFirst({ where: { id: parsed.data.id, agencySlug: g.agencySlug }, select: { id: true, status: true } });
+  if (!found) return NextResponse.json({ error: "No encontrado" }, { status: 404, headers: NO_STORE });
+  if (found.status === "pagado") return NextResponse.json({ error: "Un bono pagado no se puede eliminar: cámbialo primero a otro estado." }, { status: 409, headers: NO_STORE });
+  await prisma.bonusAward.delete({ where: { id: found.id } });
   return NextResponse.json({ ok: true }, { headers: NO_STORE });
 }

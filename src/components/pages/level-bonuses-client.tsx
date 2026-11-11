@@ -95,6 +95,98 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
+const TIERS_BY_KIND: Record<BonusKind, { name: string; coins: number; usd: number | null; advisory?: boolean }[]> = {
+  horas: HOURS_TIERS,
+  diamantes: DIAMOND_TIERS,
+  incorporacion2: INCORP2_TIERS,
+};
+
+/** Edita categoría, monto y nota de un bono guardado, o lo elimina. */
+function BonusEditor({ bonus, level, onSave, onDelete }: { bonus: Bonus; level: Level; onSave: (p: { tier: string; coins: number; usd: number | null; advisory: boolean; note: string | null }) => Promise<void>; onDelete: () => Promise<void> }) {
+  const award = bonus.award!;
+  const [open, setOpen] = useState(false);
+  const [tier, setTier] = useState(bonus.tier);
+  const [coins, setCoins] = useState(String(bonus.coins));
+  const [usd, setUsd] = useState(bonus.usd == null ? "" : String(bonus.usd));
+  const [advisory, setAdvisory] = useState(bonus.advisory);
+  const [note, setNote] = useState(award.note ?? "");
+  const [saving, setSaving] = useState(false);
+  const paid = award.status === "pagado";
+
+  function pickTier(name: string) {
+    setTier(name);
+    const t = TIERS_BY_KIND[bonus.kind].find((x) => x.name === name);
+    if (!t) return;
+    setCoins(String(t.coins));
+    setUsd(level === "B" || level === "A" ? (t.usd == null ? "" : String(t.usd)) : "");
+    setAdvisory(!!t.advisory);
+  }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="mt-2 text-[11px] font-semibold text-accent hover:underline">
+        Editar bono
+      </button>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+      {paid && <p className="text-[11px] text-amber-300">Bono pagado: solo puedes editar la nota. Para cambiar el monto o eliminarlo, regrésalo antes a otro estado.</p>}
+      <div className="grid gap-2 sm:grid-cols-4">
+        <Field label="Categoría">
+          <select value={tier} onChange={(e) => pickTier(e.target.value)} disabled={paid} className={inputClass}>
+            {!TIERS_BY_KIND[bonus.kind].some((t) => t.name === tier) && <option value={tier}>{tier}</option>}
+            {TIERS_BY_KIND[bonus.kind].map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Monedas">
+          <input inputMode="numeric" value={coins} onChange={(e) => setCoins(e.target.value)} disabled={paid || advisory} className={inputClass} />
+        </Field>
+        <Field label="USD (opcional)">
+          <input inputMode="decimal" value={usd} onChange={(e) => setUsd(e.target.value)} disabled={paid || advisory} className={inputClass} />
+        </Field>
+        <Field label="Nota">
+          <input value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} maxLength={500} />
+        </Field>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          disabled={saving}
+          onClick={() => {
+            void (async () => {
+              setSaving(true);
+              const c = Math.max(0, Math.round(Number(coins.replace(",", ".")) || 0));
+              const u = usd.trim() === "" ? null : Number(usd.replace(",", "."));
+              await onSave({ tier, coins: advisory ? 0 : c, usd: advisory || u == null || Number.isNaN(u) ? null : u, advisory, note: note.trim() || null });
+              setSaving(false);
+              setOpen(false);
+            })();
+          }}
+        >
+          Guardar cambios
+        </Button>
+        <Button variant="secondary" onClick={() => setOpen(false)}>
+          Cancelar
+        </Button>
+        {!paid && (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (window.confirm("¿Eliminar este bono? Esta acción no se puede deshacer.")) void onDelete();
+            }}
+          >
+            <Trash2 className="h-4 w-4" /> Eliminar
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type ManualRow = { period: string; diamonds: string; days: string; hours: string };
 
 /** Calcula a mano los bonos adeudados de un creador en uno o varios meses pasados. */
@@ -601,6 +693,23 @@ export default function LevelBonusesClient() {
                           ))}
                         </select>
                       </div>
+                    )}
+                    {b.award && (
+                      <BonusEditor
+                        key={`${b.award.id}-${b.tier}-${b.coins}-${b.award.note ?? ""}`}
+                        bonus={b}
+                        level={i.level}
+                        onSave={async (p) => {
+                          const r = await call("PATCH", { id: b.award!.id, ...p });
+                          if (r) setMsg("Bono actualizado.");
+                          await load();
+                        }}
+                        onDelete={async () => {
+                          const r = await call("DELETE", { id: b.award!.id });
+                          if (r) setMsg("Bono eliminado.");
+                          await load();
+                        }}
+                      />
                     )}
                   </div>
                 ))}
