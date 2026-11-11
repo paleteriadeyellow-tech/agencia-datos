@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calculator, Gift, RefreshCw, Search } from "lucide-react";
+import { Calculator, Gift, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { TikTokAvatar } from "@/components/tiktok-avatar";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
@@ -14,6 +14,7 @@ import {
   KIND_LABEL,
   LEVELS,
   LEVEL_LABEL,
+  awardsFor,
   type BonusKind,
   type Level,
 } from "@/lib/level-bonuses";
@@ -94,6 +95,159 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
+type ManualRow = { period: string; diamonds: string; days: string; hours: string };
+
+/** Calcula a mano los bonos adeudados de un creador en uno o varios meses pasados. */
+function ManualPanel({ items, defaultPeriod, onDone }: { items: Item[]; defaultPeriod: string; onDone: (msg: string) => void }) {
+  const blank = (): ManualRow => ({ period: defaultPeriod, diamonds: "", days: "", hours: "" });
+  const [username, setUsername] = useState("");
+  const [joinDate, setJoinDate] = useState("");
+  const [lvl, setLvl] = useState<Level>("E");
+  const [rows, setRows] = useState<ManualRow[]>([blank()]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const user = username.trim().replace(/^@/, "").toLowerCase();
+  const known = items.find((i) => i.username.toLowerCase() === user);
+  const patch = (idx: number, p: Partial<ManualRow>) => setRows((r) => r.map((x, i) => (i === idx ? { ...x, ...p } : x)));
+  const num = (v: string) => Number(v.replace(",", ".")) || 0;
+  const preview = (r: ManualRow) => awardsFor(lvl, { diamonds: Math.round(num(r.diamonds)), days: Math.round(num(r.days)), hours: num(r.hours) });
+  const total = rows.reduce(
+    (a, r) => {
+      for (const b of preview(r)) {
+        a.coins += b.coins;
+        a.usd += b.usd ?? 0;
+      }
+      return a;
+    },
+    { coins: 0, usd: 0 }
+  );
+
+  async function save() {
+    setErr("");
+    if (!user) return setErr("Escribe el usuario del creador.");
+    setSaving(true);
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-skip-view-as": "1" },
+      body: JSON.stringify({
+        action: "manual",
+        username: user,
+        level: lvl,
+        joinDate: joinDate || null,
+        months: rows.map((r) => ({ period: r.period, diamonds: Math.round(num(r.diamonds)), days: Math.round(num(r.days)), hours: num(r.hours) })),
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    setSaving(false);
+    if (!res.ok) return setErr(j.error ?? "No se pudo guardar.");
+    onDone(
+      `@${user} · Nivel ${lvl}: ${j.created} bonos nuevos, ${j.updated} actualizados${j.locked ? `, ${j.locked} ya pagados sin cambios` : ""}${j.none ? `, ${j.none} mes(es) sin bono` : ""}.${
+        j.joinUpdated ? " Fecha de ingreso actualizada." : joinDate && !j.creatorLinked ? " La fecha de ingreso no se guardó: el usuario no está vinculado a un creador." : ""
+      }`
+    );
+    setRows([blank()]);
+  }
+
+  const periods = Array.from({ length: 36 }, (_, i) => {
+    const d = new Date(new Date().getFullYear(), new Date().getMonth() - i, 1);
+    return periodKey(d.getFullYear(), d.getMonth() + 1);
+  });
+
+  return (
+    <Panel className="mb-4 space-y-3">
+      <p className="text-sm font-semibold">Bono manual / adeudos</p>
+      <p className="text-xs text-text-muted">
+        Para creadores a los que se les deben bonos de meses anteriores. Indica su fecha de ingreso, la liga y las métricas de cada mes adeudado; los bonos quedan
+        guardados como pendientes de pago y la liga queda fijada desde el primer mes.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Usuario">
+          <input list="bonus-users" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="@usuario" />
+          <datalist id="bonus-users">
+            {items.map((i) => (
+              <option key={i.username} value={i.username}>
+                {i.creatorName ?? ""}
+              </option>
+            ))}
+          </datalist>
+        </Field>
+        <Field label="Fecha de ingreso (opcional)">
+          <input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} className={inputClass} />
+        </Field>
+        <Field label="Liga">
+          <select value={lvl} onChange={(e) => setLvl(e.target.value as Level)} className={inputClass}>
+            {LEVELS.map((l) => (
+              <option key={l} value={l}>
+                Nivel {l} · {LEVEL_LABEL[l]}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      {known && <p className="text-[11px] text-text-muted">Ahora está en Nivel {known.level} este mes.</p>}
+
+      <div className="space-y-2">
+        {rows.map((r, idx) => {
+          const got = preview(r);
+          return (
+            <div key={idx} className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+              <div className="grid items-end gap-2 sm:grid-cols-[1.4fr_1fr_0.7fr_0.7fr_auto]">
+                <Field label="Mes adeudado">
+                  <select value={r.period} onChange={(e) => patch(idx, { period: e.target.value })} className={inputClass}>
+                    {periods.map((p) => (
+                      <option key={p} value={p}>
+                        {MESES_NOMBRE[Number(p.slice(5))]} {p.slice(0, 4)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Diamantes">
+                  <input inputMode="numeric" value={r.diamonds} onChange={(e) => patch(idx, { diamonds: e.target.value })} className={inputClass} placeholder="0" />
+                </Field>
+                <Field label="Días">
+                  <input inputMode="numeric" value={r.days} onChange={(e) => patch(idx, { days: e.target.value })} className={inputClass} placeholder="0" />
+                </Field>
+                <Field label="Horas">
+                  <input inputMode="decimal" value={r.hours} onChange={(e) => patch(idx, { hours: e.target.value })} className={inputClass} placeholder="0" />
+                </Field>
+                <Button variant="secondary" disabled={rows.length === 1} onClick={() => setRows((x) => x.filter((_, i) => i !== idx))} aria-label="Quitar mes">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="mt-1.5 text-xs">
+                {got.length === 0 ? (
+                  <span className="text-text-muted">Con esas métricas no alcanza ningún bono de Nivel {lvl}.</span>
+                ) : (
+                  got.map((b) => (
+                    <span key={b.kind} className="mr-3">
+                      <span className="text-text-muted">
+                        {KIND_LABEL[b.kind]} · {b.tier}:
+                      </span>{" "}
+                      <b className="text-accent">{reward(b, lvl)}</b>
+                    </span>
+                  ))
+                )}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {err && <p className="text-xs text-red-400">{err}</p>}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="secondary" disabled={rows.length >= 24} onClick={() => setRows((r) => [...r, blank()])}>
+          <Plus className="h-4 w-4" /> Agregar otro mes
+        </Button>
+        <Button disabled={saving} onClick={() => void save()}>
+          <Calculator className="h-4 w-4" /> {saving ? "Guardando…" : "Calcular y guardar adeudo"}
+        </Button>
+        <span className="text-xs text-text-muted">Total: {money(total)}</span>
+      </div>
+    </Panel>
+  );
+}
+
 export default function LevelBonusesClient() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -105,6 +259,7 @@ export default function LevelBonusesClient() {
   const [level, setLevel] = useState<Level | "todos">("todos");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [q, setQ] = useState("");
+  const [showManual, setShowManual] = useState(false);
 
   const period = periodKey(year, month);
   const thisYear = now.getFullYear();
@@ -231,6 +386,9 @@ export default function LevelBonusesClient() {
         <Button variant="secondary" onClick={() => void load()}>
           <RefreshCw className="h-4 w-4" /> Actualizar
         </Button>
+        <Button variant="secondary" onClick={() => setShowManual((v) => !v)}>
+          <Plus className="h-4 w-4" /> Bono manual / adeudos
+        </Button>
         <div className="min-w-[12rem] flex-1">
           <Field label="Buscar creador">
             <div className="relative">
@@ -240,6 +398,17 @@ export default function LevelBonusesClient() {
           </Field>
         </div>
       </div>
+
+      {showManual && (
+        <ManualPanel
+          items={data?.items ?? []}
+          defaultPeriod={period}
+          onDone={(m) => {
+            setMsg(m);
+            void load();
+          }}
+        />
+      )}
 
       {msg && <p className="mb-3 text-sm text-text-muted">{msg}</p>}
 

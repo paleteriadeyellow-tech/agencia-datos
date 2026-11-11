@@ -132,6 +132,9 @@ export async function GET(req: NextRequest) {
   );
 }
 
+const MANUAL_NOTE = "Adeudo manual";
+const isManual = (a: { note: string | null }) => !!a.note?.startsWith(MANUAL_NOTE);
+
 /** Calcula y guarda los premios del mes: crea los nuevos y actualiza los que aún no se pagan (todo el mes, o solo un usuario). */
 async function calculatePeriod(agencySlug: string, period: string, onlyUser?: string) {
   const rows = (await loadMonth(agencySlug, period)).filter((r) => !onlyUser || r.username.toLowerCase() === onlyUser);
@@ -152,7 +155,7 @@ async function calculatePeriod(agencySlug: string, period: string, onlyUser?: st
       if (!ex) {
         created++;
         ops.push(prisma.bonusAward.create({ data: { agencySlug: agencySlug, period, username: r.username.toLowerCase(), kind: c.kind, ...data } }));
-      } else if (ex.status === "pagado") {
+      } else if (ex.status === "pagado" || isManual(ex)) {
         locked++; // lo ya pagado no se modifica aunque cambien las métricas
       } else {
         updated++;
@@ -161,7 +164,7 @@ async function calculatePeriod(agencySlug: string, period: string, onlyUser?: st
     }
   }
   // Premios "calculados" que ya no corresponden (por ejemplo tras una nueva importación)
-  const stale = existing.filter((a) => a.status === "calculado" && !keep.has(`${a.username.toLowerCase()}|${a.kind}`));
+  const stale = existing.filter((a) => a.status === "calculado" && !isManual(a) && !keep.has(`${a.username.toLowerCase()}|${a.kind}`));
   for (let i = 0; i < ops.length; i += 50) await prisma.$transaction(ops.slice(i, i + 50));
   if (stale.length) await prisma.bonusAward.deleteMany({ where: { id: { in: stale.map((a) => a.id) } } });
 
@@ -171,6 +174,16 @@ async function calculatePeriod(agencySlug: string, period: string, onlyUser?: st
 const postSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("calculate"), period: z.string().regex(PERIOD) }),
   z.object({ action: z.literal("level"), period: z.string().regex(PERIOD), username: z.string().min(1).max(80), level: z.enum(["E", "D", "C", "B", "A"]).nullable() }),
+  z.object({
+    action: z.literal("manual"),
+    username: z.string().trim().min(1).max(80),
+    level: z.enum(["E", "D", "C", "B", "A"]),
+    joinDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    months: z
+      .array(z.object({ period: z.string().regex(PERIOD), diamonds: z.number().int().min(0), days: z.number().int().min(0).max(31), hours: z.number().min(0).max(744) }))
+      .min(1)
+      .max(24),
+  }),
   z.object({ action: z.literal("welcome"), username: z.string().min(1).max(80), reward: z.enum(["osito", "cofres"]).nullable() }),
 ]);
 
@@ -195,6 +208,56 @@ export async function POST(req: NextRequest) {
     // Con otro nivel cambian los bonos que le tocan: se recalculan solo los de esa persona
     const r = await calculatePeriod(g.agencySlug, body.period, username);
     return NextResponse.json({ ok: true, ...r }, { headers: NO_STORE });
+  }
+
+  if (body.action === "manual") {
+    const username = body.username.replace(/^@/, "").toLowerCase();
+    const periods = body.months.map((m) => m.period);
+    if (new Set(periods).size !== periods.length) return NextResponse.json({ error: "Hay meses repetidos" }, { status: 400, headers: NO_STORE });
+
+    // Vincula al creador (si existe) y actualiza su fecha de ingreso
+    const dc = await prisma.diamondControl.findFirst({ where: { agencySlug: g.agencySlug, username: { equals: username, mode: "insensitive" }, creatorId: { not: null } }, select: { creatorId: true } });
+    const creatorId = dc?.creatorId ?? null;
+    let joinUpdated = false;
+    if (body.joinDate && creatorId) {
+      await prisma.creator.updateMany({ where: { id: creatorId, agencySlug: g.agencySlug }, data: { joinDate: new Date(`${body.joinDate}T00:00:00.000Z`) } });
+      joinUpdated = true;
+    }
+
+    // La liga queda fijada desde el primer mes adeudado
+    const first = [...periods].sort()[0];
+    await prisma.bonusLevelOverride.upsert({
+      where: { agencySlug_username: { agencySlug: g.agencySlug, username } },
+      update: { level: body.level, fromPeriod: first },
+      create: { agencySlug: g.agencySlug, username, level: body.level, fromPeriod: first },
+    });
+
+    let created = 0;
+    let updated = 0;
+    let locked = 0;
+    let none = 0;
+    for (const m of body.months) {
+      const computed = awardsFor(body.level, { diamonds: m.diamonds, days: m.days, hours: m.hours });
+      if (!computed.length) {
+        none++;
+        continue;
+      }
+      const note = `${MANUAL_NOTE}: ${m.diamonds} diamantes, ${m.days} días, ${m.hours} h`;
+      for (const c of computed) {
+        const data = { creatorId, tier: c.tier, level: body.level, coins: c.coins, usd: c.usd, advisory: c.advisory };
+        const ex = await prisma.bonusAward.findUnique({ where: { agencySlug_period_username_kind: { agencySlug: g.agencySlug, period: m.period, username, kind: c.kind } } });
+        if (!ex) {
+          await prisma.bonusAward.create({ data: { agencySlug: g.agencySlug, period: m.period, username, kind: c.kind, note, ...data } });
+          created++;
+        } else if (ex.status === "pagado") {
+          locked++;
+        } else {
+          await prisma.bonusAward.update({ where: { id: ex.id }, data: { ...data, note } });
+          updated++;
+        }
+      }
+    }
+    return NextResponse.json({ ok: true, created, updated, locked, none, joinUpdated, creatorLinked: !!creatorId }, { headers: NO_STORE });
   }
 
   if (body.action === "welcome") {
