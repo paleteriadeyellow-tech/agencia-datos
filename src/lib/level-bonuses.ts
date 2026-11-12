@@ -7,7 +7,8 @@
  * - El nivel decide qué bonos aplican: E = bonos de incorporación, D = bono por horas, C/B/A = horas + diamantes.
  * - Nivel C: más de 30,000 diamantes en un mes, o 90 días dentro de la agencia (si ya pasó de E).
  *   Nivel B: más de 100,000 diamantes en un mes. Nivel A: más de 300,000 diamantes en un mes (solo por diamantes).
- * - E → D: al cumplir las métricas del Bono de incorporación #2 (nivel Básico); aplica desde el mes siguiente.
+ * - E → D: automático. E dura solo el mes de ingreso (bono de bienvenida); al mes siguiente pasa a D.
+ * - Todo ascenso (C, B, A) tiene 1 mes de desfase: lo logrado en un mes aplica desde el siguiente.
  * - El nivel nunca baja: se conserva el más alto alcanzado en los meses anteriores.
  */
 export type Level = "E" | "D" | "C" | "B" | "A";
@@ -88,16 +89,17 @@ export function daysInAgencyAt(join: Date | null, period: string) {
  */
 export function levelFor(history: MonthMetrics[], target: string, join: Date | null): Level {
   const months = history.filter((h) => h.period <= target).sort((a, b) => a.period.localeCompare(b.period));
-  let level: Level = "E";
-  let reachedD = false; // cumplió el Bono #2 en un mes anterior
+  // Mes de ingreso: el de su fecha de ingreso o, si no hay, el primer mes con datos
+  const joinPeriod = join ? join.toISOString().slice(0, 7) : (months[0]?.period ?? target);
+  // Nivel E solo en el mes de ingreso (bono de bienvenida); desde el mes siguiente pasa solo a D
+  let level: Level = target > joinPeriod ? "D" : "E";
+  // Los ascensos tienen 1 mes de desfase: lo logrado en un mes aplica desde el siguiente, así que el mes objetivo no cuenta
   for (const m of months) {
-    if (reachedD) level = maxLevel(level, "D");
+    if (m.period >= target) break;
     if (m.diamonds > LEVEL_DIAMONDS.A) level = maxLevel(level, "A");
     else if (m.diamonds > LEVEL_DIAMONDS.B) level = maxLevel(level, "B");
     else if (m.diamonds > LEVEL_DIAMONDS.C) level = maxLevel(level, "C");
-    else if (rank(level) >= rank("D") && daysInAgencyAt(join, m.period) >= LEVEL_C_DAYS_IN_AGENCY) level = maxLevel(level, "C");
-    // Cumplir las métricas del Bono #2 (Básico) lleva al nivel D a partir del mes siguiente
-    if (!reachedD && bestTier(INCORP2_TIERS, m)) reachedD = true;
+    else if (m.period > joinPeriod && daysInAgencyAt(join, m.period) >= LEVEL_C_DAYS_IN_AGENCY) level = maxLevel(level, "C");
   }
   return level;
 }
@@ -143,6 +145,5 @@ export function nextLevelHint(level: Level, m: Metrics, join: Date | null, perio
     const left = Math.max(0, LEVEL_C_DAYS_IN_AGENCY - daysInAgencyAt(join, period));
     return `Para el Nivel C: superar ${LEVEL_DIAMONDS.C.toLocaleString("en-US")} diamantes (faltan ${Math.max(0, LEVEL_DIAMONDS.C + 1 - m.diamonds).toLocaleString("en-US")}) o cumplir ${LEVEL_C_DAYS_IN_AGENCY} días en la agencia${join ? ` (faltan ${left})` : ""}.`;
   }
-  const t = INCORP2_TIERS[0];
-  return `Para el Nivel D: cumplir el Bono #2 Básico (${t.days} días, ${t.hours} horas y ${t.diamonds.toLocaleString("en-US")} diamantes).`;
+  return "Pasa automáticamente al Nivel D el mes siguiente a su ingreso.";
 }

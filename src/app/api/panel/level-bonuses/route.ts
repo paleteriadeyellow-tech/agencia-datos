@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
         paid: sum(awards.filter((a) => a.status === "pagado")),
         pendingBefore: sum(pending),
       },
-      pending: pending.map((a) => ({ id: a.id, period: a.period, username: a.username, kind: a.kind, tier: a.tier, level: a.level, coins: a.coins, usd: a.usd, status: a.status })),
+      pending: pending.map((a) => ({ id: a.id, period: a.period, username: a.username, kind: a.kind, tier: a.tier, level: a.level, coins: a.coins, usd: a.usd, advisory: a.advisory, status: a.status, note: a.note })),
     },
     { headers: NO_STORE }
   );

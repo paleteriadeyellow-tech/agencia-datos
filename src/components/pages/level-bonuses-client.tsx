@@ -41,7 +41,7 @@ type Item = {
   bonuses: Bonus[];
 };
 type Money = { coins: number; usd: number };
-type PendingRow = { id: string; period: string; username: string; kind: BonusKind; tier: string; level: Level; coins: number; usd: number | null; status: string };
+type PendingRow = { id: string; period: string; username: string; kind: BonusKind; tier: string; level: Level; coins: number; usd: number | null; advisory: boolean; status: string; note: string | null };
 type Payload = {
   period: string;
   items: Item[];
@@ -577,7 +577,8 @@ export default function LevelBonusesClient() {
               </summary>
               <ul className="mt-3 space-y-2">
                 {data.pending.map((p) => (
-                  <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-bg-elevated/60 px-3 py-2 text-xs">
+                  <li key={p.id} className="rounded-lg border border-white/10 bg-bg-elevated/60 px-3 py-2 text-xs">
+                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span>
                       <b>@{p.username}</b> · {MESES_NOMBRE[Number(p.period.slice(5))]} {p.period.slice(0, 4)} · {KIND_LABEL[p.kind]} {p.tier} ·{" "}
                       <span className="text-text-muted">{reward({ coins: p.coins, usd: p.usd, advisory: false }, p.level)}</span>
@@ -598,6 +599,30 @@ export default function LevelBonusesClient() {
                         </option>
                       ))}
                     </select>
+                   </div>
+                   <BonusEditor
+                      key={`${p.id}-${p.tier}-${p.coins}-${p.note ?? ""}`}
+                      bonus={{
+                        kind: p.kind,
+                        tier: p.tier,
+                        coins: p.coins,
+                        usd: p.usd,
+                        advisory: p.advisory,
+                        outdated: false,
+                        award: { id: p.id, status: p.status, scheduledFor: null, method: null, paidAt: null, note: p.note, saved: true },
+                      }}
+                      level={p.level}
+                      onSave={async (patch) => {
+                        const r = await call("PATCH", { id: p.id, ...patch });
+                        if (r) setMsg("Bono actualizado.");
+                        await load();
+                      }}
+                      onDelete={async () => {
+                        const r = await call("DELETE", { id: p.id });
+                        if (r) setMsg("Bono eliminado.");
+                        await load();
+                      }}
+                    />
                   </li>
                 ))}
               </ul>
@@ -817,7 +842,7 @@ export default function LevelBonusesClient() {
           ))}
           <ul className="list-disc space-y-1 pl-5 text-text-muted">
             <li>Nivel C: más de 30,000 diamantes en un mes, o 90 días dentro de la agencia. Nivel B: más de 100,000. Nivel A: más de 300,000 (solo por diamantes).</li>
-            <li>De E a D: al cumplir las métricas del Bono #2 Básico; el nivel D aplica desde el mes siguiente. El nivel nunca baja.</li>
+            <li>De E a D: automático, el mes siguiente al de ingreso. Todo ascenso (C, B, A) aplica desde el mes siguiente a lograrlo. El nivel nunca baja.</li>
             <li>Los pagos empiezan después del día 8 de cada mes, de preferencia en batallas agendadas. Lo que no se paga se acumula al siguiente periodo.</li>
             <li>Nivel B: monedas o productos de TikTok Shop (mínimo 20 USD acumulados). Nivel A: transferencia bancaria en dólares reales, con retenciones.</li>
           </ul>
