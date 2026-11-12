@@ -188,14 +188,20 @@ function BonusEditor({ bonus, level, onSave, onDelete }: { bonus: Bonus; level: 
   );
 }
 
-type ManualRow = { period: string; diamonds: string; days: string; hours: string };
+type ManualRow = { period: string; level: Level; diamonds: string; days: string; hours: string };
+
+/** Mes anterior a YYYY-MM. */
+const prevPeriod = (p: string) => {
+  const y = Number(p.slice(0, 4));
+  const m = Number(p.slice(5));
+  return m === 1 ? periodKey(y - 1, 12) : periodKey(y, m - 1);
+};
 
 /** Calcula a mano los bonos adeudados de un creador en uno o varios meses pasados. */
 function ManualPanel({ items, defaultPeriod, initialUser, onDone }: { items: Item[]; defaultPeriod: string; initialUser: string; onDone: (msg: string) => void }) {
-  const blank = (): ManualRow => ({ period: defaultPeriod, diamonds: "", days: "", hours: "" });
+  const blank = (period = defaultPeriod, level: Level = "E"): ManualRow => ({ period, level, diamonds: "", days: "", hours: "" });
   const [username, setUsername] = useState(initialUser);
   const [joinDate, setJoinDate] = useState("");
-  const [lvl, setLvl] = useState<Level>("E");
   const [rows, setRows] = useState<ManualRow[]>([blank()]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -204,7 +210,7 @@ function ManualPanel({ items, defaultPeriod, initialUser, onDone }: { items: Ite
   const known = items.find((i) => i.username.toLowerCase() === user);
   const patch = (idx: number, p: Partial<ManualRow>) => setRows((r) => r.map((x, i) => (i === idx ? { ...x, ...p } : x)));
   const num = (v: string) => Number(v.replace(",", ".")) || 0;
-  const preview = (r: ManualRow) => awardsFor(lvl, { diamonds: Math.round(num(r.diamonds)), days: Math.round(num(r.days)), hours: num(r.hours) });
+  const preview = (r: ManualRow) => awardsFor(r.level, { diamonds: Math.round(num(r.diamonds)), days: Math.round(num(r.days)), hours: num(r.hours) });
   const total = rows.reduce(
     (a, r) => {
       for (const b of preview(r)) {
@@ -226,16 +232,15 @@ function ManualPanel({ items, defaultPeriod, initialUser, onDone }: { items: Ite
       body: JSON.stringify({
         action: "manual",
         username: user,
-        level: lvl,
         joinDate: joinDate || null,
-        months: rows.map((r) => ({ period: r.period, diamonds: Math.round(num(r.diamonds)), days: Math.round(num(r.days)), hours: num(r.hours) })),
+        months: rows.map((r) => ({ period: r.period, level: r.level, diamonds: Math.round(num(r.diamonds)), days: Math.round(num(r.days)), hours: num(r.hours) })),
       }),
     });
     const j = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) return setErr(j.error ?? "No se pudo guardar.");
     onDone(
-      `@${user} · Nivel ${lvl}: ${j.created} bonos nuevos, ${j.updated} actualizados${j.locked ? `, ${j.locked} ya pagados sin cambios` : ""}${j.none ? `, ${j.none} mes(es) sin bono` : ""}.${
+      `@${user}: ${j.created} bonos nuevos, ${j.updated} actualizados${j.locked ? `, ${j.locked} ya pagados sin cambios` : ""}${j.none ? `, ${j.none} mes(es) sin bono` : ""}.${
         j.joinUpdated ? " Fecha de ingreso actualizada." : joinDate && !j.creatorLinked ? " La fecha de ingreso no se guardó: el usuario no está vinculado a un creador." : ""
       }`
     );
@@ -251,10 +256,10 @@ function ManualPanel({ items, defaultPeriod, initialUser, onDone }: { items: Ite
     <Panel className="mb-4 space-y-3">
       <p className="text-sm font-semibold">Bono manual / adeudos</p>
       <p className="text-xs text-text-muted">
-        Para creadores a los que se les deben bonos de meses anteriores. Indica su fecha de ingreso, la liga y las métricas de cada mes adeudado; los bonos quedan
-        guardados como pendientes de pago y la liga queda fijada desde el primer mes.
+        Para creadores a los que se les deben bonos de meses anteriores. Indica su fecha de ingreso y, en cada mes adeudado, la liga y las métricas; los bonos quedan
+        guardados como pendientes de pago y su nivel actual queda fijado con la liga del último mes.
       </p>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Usuario">
           <input list="bonus-users" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="@usuario" />
           <datalist id="bonus-users">
@@ -268,15 +273,6 @@ function ManualPanel({ items, defaultPeriod, initialUser, onDone }: { items: Ite
         <Field label="Fecha de ingreso (opcional)">
           <input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} className={inputClass} />
         </Field>
-        <Field label="Liga">
-          <select value={lvl} onChange={(e) => setLvl(e.target.value as Level)} className={inputClass}>
-            {LEVELS.map((l) => (
-              <option key={l} value={l}>
-                Nivel {l} · {LEVEL_LABEL[l]}
-              </option>
-            ))}
-          </select>
-        </Field>
       </div>
       {known && <p className="text-[11px] text-text-muted">Ahora está en Nivel {known.level} este mes.</p>}
 
@@ -285,12 +281,21 @@ function ManualPanel({ items, defaultPeriod, initialUser, onDone }: { items: Ite
           const got = preview(r);
           return (
             <div key={idx} className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
-              <div className="grid items-end gap-2 sm:grid-cols-[1.4fr_1fr_0.7fr_0.7fr_auto]">
+              <div className="grid items-end gap-2 sm:grid-cols-[1.2fr_1.2fr_1fr_0.7fr_0.7fr_auto]">
                 <Field label="Mes adeudado">
                   <select value={r.period} onChange={(e) => patch(idx, { period: e.target.value })} className={inputClass}>
                     {periods.map((p) => (
                       <option key={p} value={p}>
                         {MESES_NOMBRE[Number(p.slice(5))]} {p.slice(0, 4)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Liga">
+                  <select value={r.level} onChange={(e) => patch(idx, { level: e.target.value as Level })} className={inputClass}>
+                    {LEVELS.map((l) => (
+                      <option key={l} value={l}>
+                        Nivel {l} · {LEVEL_LABEL[l]}
                       </option>
                     ))}
                   </select>
@@ -310,14 +315,14 @@ function ManualPanel({ items, defaultPeriod, initialUser, onDone }: { items: Ite
               </div>
               <p className="mt-1.5 text-xs">
                 {got.length === 0 ? (
-                  <span className="text-text-muted">Con esas métricas no alcanza ningún bono de Nivel {lvl}.</span>
+                  <span className="text-text-muted">Con esas métricas no alcanza ningún bono de Nivel {r.level}.</span>
                 ) : (
                   got.map((b) => (
                     <span key={b.kind} className="mr-3">
                       <span className="text-text-muted">
                         {KIND_LABEL[b.kind]} · {b.tier}:
                       </span>{" "}
-                      <b className="text-accent">{reward(b, lvl)}</b>
+                      <b className="text-accent">{reward(b, r.level)}</b>
                     </span>
                   ))
                 )}
@@ -329,7 +334,12 @@ function ManualPanel({ items, defaultPeriod, initialUser, onDone }: { items: Ite
 
       {err && <p className="text-xs text-red-400">{err}</p>}
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="secondary" disabled={rows.length >= 24} onClick={() => setRows((r) => [...r, blank()])}>
+        <Button variant="secondary" disabled={rows.length >= 24} onClick={() =>
+            setRows((r) => {
+              const last = r[r.length - 1];
+              return [...r, blank(last ? prevPeriod(last.period) : defaultPeriod, last?.level ?? "E")];
+            })
+          }>
           <Plus className="h-4 w-4" /> Agregar otro mes
         </Button>
         <Button disabled={saving} onClick={() => void save()}>
@@ -445,6 +455,67 @@ export default function LevelBonusesClient() {
     const r = await call("POST", { action: "welcome", username, reward: reward || null });
     if (!r) await load();
   }
+
+  /** Un bono pendiente de un mes anterior: estado, edición y eliminación. */
+  const renderPending = (p: PendingRow, showUser: boolean) => (
+<li key={p.id} className="rounded-lg border border-white/10 bg-bg-elevated/60 px-3 py-2 text-xs">
+                   <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {showUser && <b>@{p.username} · </b>}{MESES_NOMBRE[Number(p.period.slice(5))]} {p.period.slice(0, 4)} · {KIND_LABEL[p.kind]} {p.tier} ·{" "}
+                      <span className="text-text-muted">{reward({ coins: p.coins, usd: p.usd, advisory: false }, p.level)}</span>
+                    </span>
+                    <select
+                      value={p.status}
+                      onChange={(e) => {
+                        void (async () => {
+                          await call("PATCH", { id: p.id, status: e.target.value });
+                          await load();
+                        })();
+                      }}
+                      className={cn(inputClass, "!w-auto !py-1 text-xs")}
+                    >
+                      {Object.entries(STATUS_LABEL).map(([k, v]) => (
+                        <option key={k} value={k}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                   </div>
+                   <BonusEditor
+                      key={`${p.id}-${p.tier}-${p.coins}-${p.note ?? ""}`}
+                      bonus={{
+                        kind: p.kind,
+                        tier: p.tier,
+                        coins: p.coins,
+                        usd: p.usd,
+                        advisory: p.advisory,
+                        outdated: false,
+                        award: { id: p.id, status: p.status, scheduledFor: null, method: null, paidAt: null, note: p.note, saved: true },
+                      }}
+                      level={p.level}
+                      onSave={async (patch) => {
+                        const r = await call("PATCH", { id: p.id, ...patch });
+                        if (r) setMsg("Bono actualizado.");
+                        await load();
+                      }}
+                      onDelete={async () => {
+                        const r = await call("DELETE", { id: p.id });
+                        if (r) setMsg("Bono eliminado.");
+                        await load();
+                      }}
+                    />
+                  </li>
+  );
+
+  const pendingByUser = useMemo(() => {
+    const map = new Map<string, PendingRow[]>();
+    for (const p of data?.pending ?? []) map.set(p.username.toLowerCase(), [...(map.get(p.username.toLowerCase()) ?? []), p]);
+    return map;
+  }, [data]);
+  const orphanPending = useMemo(() => {
+    const shown = new Set((data?.items ?? []).map((i) => i.username.toLowerCase()));
+    return (data?.pending ?? []).filter((p) => !shown.has(p.username.toLowerCase()));
+  }, [data]);
 
   const items = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -570,62 +641,12 @@ export default function LevelBonusesClient() {
             </div>
           </Panel>
 
-          {data.pending.length > 0 && (
+          {orphanPending.length > 0 && (
             <details className="mb-4 rounded-xl border border-amber-400/30 bg-amber-500/5 p-3.5">
               <summary className="cursor-pointer text-sm font-semibold text-amber-200">
-                Pendientes de meses anteriores · {data.pending.length} ({money(data.totals.pendingBefore)})
+                Pendientes de creadores sin datos este mes · {orphanPending.length}
               </summary>
-              <ul className="mt-3 space-y-2">
-                {data.pending.map((p) => (
-                  <li key={p.id} className="rounded-lg border border-white/10 bg-bg-elevated/60 px-3 py-2 text-xs">
-                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span>
-                      <b>@{p.username}</b> · {MESES_NOMBRE[Number(p.period.slice(5))]} {p.period.slice(0, 4)} · {KIND_LABEL[p.kind]} {p.tier} ·{" "}
-                      <span className="text-text-muted">{reward({ coins: p.coins, usd: p.usd, advisory: false }, p.level)}</span>
-                    </span>
-                    <select
-                      value={p.status}
-                      onChange={(e) => {
-                        void (async () => {
-                          await call("PATCH", { id: p.id, status: e.target.value });
-                          await load();
-                        })();
-                      }}
-                      className={cn(inputClass, "!w-auto !py-1 text-xs")}
-                    >
-                      {Object.entries(STATUS_LABEL).map(([k, v]) => (
-                        <option key={k} value={k}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                   </div>
-                   <BonusEditor
-                      key={`${p.id}-${p.tier}-${p.coins}-${p.note ?? ""}`}
-                      bonus={{
-                        kind: p.kind,
-                        tier: p.tier,
-                        coins: p.coins,
-                        usd: p.usd,
-                        advisory: p.advisory,
-                        outdated: false,
-                        award: { id: p.id, status: p.status, scheduledFor: null, method: null, paidAt: null, note: p.note, saved: true },
-                      }}
-                      level={p.level}
-                      onSave={async (patch) => {
-                        const r = await call("PATCH", { id: p.id, ...patch });
-                        if (r) setMsg("Bono actualizado.");
-                        await load();
-                      }}
-                      onDelete={async () => {
-                        const r = await call("DELETE", { id: p.id });
-                        if (r) setMsg("Bono eliminado.");
-                        await load();
-                      }}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <ul className="mt-3 space-y-2">{orphanPending.map((p) => renderPending(p, true))}</ul>
             </details>
           )}
         </>
@@ -779,6 +800,15 @@ export default function LevelBonusesClient() {
                     )}
                   </div>
                 ))}
+
+                {(pendingByUser.get(i.username.toLowerCase()) ?? []).length > 0 && (
+                  <div className="rounded-lg border border-amber-400/30 bg-amber-500/5 p-3">
+                    <p className="mb-2 text-xs font-semibold text-amber-200">
+                      Pendientes de meses anteriores · {pendingByUser.get(i.username.toLowerCase())!.length}
+                    </p>
+                    <ul className="space-y-2">{pendingByUser.get(i.username.toLowerCase())!.map((p) => renderPending(p, false))}</ul>
+                  </div>
+                )}
 
                 {i.level === "E" && (
                   <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-400/20 bg-emerald-500/5 px-3 py-2 text-xs">

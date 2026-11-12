@@ -211,10 +211,9 @@ const postSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("manual"),
     username: z.string().trim().min(1).max(80),
-    level: z.enum(["E", "D", "C", "B", "A"]),
     joinDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     months: z
-      .array(z.object({ period: z.string().regex(PERIOD), diamonds: z.number().int().min(0), days: z.number().int().min(0).max(31), hours: z.number().min(0).max(744) }))
+      .array(z.object({ period: z.string().regex(PERIOD), level: z.enum(["E", "D", "C", "B", "A"]), diamonds: z.number().int().min(0), days: z.number().int().min(0).max(31), hours: z.number().min(0).max(744) }))
       .min(1)
       .max(24),
   }),
@@ -258,12 +257,12 @@ export async function POST(req: NextRequest) {
       joinUpdated = true;
     }
 
-    // La liga queda fijada desde el primer mes adeudado
-    const first = [...periods].sort()[0];
+    // Cada mes usa su propia liga; el nivel actual queda fijado con la liga del último mes adeudado, desde ese mes
+    const last = [...body.months].sort((a, b) => a.period.localeCompare(b.period)).at(-1)!;
     await prisma.bonusLevelOverride.upsert({
       where: { agencySlug_username: { agencySlug: g.agencySlug, username } },
-      update: { level: body.level, fromPeriod: first },
-      create: { agencySlug: g.agencySlug, username, level: body.level, fromPeriod: first },
+      update: { level: last.level, fromPeriod: last.period },
+      create: { agencySlug: g.agencySlug, username, level: last.level, fromPeriod: last.period },
     });
 
     let created = 0;
@@ -271,14 +270,14 @@ export async function POST(req: NextRequest) {
     let locked = 0;
     let none = 0;
     for (const m of body.months) {
-      const computed = awardsFor(body.level, { diamonds: m.diamonds, days: m.days, hours: m.hours });
+      const computed = awardsFor(m.level, { diamonds: m.diamonds, days: m.days, hours: m.hours });
       if (!computed.length) {
         none++;
         continue;
       }
       const note = `${MANUAL_NOTE}: ${m.diamonds} diamantes, ${m.days} días, ${m.hours} h`;
       for (const c of computed) {
-        const data = { creatorId, tier: c.tier, level: body.level, coins: c.coins, usd: c.usd, advisory: c.advisory };
+        const data = { creatorId, tier: c.tier, level: m.level, coins: c.coins, usd: c.usd, advisory: c.advisory };
         const ex = await prisma.bonusAward.findUnique({ where: { agencySlug_period_username_kind: { agencySlug: g.agencySlug, period: m.period, username, kind: c.kind } } });
         if (!ex) {
           await prisma.bonusAward.create({ data: { agencySlug: g.agencySlug, period: m.period, username, kind: c.kind, note, ...data } });
