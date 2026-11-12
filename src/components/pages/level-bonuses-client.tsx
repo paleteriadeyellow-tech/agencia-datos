@@ -19,6 +19,7 @@ import {
   type Level,
 } from "@/lib/level-bonuses";
 import { fmtHours } from "@/lib/goal-levels";
+import { openInvoice, type InvoiceData } from "@/lib/bonus-invoice";
 import { cn, formatNumber } from "@/lib/utils";
 
 const API = "/api/panel/level-bonuses";
@@ -190,9 +191,9 @@ function BonusEditor({ bonus, level, onSave, onDelete }: { bonus: Bonus; level: 
 type ManualRow = { period: string; diamonds: string; days: string; hours: string };
 
 /** Calcula a mano los bonos adeudados de un creador en uno o varios meses pasados. */
-function ManualPanel({ items, defaultPeriod, onDone }: { items: Item[]; defaultPeriod: string; onDone: (msg: string) => void }) {
+function ManualPanel({ items, defaultPeriod, initialUser, onDone }: { items: Item[]; defaultPeriod: string; initialUser: string; onDone: (msg: string) => void }) {
   const blank = (): ManualRow => ({ period: defaultPeriod, diamonds: "", days: "", hours: "" });
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(initialUser);
   const [joinDate, setJoinDate] = useState("");
   const [lvl, setLvl] = useState<Level>("E");
   const [rows, setRows] = useState<ManualRow[]>([blank()]);
@@ -352,6 +353,8 @@ export default function LevelBonusesClient() {
   const [statusFilter, setStatusFilter] = useState("todos");
   const [q, setQ] = useState("");
   const [showManual, setShowManual] = useState(false);
+  const [manualUser, setManualUser] = useState("");
+  const [manualKey, setManualKey] = useState(0);
 
   const period = periodKey(year, month);
   const thisYear = now.getFullYear();
@@ -419,6 +422,21 @@ export default function LevelBonusesClient() {
     if (r) {
       setMsg(value === "auto" ? `@${username} vuelve al nivel automático.` : `@${username} queda en Nivel ${value} desde ${MESES_NOMBRE[month]} ${year}.`);
       await load();
+    }
+  }
+
+  /** Abre la factura del creador con sus bonos pendientes de pago (y su motivo). */
+  async function invoice(username: string) {
+    setMsg("");
+    try {
+      const res = await fetch(`${API}?invoice=${encodeURIComponent(username)}`, { cache: "no-store", headers: { "x-skip-view-as": "1" } });
+      if (!res.ok) throw new Error();
+      const d = (await res.json()) as InvoiceData;
+      const pendingOnly = d.awards.some((a) => a.status !== "pagado");
+      if (!openInvoice(d, { includePaid: !pendingOnly })) setMsg("El navegador bloqueó la ventana de la factura: permite las ventanas emergentes.");
+      else if (!pendingOnly) setMsg(d.awards.length ? "No tiene bonos pendientes: la factura incluye los ya pagados." : "Este creador no tiene bonos guardados. Calcula el mes primero.");
+    } catch {
+      setMsg("No se pudo generar la factura.");
     }
   }
 
@@ -493,6 +511,8 @@ export default function LevelBonusesClient() {
 
       {showManual && (
         <ManualPanel
+          key={manualKey}
+          initialUser={manualUser}
           items={data?.items ?? []}
           defaultPeriod={period}
           onDone={(m) => {
@@ -610,6 +630,27 @@ export default function LevelBonusesClient() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualUser(i.username);
+                      setManualKey((k) => k + 1);
+                      setShowManual(true);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className="rounded-md border border-border px-2 py-1 text-[11px] font-semibold text-accent hover:bg-white/5"
+                    title="Calcular a mano bonos adeudados de este creador"
+                  >
+                    Bono manual
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void invoice(i.username)}
+                    className="rounded-md border border-border px-2 py-1 text-[11px] font-semibold text-accent hover:bg-white/5"
+                    title="Generar factura con los bonos pendientes y su motivo"
+                  >
+                    Factura
+                  </button>
                   <span className="text-text-muted">
                     <b className="text-text">{formatNumber(i.metrics.diamonds)}</b> 💎 · <b className="text-text">{i.metrics.days}</b> días · <b className="text-text">{fmtHours(i.metrics.hours)}</b>
                   </span>

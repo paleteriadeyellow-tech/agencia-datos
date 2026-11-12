@@ -56,6 +56,36 @@ async function loadMonth(agencySlug: string, period: string) {
 export async function GET(req: NextRequest) {
   const g = await adminGate(req);
   if (g.error) return g.error;
+  // Datos para la factura de un creador: todos sus bonos guardados + las métricas con las que se calcularon
+  const invoiceUser = req.nextUrl.searchParams.get("invoice")?.trim().replace(/^@/, "").toLowerCase();
+  if (invoiceUser) {
+    const [awards, controls] = await Promise.all([
+      prisma.bonusAward.findMany({ where: { agencySlug: g.agencySlug, username: invoiceUser }, orderBy: [{ period: "asc" }, { kind: "asc" }] }),
+      prisma.diamondControl.findMany({
+        where: { agencySlug: g.agencySlug, username: { equals: invoiceUser, mode: "insensitive" } },
+        select: { period: true, diamonds: true, days: true, hours: true, creatorId: true },
+      }),
+    ]);
+    const cid = controls.find((c) => c.creatorId)?.creatorId ?? awards.find((a) => a.creatorId)?.creatorId ?? null;
+    const creator = cid ? await prisma.creator.findFirst({ where: { id: cid, agencySlug: g.agencySlug }, select: { name: true, joinDate: true } }) : null;
+    const byPeriod = new Map(controls.map((c) => [c.period, c]));
+    return NextResponse.json(
+      {
+        username: invoiceUser,
+        creatorName: creator?.name ?? null,
+        joinDate: creator?.joinDate ? creator.joinDate.toISOString().slice(0, 10) : null,
+        awards: awards.map((a) => {
+          const c = byPeriod.get(a.period);
+          // Si el mes no está importado, las métricas capturadas a mano viajan en la nota
+          const m = a.note?.match(/(\d+) diamantes, (\d+) días, ([\d.]+) h/);
+          const metrics = c ? { diamonds: c.diamonds, days: c.days, hours: c.hours } : m ? { diamonds: Number(m[1]), days: Number(m[2]), hours: Number(m[3]) } : null;
+          return { id: a.id, period: a.period, kind: a.kind, tier: a.tier, level: a.level, coins: a.coins, usd: a.usd, advisory: a.advisory, status: a.status, method: a.method, scheduledFor: a.scheduledFor, paidAt: a.paidAt, note: a.note, metrics };
+        }),
+      },
+      { headers: NO_STORE }
+    );
+  }
+
   const period = req.nextUrl.searchParams.get("period") ?? "";
   if (!PERIOD.test(period)) return NextResponse.json({ error: "Mes inválido" }, { status: 400, headers: NO_STORE });
 
