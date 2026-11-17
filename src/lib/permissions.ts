@@ -33,7 +33,6 @@ export const ADMIN_ONLY_PATHS = [
   "/managers",
   "/subastas",
   "/robot",
-  "/asistente",
 ] as const;
 
 /** Quita `/a/{slug}` del pathname. */

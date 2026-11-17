@@ -1,15 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertTriangle, Bot, Flame, Moon, MessageCircle, Play, FileText, Clock, Database } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Bot, Flame, Moon, MessageCircle, Play, FileText, Clock, Database, Upload, X } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import { PanelLoadError } from "@/components/panel-load-error";
 import { Button, Panel } from "@/components/ui";
 import { PANEL, invalidatePanel, usePanelData } from "@/lib/swr";
 import { cn, formatNumber } from "@/lib/utils";
 import type { RobotCreator, RobotKind, RobotReport } from "@/lib/robot";
+import type { ImportSummary } from "@/lib/backstage-import-server";
+import { parseBackstageSheet } from "@/lib/backstage-import";
 
 type Payload = { report: RobotReport; telegram: boolean };
+
+function monthOptions() {
+  const now = new Date();
+  return [0, 1].map((back) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - back, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+    return { key, label: back === 0 ? `${label} (este mes)` : label };
+  });
+}
 
 const KINDS: { id: RobotKind; label: string; icon: typeof Flame; style: string }[] = [
   { id: "riesgo", label: "En riesgo", icon: AlertTriangle, style: "border-danger/35 bg-danger/10 text-danger" },
@@ -27,8 +39,50 @@ export default function RobotPage() {
   const [sent, setSent] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  // Fechas y datos guardados en el navegador solo después de montar (evita diferencias con el servidor).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const months = useMemo(() => (mounted ? monthOptions() : []), [mounted]);
+  const [importPeriod, setImportPeriod] = useState("");
+  useEffect(() => {
+    if (months.length && !importPeriod) setImportPeriod(months[0].key);
+  }, [months, importPeriod]);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [summary, setSummary] = useState<ImportSummary | null>(null);
 
-  const report = data?.report;
+  async function importExcel(file: File | undefined) {
+    if (!file) return;
+    setImporting(true);
+    setImportError("");
+    setSummary(null);
+    try {
+      const XLSX = await import("xlsx");
+      const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheet = book.Sheets[book.SheetNames[0]!];
+      if (!sheet) throw new Error("El Excel está vacío.");
+      const parsed = parseBackstageSheet(XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" }));
+      if (!parsed.ok) throw new Error(parsed.error);
+      const res = await fetch(`${PANEL.robot}/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, period: importPeriod || undefined, rows: parsed.rows }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Error al importar");
+      setSummary(json.summary as ImportSummary);
+      invalidatePanel(PANEL.tasks, PANEL.diamonds, PANEL.hub, PANEL.dashboard, PANEL.creators);
+      await mutate();
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "No se pudo importar el Excel.");
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  const report = mounted ? data?.report : undefined;
   const list = useMemo(
     () => (report?.creators ?? []).filter((c) => filter === "todos" || c.kind === filter),
     [report, filter]
@@ -70,11 +124,46 @@ export default function RobotPage() {
         subtitle="Revisa a tus creadores todos los días a las 7:00 a.m. solo, crea las tareas y te manda el resumen."
       />
 
+      <Panel className="mb-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => void importExcel(e.target.files?.[0])}
+          />
+          <Button onClick={() => fileRef.current?.click()} disabled={importing || busy}>
+            <Upload className="h-4 w-4" /> {importing ? "Actualizando todo…" : "Subir Excel y actualizar todo"}
+          </Button>
+          <label className="flex items-center gap-2 text-sm text-text-muted">
+            Mes del Excel:
+            <select
+              value={importPeriod}
+              onChange={(e) => setImportPeriod(e.target.value)}
+              className="rounded-lg border border-border bg-bg px-2 py-1.5 text-sm text-text"
+              disabled={importing}
+            >
+              {months.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="mt-2 text-xs text-text-muted">
+          Descarga en Backstage el Excel de «Datos del creador» de esta agencia y súbelo aquí: se importa a Control de diamantes, corre el robot y te muestra qué cambió.
+        </p>
+        {importError && <p className="mt-2 text-sm text-danger">{importError}</p>}
+        {summary && <ImportResult s={summary} onClose={() => setSummary(null)} />}
+      </Panel>
+
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Button onClick={runNow} disabled={busy}>
+        <Button variant="secondary" onClick={runNow} disabled={busy || importing}>
           <Play className="h-4 w-4" /> {busy ? "Corriendo…" : "Correr el robot ahora"}
         </Button>
-        {data && !data.telegram && (
+        {mounted && data && !data.telegram && (
           <span className="text-xs text-text-muted">
             Avisos al celular apagados: falta configurar TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en Vercel.
           </span>
@@ -198,6 +287,53 @@ export default function RobotPage() {
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+function ImportResult({ s, onClose }: { s: ImportSummary; onClose: () => void }) {
+  const diff = s.diamondsAfter - s.diamondsBefore;
+  const delta = (a: number, b: number) => (b === a ? `${b}` : `${a} → ${b}`);
+  return (
+    <div className="mt-4 rounded-lg border border-success/30 bg-success/5 p-4 text-sm">
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <p className="font-medium text-success">
+          ✅ Datos actualizados ({s.period}) · {s.upserted} usuarios importados
+        </p>
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="text-text-muted hover:text-text">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <ul className="space-y-1">
+        <li>
+          💎 Diamantes: {formatNumber(s.diamondsBefore)} → <b>{formatNumber(s.diamondsAfter)}</b>{" "}
+          <span className={diff >= 0 ? "text-success" : "text-danger"}>
+            ({diff >= 0 ? "+" : ""}
+            {formatNumber(diff)})
+          </span>
+        </li>
+        <li>
+          ⚠️ En riesgo: {delta(s.riskBefore.riesgo, s.riskAfter.riesgo)} · 😴 Sin LIVE: {delta(s.riskBefore.sin_actividad, s.riskAfter.sin_actividad)} · 🔥 Cerca de nivel:{" "}
+          {delta(s.riskBefore.cerca, s.riskAfter.cerca)}
+        </li>
+        {s.robot && (
+          <li>
+            🤖 Robot: {s.robot.managerTasksCreated} tareas de contacto y {s.robot.tasksCreated} tareas fijas nuevas
+          </li>
+        )}
+        {s.topGainers.length > 0 && (
+          <li>
+            📈 Más subieron: {s.topGainers.slice(0, 5).map((g) => `${g.username} (+${formatNumber(g.gained)})`).join(", ")}
+          </li>
+        )}
+        {s.startedLive.length > 0 && <li>🎬 Empezaron a hacer LIVE: {s.startedLive.join(", ")}</li>}
+        {s.leftRisk.length > 0 && <li>🎉 Salieron de riesgo / sin LIVE: {s.leftRisk.join(", ")}</li>}
+        {s.notInRoster > 0 && (
+          <li className="text-text-muted">
+            ℹ️ {s.notInRoster} usuarios del Excel no están dados de alta en Creadores (sí quedan en Control de diamantes).
+          </li>
+        )}
+      </ul>
     </div>
   );
 }
