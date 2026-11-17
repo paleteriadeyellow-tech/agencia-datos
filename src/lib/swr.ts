@@ -286,6 +286,7 @@ export const PANEL = {
   videoSuggestions: "/api/panel/video-suggestions",
   officialBattles: "/api/panel/official-battles",
   auctions: "/api/panel/auctions",
+  robot: "/api/panel/robot",
 } as const;
 
 export function panelWarmUrls(period = currentMonth()) {

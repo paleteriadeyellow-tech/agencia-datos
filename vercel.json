@@ -1,3 +1,6 @@
 {
-  "regions": ["pdx1"]
+  "regions": ["pdx1"],
+  "crons": [
+    { "path": "/api/cron/robot", "schedule": "0 13 * * *" }
+  ]
 }
