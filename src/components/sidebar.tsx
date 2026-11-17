@@ -35,6 +35,7 @@ import {
   X,
   ArrowLeftRight,
   Bot,
+  Sparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
@@ -47,6 +48,7 @@ import { useViewAs } from "@/components/view-as";
 import { apisForRoute, warmApis } from "@/lib/nav-prefetch";
 
 const nav = [
+  { href: "/asistente", label: "Asistente", icon: Sparkles },
   { href: "/robot", label: "Robot diario", icon: Bot },
   { href: "/mi-dia", label: "Tareas diarias", icon: Sun },
   { href: "/metas-creadores", label: "Metas de creadores", icon: Target },
